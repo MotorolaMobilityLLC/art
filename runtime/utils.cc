@@ -1893,4 +1893,19 @@ void SleepForever() {
   }
 }
 
+// BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+bool IsSystemServer() {
+#ifdef HAVE_ANDROID_OS
+  std::string cmd_line;
+  std::string system_server("system_server");
+
+  if (ReadFileToString("/proc/self/cmdline", &cmd_line)) {
+    return cmd_line.compare(0, system_server.length(), system_server) == 0;
+  }
+#endif
+
+  return false;
+}
+// END IKJBXLINE-638
+
 }  // namespace art

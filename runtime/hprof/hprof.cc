@@ -62,6 +62,14 @@
 #include "scoped_thread_state_change.h"
 #include "thread_list.h"
 
+// BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+#ifdef HPROFDUMP_ON_OOM
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#endif
+// END IKJBXLINE-638
+
 namespace art {
 
 namespace hprof {
@@ -745,7 +753,11 @@ class Hprof : public SingleRootVisitor {
         return false;
       }
     } else {
+#ifdef HPROFDUMP_ON_OOM
+      out_fd = open(filename_.c_str(), O_WRONLY|O_CREAT|O_TRUNC, 0666);
+#else
       out_fd = open(filename_.c_str(), O_WRONLY|O_CREAT|O_TRUNC, 0644);
+#endif
       if (out_fd < 0) {
         ThrowRuntimeException("Couldn't dump heap; open(\"%s\") failed: %s", filename_.c_str(),
                               strerror(errno));
@@ -1403,12 +1415,98 @@ void Hprof::VisitRoot(mirror::Object* obj, const RootInfo& info) {
   MarkRootObject(obj, 0, xlate[info.GetType()], info.GetThreadId());
 }
 
+// BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+#ifdef HPROFDUMP_ON_OOM
+static const std::string hprof_dir = "/data/misc/";
+static const size_t hprof_dir_len = hprof_dir.length();
+static const std::string hprof_suffix = ".hprof";
+static const size_t hprof_suffix_len = hprof_suffix.length();
+
+// Maximum number of hprof files could be existed in /data/misc.
+//
+// If a new hprof dump is needed, the oldest file will be removed.
+// If the amount of hprof dump file could not be stripped down to
+// this limit, the new hprof dump will not be generated, to prevent
+// data partition from being disk full.
+static const int MaxNumOfHprofFiles = 3;
+
+static int HprofNameFilter(const struct dirent *file) {
+    std::string name(file->d_name);
+    size_t i = name.rfind(hprof_suffix);
+    return (i != std::string::npos) && (i == (name.length() - hprof_suffix_len));
+}
+
+static int HprofDumpComparator(const struct dirent **file1,
+                        const struct dirent **file2) {
+    struct stat stat1, stat2;
+    std::string buf(hprof_dir);
+    buf += (*file1)->d_name;
+    if (!lstat(buf.c_str(), &stat1)) {
+        std::string buf2(hprof_dir);
+        buf2 += (*file2)->d_name;
+        if (!lstat(buf2.c_str(), &stat2)) {
+            return static_cast<int>(stat2.st_mtime - stat1.st_mtime);
+        }
+    }
+
+    return alphasort(file1, file2);
+}
+
+static bool CheckHprofDumpFile() {
+    struct dirent **namelist, *t;
+
+    int n = scandir(hprof_dir.c_str(), &namelist, HprofNameFilter, HprofDumpComparator);
+    if (n < 0) {
+        PLOG(WARNING) << "Unable to state " << hprof_dir << ", is the folder present ?";
+        return false;
+    }
+
+    int i = n;
+    while (n-- > 0) {
+      std::string buf(hprof_dir);
+      t = namelist[n];
+      buf += t->d_name;
+      if (i > MaxNumOfHprofFiles - 1) {
+          if (unlink(buf.c_str()) != 0) {
+            LOG(WARNING) << "Unable to remove stale dump file: " << buf.c_str();
+          } else {
+              i--;
+          }
+      }
+      free(t);
+    }
+    free(namelist);
+    if (i < MaxNumOfHprofFiles) {
+        return true;
+    }
+
+    LOG(WARNING) << "Too many hprof dump files, stopping the curent dump";
+    return false;
+}
+#endif
+// END IKJBXLINE-638
+
 // If "direct_to_ddms" is true, the other arguments are ignored, and data is
 // sent directly to DDMS.
 // If "fd" is >= 0, the output will be written to that file descriptor.
 // Otherwise, "filename" is used to create an output file.
 void DumpHeap(const char* filename, int fd, bool direct_to_ddms) {
+// BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+#ifdef HPROFDUMP_ON_OOM
+  if ((fd < 0) && !direct_to_ddms &&
+      (((filename == nullptr) || strncmp(hprof_dir.c_str(), filename, hprof_dir_len) == 0) &&
+        !CheckHprofDumpFile())) {
+      return;
+  }
+
+  if (filename == nullptr) {
+    const std::string name = StringPrintf("/data/misc/heap-dump-tm%d-pid%d.hprof", (uint32_t)time(NULL), getpid());
+    filename = name.c_str();
+  }
+#else
   CHECK(filename != nullptr);
+#endif
+// END IKJBXLINE-638
 
   Thread* self = Thread::Current();
   gc::Heap* heap = Runtime::Current()->GetHeap();
@@ -1422,6 +1520,7 @@ void DumpHeap(const char* filename, int fd, bool direct_to_ddms) {
     Hprof hprof(filename, fd, direct_to_ddms);
     hprof.Dump();
   }
+
   if (heap->IsGcConcurrentAndMoving()) {
     heap->DecrementDisableMovingGC(self);
   }

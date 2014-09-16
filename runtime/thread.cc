@@ -82,6 +82,13 @@
 #endif
 #endif  // ART_USE_FUTEXES
 
+// BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+#ifdef HPROFDUMP_ON_OOM
+#include "hprof/hprof.h"
+#include "cutils/properties.h"
+#endif
+// END IKJBXLINE-638
+
 namespace art {
 
 bool Thread::is_started_ = false;
@@ -1814,6 +1821,21 @@ void Thread::HandleUncaughtExceptions(ScopedObjectAccess& soa) {
                                   tlsPtr_.jni_env->GetObjectField(peer.get(),
                                       WellKnownClasses::java_lang_Thread_uncaughtHandler));
   if (handler.get() == nullptr) {
+// BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+#ifdef HPROFDUMP_ON_OOM
+    // Dump the hprof data if the exception is an instance of OutOfMemoryError.
+    ScopedLocalRef<jclass> oom_exception_class(tlsPtr_.jni_env,
+                                               tlsPtr_.jni_env->FindClass("java/lang/OutOfMemoryError"));
+    if (tlsPtr_.jni_env->IsInstanceOf(exception.get(), oom_exception_class.get())) {
+      char dump_prop[PROPERTY_VALUE_MAX];
+      property_get("debug.mot.hprofdump", dump_prop, "");
+      if ((strlen(dump_prop) != 0) && !IsSystemServer()) {
+        hprof::DumpHeap(nullptr, -1, false);
+      }
+    }
+#endif
+// END IKJBXLINE-638
+
     // Otherwise use the thread group's default handler.
     handler.reset(tlsPtr_.jni_env->GetObjectField(peer.get(),
                                                   WellKnownClasses::java_lang_Thread_group));

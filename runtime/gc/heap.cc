@@ -74,6 +74,14 @@
 #include "thread_list.h"
 #include "well_known_classes.h"
 
+// BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+#ifdef HPROFDUMP_ON_OOM
+#include "hprof/hprof.h"
+#include "utils.h"
+#include "cutils/properties.h"
+#endif
+// END IKJBXLINE-638
+
 namespace art {
 
 namespace gc {
@@ -1855,6 +1863,20 @@ mirror::Object* Heap::AllocateInternalWithGc(Thread* self,
   }
   // If the allocation hasn't succeeded by this point, throw an OOM error.
   if (ptr == nullptr) {
+// BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+#ifdef HPROFDUMP_ON_OOM
+    // Check whether the hprof dump property is set.
+    char dump_prop[PROPERTY_VALUE_MAX];
+    property_get("debug.mot.hprofdump", dump_prop, "");
+    if (strlen(dump_prop) != 0) {
+      // Check whether the current process is system server.
+      if (IsSystemServer()) {
+        LOG(INFO) << "Dumping the system server hprof data ...";
+        hprof::DumpHeap(nullptr, -1, false);
+      }
+    }
+#endif
+// END IKJBXLINE-638
     ThrowOutOfMemoryError(self, alloc_size, allocator);
   }
   return ptr;

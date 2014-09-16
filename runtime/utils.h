@@ -413,6 +413,8 @@ inline void FlushInstructionCache(char* begin, char* end) {
 #endif
 }
 
+bool IsSystemServer();  // Motorola, a18772, 03/17/2013, IKJBXLINE-638
+
 }  // namespace art
 
 #endif  // ART_RUNTIME_UTILS_H_

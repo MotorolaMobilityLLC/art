@@ -522,6 +522,13 @@ endif
     endif
     LOCAL_MULTILIB := both
   endif
+  # BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+  ifeq ($$(art_target_or_host),target)
+    ifneq ($$(TARGET_BUILD_VARIANT),user)
+      LOCAL_CFLAGS += -DHPROFDUMP_ON_OOM
+    endif
+  endif
+  # END IKJBXLINE-638
 
   LOCAL_C_INCLUDES += $$(ART_C_INCLUDES)
   LOCAL_C_INCLUDES += art/cmdline

@@ -374,4 +374,19 @@ int GetTaskCount() {
   return count;
 }
 
+// BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+bool IsSystemServer() {
+#ifdef ART_TARGET_ANDROID
+  std::string cmd_line;
+  std::string system_server("system_server");
+
+  if (ReadFileToString("/proc/self/cmdline", &cmd_line)) {
+    return cmd_line.compare(0, system_server.length(), system_server) == 0;
+  }
+#endif
+
+  return false;
+}
+// END IKJBXLINE-638
+
 }  // namespace art

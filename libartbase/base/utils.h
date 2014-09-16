@@ -162,6 +162,8 @@ bool IsAddressKnownBackedByFileOrShared(const void* addr);
 // Returns the number of threads running.
 int GetTaskCount();
 
+bool IsSystemServer();  // Motorola, a18772, 03/17/2013, IKJBXLINE-638
+
 }  // namespace art
 
 #endif  // ART_LIBARTBASE_BASE_UTILS_H_

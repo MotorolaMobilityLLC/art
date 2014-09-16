@@ -136,6 +136,12 @@ func deviceFlags(ctx android.LoadHookContext) []string {
 		cflags = append(cflags, "-DART_TARGET_LINUX")
 	} else {
 		cflags = append(cflags, "-DART_TARGET_ANDROID")
+		// BEGIN Motorola, a18772, 06/28/2017, IKJBXLINE-638
+		buildVariant := ctx.Config().GetenvWithDefault("TARGET_BUILD_VARIANT", "user")
+                if buildVariant != "user" {
+			cflags = append(cflags, "-DHPROFDUMP_ON_OOM")
+		}
+		// END IKJBXLINE-638
 		// BEGIN Motorola, a5705c, 03/12/2015, IKVPREL1L-8365
 		if ctx.Config().IsEnvTrue("WITH_MOTO_ART_COMPILER_MEM_OPT") {
 			cflags = append(cflags, "-DMOTO_ART_COMPILER_MEM_OPT=1")

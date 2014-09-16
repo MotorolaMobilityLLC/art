@@ -151,6 +151,8 @@ static inline void CheckedCall(const Func& function, const char* what, Args... a
 // there is an I/O error.
 std::string GetProcessStatus(const char* key);
 
+bool IsSystemServer();  // Motorola, a18772, 03/17/2013, IKJBXLINE-638
+
 }  // namespace art
 
 #endif  // ART_LIBARTBASE_BASE_UTILS_H_

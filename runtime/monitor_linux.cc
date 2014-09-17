@@ -18,7 +18,9 @@
 
 namespace art {
 
-void Monitor::LogContentionEvent(Thread*, uint32_t, uint32_t, const char*, int32_t) {
+// BEGIN Motorola, IKJBXLINE-4551, w17724, 04/11/2013 */
+void Monitor::LogContentionEvent(Thread*, uint32_t, uint32_t, const char*, const char*, int32_t) {
+// END IKJBXLINE-4551
 }
 
 }  // namespace art

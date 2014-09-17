@@ -49,12 +49,14 @@ static char* EventLogWriteString(char* dst, const char* value, size_t len) {
   return dst + len;
 }
 
+// BEGIN Motorola, IKJBXLINE-4551, w17724, 04/11/2013
 void Monitor::LogContentionEvent(Thread* self, uint32_t wait_ms, uint32_t sample_percent,
-                                 const char* owner_filename, int32_t owner_line_number) {
+                                 const char* owner_methodname, const char* owner_filename,
+                                 int32_t owner_line_number) {
   // Emit the event list length, 1 byte.
-  char eventBuffer[174];
+  char eventBuffer[284];
   char* cp = eventBuffer;
-  *cp++ = 9;
+  *cp++ = 11;  // Motorola, IIKJBXLINE-4551, w17724, 04/11/2013
 
   // Emit the process name, <= 37 bytes.
   int fd = open("/proc/self/cmdline", O_RDONLY);
@@ -76,16 +78,29 @@ void Monitor::LogContentionEvent(Thread* self, uint32_t wait_ms, uint32_t sample
   // Emit the wait time, 5 bytes.
   cp = EventLogWriteInt(cp, wait_ms);
 
-  // Emit the source code file name, <= 37 bytes.
   uint32_t pc;
   ArtMethod* m = self->GetCurrentMethod(&pc);
   const char* filename;
+  const char* methodname;
   int32_t line_number;
-  TranslateLocation(m, pc, &filename, &line_number);
+  TranslateLocation(m, pc, &methodname, &filename, &line_number);
+
+  // Emit the method name, <= 37 bytes.
+  cp = EventLogWriteString(cp, methodname, strlen(methodname));
+
+  // Emit the source code file name, <= 37 bytes.
   cp = EventLogWriteString(cp, filename, strlen(filename));
 
   // Emit the source code line number, 5 bytes.
   cp = EventLogWriteInt(cp, line_number);
+
+  // BEGIN Motorola, IKJBXLINE-4551, w17724, 04/11/2013
+  // Emit the owner method name.  <=37 bytes.
+  if (owner_methodname == NULL) {
+    owner_methodname = " ";
+  }
+  cp = EventLogWriteString(cp, owner_methodname, strlen(owner_methodname));
+  // END IKJBXLINE-4551
 
   // Emit the lock owner source code file name, <= 37 bytes.
   if (owner_filename == nullptr) {
@@ -106,5 +121,6 @@ void Monitor::LogContentionEvent(Thread* self, uint32_t wait_ms, uint32_t sample
   android_btWriteLog(EVENT_LOG_TAG_dvm_lock_sample, EVENT_TYPE_LIST, eventBuffer,
                      (size_t)(cp - eventBuffer));
 }
+// END IKJBXLINE-4551
 
 }  // namespace art

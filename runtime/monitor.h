@@ -181,9 +181,11 @@ class Monitor {
       SHARED_REQUIRES(Locks::mutator_lock_)
       NO_THREAD_SAFETY_ANALYSIS;  // For m->Install(self)
 
-  void LogContentionEvent(Thread* self, uint32_t wait_ms, uint32_t sample_percent,
+  // BEGIN Motorola,IKJBXLINE-4551, w17724, 04/11/2013
+  void LogContentionEvent(Thread* self, uint32_t wait_ms, uint32_t sample_percent, const char* owner_methodname,
                           const char* owner_filename, int32_t owner_line_number)
       SHARED_REQUIRES(Locks::mutator_lock_);
+  // END IKJBXLINE-4551
 
   static void FailedUnlock(mirror::Object* obj,
                            uint32_t expected_owner_thread_id,
@@ -242,11 +244,14 @@ class Monitor {
       REQUIRES(!monitor_lock_)
       SHARED_REQUIRES(Locks::mutator_lock_);
 
+  // BEGIN Motorola,IKJBXLINE-4551, w17724, 04/11/2013
   // Translates the provided method and pc into its declaring class' source file and line number.
   static void TranslateLocation(ArtMethod* method, uint32_t pc,
+                                const char** method_name,
                                 const char** source_file,
                                 int32_t* line_number)
       SHARED_REQUIRES(Locks::mutator_lock_);
+  // END IKJBXLINE-4551
 
   uint32_t GetOwnerThreadId() REQUIRES(!monitor_lock_);
 
@@ -300,6 +305,8 @@ class Monitor {
   // Free list for monitor pool.
   Monitor* next_free_ GUARDED_BY(Locks::allocated_monitor_ids_lock_);
 #endif
+
+  uint64_t lock_start_ms_;  // Motorola, IKJBXLINE-4551, w17724, 04/11/2013
 
   friend class MonitorInfo;
   friend class MonitorList;

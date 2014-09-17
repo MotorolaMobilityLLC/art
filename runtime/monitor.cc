@@ -89,6 +89,8 @@ Monitor::Monitor(Thread* self, Thread* owner, mirror::Object* obj, int32_t hash_
   DCHECK(false) << "Should not be reached in 64b";
   next_free_ = nullptr;
 #endif
+
+  lock_start_ms_ = 0;  // Motorola, IKJBXLINE-4551, w17724, 04/11/2013
   // We should only inflate a lock if the owner is ourselves or suspended. This avoids a race
   // with the owner unlocking the thin-lock.
   CHECK(owner == nullptr || owner == self || owner->IsSuspended());
@@ -111,6 +113,8 @@ Monitor::Monitor(Thread* self, Thread* owner, mirror::Object* obj, int32_t hash_
 #ifdef __LP64__
   next_free_ = nullptr;
 #endif
+
+  lock_start_ms_ = 0;  // Motorola, IKJBXLINE-4551, w17724, 04/11/2013
   // We should only inflate a lock if the owner is ourselves or suspended. This avoids a race
   // with the owner unlocking the thin-lock.
   CHECK(owner == nullptr || owner == self || owner->IsSuspended());
@@ -268,9 +272,10 @@ void Monitor::AtraceMonitorLockImpl(Thread* self, mirror::Object* obj, bool is_w
   visitor.WalkStack(false);
   const char* prefix = is_wait ? "Waiting on " : "Locking ";
 
+  const char* methodname;
   const char* filename;
   int32_t line_number;
-  TranslateLocation(visitor.method_, visitor.dex_pc_, &filename, &line_number);
+  TranslateLocation(visitor.method_, visitor.dex_pc_, &methodname, &filename, &line_number);
 
   // It would be nice to have a stable "ID" for the object here. However, the only stable thing
   // would be the identity hashcode. But we cannot use IdentityHashcode here: For one, there are
@@ -280,10 +285,11 @@ void Monitor::AtraceMonitorLockImpl(Thread* self, mirror::Object* obj, bool is_w
   //
   // Because of thin-locks we also cannot use the monitor id (as there is no monitor). Monitor ids
   // also do not have to be stable, as the monitor may be deflated.
-  std::string tmp = StringPrintf("%s %d at %s:%d",
+  std::string tmp = StringPrintf("%s %d at %s, %s:%d",
       prefix,
       (obj == nullptr ? -1 : static_cast<int32_t>(reinterpret_cast<uintptr_t>(obj))),
-      (filename != nullptr ? filename : "null"),
+      methodname,
+      filename,
       line_number);
   ATRACE_BEGIN(tmp.c_str());
 }
@@ -299,25 +305,28 @@ std::string Monitor::PrettyContentionInfo(const std::string& owner_name,
                                           ArtMethod* owners_method,
                                           uint32_t owners_dex_pc,
                                           size_t num_waiters) {
+  const char* owners_methodname;
   const char* owners_filename;
   int32_t owners_line_number;
-  if (owners_method != nullptr) {
-    TranslateLocation(owners_method, owners_dex_pc, &owners_filename, &owners_line_number);
-  }
+  TranslateLocation(owners_method, owners_dex_pc, &owners_methodname, &owners_filename, &owners_line_number);
   std::ostringstream oss;
   oss << "monitor contention with owner " << owner_name << " (" << owner_tid << ")";
-  if (owners_method != nullptr) {
-    oss << " at " << PrettyMethod(owners_method);
-    oss << "(" << owners_filename << ":" << owners_line_number << ")";
-  }
+  oss << " at " << owners_methodname;
+  oss << "(" << owners_filename << ":" << owners_line_number << ")";
   oss << " waiters=" << num_waiters;
   return oss.str();
 }
 
 void Monitor::Lock(Thread* self) {
   MutexLock mu(self, monitor_lock_);
+  const bool log_contention = (lock_profiling_threshold_ != 0);
   while (true) {
     if (owner_ == nullptr) {  // Unowned.
+      // BEGIN Motorola, IKJBXLINE-4551, w17724, 04/11/2013
+      if (log_contention) {
+        lock_start_ms_ = MilliTime();
+      }
+      // END IKJBXLINE04551
       owner_ = self;
       CHECK_EQ(lock_count_, 0);
       // When debugging, save the current monitor holder for future
@@ -331,7 +340,6 @@ void Monitor::Lock(Thread* self) {
       break;
     }
     // Contended.
-    const bool log_contention = (lock_profiling_threshold_ != 0);
     uint64_t wait_start_ms = log_contention ? MilliTime() : 0;
     ArtMethod* owners_method = locking_method_;
     uint32_t owners_dex_pc = locking_dex_pc_;
@@ -360,11 +368,12 @@ void Monitor::Lock(Thread* self) {
             // Add info for contending thread.
             uint32_t pc;
             ArtMethod* m = self->GetCurrentMethod(&pc);
+            const char* methodname;
             const char* filename;
             int32_t line_number;
-            TranslateLocation(m, pc, &filename, &line_number);
+            TranslateLocation(m, pc, &methodname, &filename, &line_number);
             oss << " blocking from "
-                << PrettyMethod(m) << "(" << (filename != nullptr ? filename : "null") << ":"
+                << methodname << "(" << filename << ":"
                 << line_number << ")";
             ATRACE_BEGIN(oss.str().c_str());
           }
@@ -389,7 +398,9 @@ void Monitor::Lock(Thread* self) {
           }
 
           if (original_owner_tid != 0u) {
-            uint64_t wait_ms = MilliTime() - wait_start_ms;
+            // BEGIN Motorola, IKJBXLINE-4551, w17724, 04/11/2013
+            lock_start_ms_ = MilliTime();
+            uint64_t wait_ms = lock_start_ms_ - wait_start_ms;
             uint32_t sample_percent;
             if (wait_ms >= lock_profiling_threshold_) {
               sample_percent = 100;
@@ -409,19 +420,23 @@ void Monitor::Lock(Thread* self) {
                                             num_waiters)
                     << " in " << PrettyMethod(m) << " for " << PrettyDuration(MsToNs(wait_ms));
               }
+              const char* owners_methodname;
               const char* owners_filename;
               int32_t owners_line_number;
               TranslateLocation(owners_method,
                                 owners_dex_pc,
+                                &owners_methodname,
                                 &owners_filename,
                                 &owners_line_number);
               LogContentionEvent(self,
                                  wait_ms,
                                  sample_percent,
+                                 owners_methodname,
                                  owners_filename,
                                  owners_line_number);
             }
           }
+          // END IKJBXLINE-4551
         }
         ATRACE_END();
       }
@@ -543,6 +558,18 @@ bool Monitor::Unlock(Thread* self) {
       // We own the monitor, so nobody else can be in here.
       AtraceMonitorUnlock();
       if (lock_count_ == 0) {
+        // BEGIN Motorola,IKJBXLINE-4551, w17724, 04/11/2013 */
+        if (lock_profiling_threshold_ != 0) {
+          if (lock_start_ms_ > 0) {
+            uint32_t locked_time = static_cast<uint32_t>((MilliTime() - lock_start_ms_) / 1000);
+            if (locked_time >= lock_profiling_threshold_) {
+              // Log the contention.
+              LogContentionEvent(self, locked_time, 150, "", NULL, 0);
+            }
+          }
+          lock_start_ms_ = 0;
+        }
+        // END IKJBXLINE-4551
         owner_ = nullptr;
         locking_method_ = nullptr;
         locking_dex_pc_ = 0;
@@ -605,6 +632,7 @@ void Monitor::Wait(Thread* self, int64_t ms, int32_t ns,
   owner_ = nullptr;
   ArtMethod* saved_method = locking_method_;
   locking_method_ = nullptr;
+  lock_start_ms_ = 0;  // Motorola, IKJBXLINE-4551, w17724, 04/11/2013
   uintptr_t saved_dex_pc = locking_dex_pc_;
   locking_dex_pc_ = 0;
 
@@ -682,6 +710,12 @@ void Monitor::Wait(Thread* self, int64_t ms, int32_t ns,
   Lock(self);
   monitor_lock_.Lock(self);
   self->GetWaitMutex()->AssertNotHeld(self);
+
+  // BEGIN Motorola, IKJBXLINE-4551, w17724, 04/11/2013
+  if (lock_profiling_threshold_ != 0) {
+    lock_start_ms_ = MilliTime();
+  }
+  // END IKJBXLINE-4551
 
   /*
    * We remove our thread from wait set after restoring the count
@@ -1246,19 +1280,24 @@ bool Monitor::IsLocked() SHARED_REQUIRES(Locks::mutator_lock_) {
   return owner_ != nullptr;
 }
 
+// BEGIN Motorola, IKJBXLINE-4551, w17724, 04/11/2013
 void Monitor::TranslateLocation(ArtMethod* method,
                                 uint32_t dex_pc,
+                                const char** method_name,
                                 const char** source_file,
                                 int32_t* line_number) {
+// END IKJBXLINE-4551
   // If method is null, location is unknown
   if (method == nullptr) {
-    *source_file = "";
+    *method_name = "";  // Motorola, IKJBXLINE-4551, w17724, 04/11/2013
+    *source_file = "null";
     *line_number = 0;
     return;
   }
+  *method_name = PrettyMethod(method).c_str();  // Motorola, IKJBXLINE-4551, w17724, 04/11/2013
   *source_file = method->GetDeclaringClassSourceFile();
   if (*source_file == nullptr) {
-    *source_file = "";
+    *source_file = "null";
   }
   *line_number = method->GetLineNumFromDexPC(dex_pc);
 }

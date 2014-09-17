@@ -109,6 +109,8 @@ Monitor::Monitor(Thread* self, Thread* owner, ObjPtr<mirror::Object> obj, int32_
   DCHECK(false) << "Should not be reached in 64b";
   next_free_ = nullptr;
 #endif
+
+  lock_start_ms_ = 0;  // Motorola, IKJBXLINE-4551, w17724, 04/11/2013
   // We should only inflate a lock if the owner is ourselves or suspended. This avoids a race
   // with the owner unlocking the thin-lock.
   CHECK(owner == nullptr || owner == self || owner->IsSuspended());
@@ -137,6 +139,8 @@ Monitor::Monitor(Thread* self,
 #ifdef __LP64__
   next_free_ = nullptr;
 #endif
+
+  lock_start_ms_ = 0;  // Motorola, IKJBXLINE-4551, w17724, 04/11/2013
   // We should only inflate a lock if the owner is ourselves or suspended. This avoids a race
   // with the owner unlocking the thin-lock.
   CHECK(owner == nullptr || owner == self || owner->IsSuspended());
@@ -418,6 +422,14 @@ std::string Monitor::PrettyContentionInfo(const std::string& owner_name,
 
 bool Monitor::TryLock(Thread* self, bool spin) {
   Thread *owner = owner_.load(std::memory_order_relaxed);
+  // BEGIN Motorola, IKJBXLINE-4551, w17724, 04/11/2013
+  if (owner == nullptr) {  // Unowned.
+      const bool log_contention = (lock_profiling_threshold_ != 0);
+      if (log_contention) {
+        lock_start_ms_ = MilliTime();
+      }
+  }
+  // END IKJBXLINE04551
   if (owner == self) {
     lock_count_++;
     CHECK_NE(lock_count_, 0u);  // Abort on overflow.
@@ -520,7 +532,10 @@ void Monitor::Lock(Thread* self) {
 
     if (log_contention && orig_owner != nullptr) {
       // Woken from contention.
-      uint64_t wait_ms = MilliTime() - wait_start_ms;
+      // BEGIN Motorola, IKJBXLINE-4551, w17724, 04/11/2013
+      lock_start_ms_ = MilliTime();
+      uint64_t wait_ms = lock_start_ms_ - wait_start_ms;
+      // END IKJBXLINE04551
       uint32_t sample_percent;
       if (wait_ms >= lock_profiling_threshold_) {
         sample_percent = 100;
@@ -583,12 +598,14 @@ void Monitor::Lock(Thread* self) {
             uint32_t pc;
             ArtMethod* m = self->GetCurrentMethod(&pc);
 
-            LOG(WARNING) << "Long "
-                << PrettyContentionInfo(original_owner_name,
-                                        original_owner_tid,
-                                        owners_method,
-                                        owners_dex_pc,
-                                        num_waiters)
+            // BEGIN Motorola, IKSWO-60877, chenym7, 02/11/2018
+            LOG(WARNING) << StringPrintf("<0x%08x>", GetHashCode())
+                << " Long " << PrettyContentionInfo(original_owner_name,
+                                                    original_owner_tid,
+                                                    owners_method,
+                                                    owners_dex_pc,
+                                                    num_waiters)
+            // END Motorola, IKSWO-60877
                 << " in " << ArtMethod::PrettyMethod(m) << " for "
                 << PrettyDuration(MsToNs(wait_ms)) << "\n"
                 << "Current owner stack:\n" << owner_stack_dump
@@ -597,12 +614,14 @@ void Monitor::Lock(Thread* self) {
             uint32_t pc;
             ArtMethod* m = self->GetCurrentMethod(&pc);
             // TODO: We should maybe check that original_owner is still a live thread.
-            LOG(WARNING) << "Long "
-                << PrettyContentionInfo(original_owner_name,
-                                        original_owner_tid,
-                                        owners_method,
-                                        owners_dex_pc,
-                                        num_waiters)
+            // BEGIN Motorola, IKSWO-60877, chenym7, 02/11/2018
+            LOG(WARNING) << StringPrintf("<0x%08x>", GetHashCode())
+                << " Long " << PrettyContentionInfo(original_owner_name,
+                                                    original_owner_tid,
+                                                    owners_method,
+                                                    owners_dex_pc,
+                                                    num_waiters)
+            // END Motorola, IKSWO-60877
                 << " in " << ArtMethod::PrettyMethod(m) << " for "
                 << PrettyDuration(MsToNs(wait_ms));
           }
@@ -741,11 +760,55 @@ void Monitor::FailedUnlock(ObjPtr<mirror::Object> o,
 bool Monitor::Unlock(Thread* self) {
   DCHECK(self != nullptr);
   Thread* owner = owner_.load(std::memory_order_relaxed);
+
+  // BEGIN Motorola, IKSWO-60877, chenym7, 02/11/2018
+  uint32_t owner_tid = 0u;
+  std::string owner_name;
+  if (owner != nullptr) {
+      owner_tid = owner->GetTid();
+      owner->GetThreadName(owner_name);
+   }
+  // END Motorola, IKSWO-60877
   if (owner == self) {
     // We own the monitor, so nobody else can be in here.
     CheckLockOwnerRequest(self);
     AtraceMonitorUnlock();
     if (lock_count_ == 0) {
+      // BEGIN Motorola,IKJBXLINE-4551, w17724, 04/11/2013 */
+      ArtMethod* owners_method;
+      uint32_t owners_dex_pc;
+      GetLockOwnerInfo(&owners_method, &owners_dex_pc, owner);
+      if (lock_profiling_threshold_ != 0) {
+        if (lock_start_ms_ > 0) {
+          // BEGIN Motorola, IKSWO-60877, chenym7, 02/11/2018
+          uint32_t locked_time = static_cast<uint32_t>((MilliTime() - lock_start_ms_));
+          if (locked_time >= lock_profiling_threshold_) {
+            LOG(WARNING) << StringPrintf("<0x%08x>", GetHashCode())
+                         << " for " << PrettyDuration(MsToNs(locked_time))
+                         << " Unlock long " << PrettyContentionInfo(owner_name,
+                                                                    owner_tid,
+                                                                    owners_method,
+                                                                    owners_dex_pc,
+                                                                    num_waiters_);
+            // Log the contention.
+            LogContentionEvent(
+                self
+                , locked_time
+                , 150 // special sample_percent means log when unlock
+                , owners_method // can be nullptr
+                , owners_dex_pc
+                );
+          }
+          if (locked_time >= lock_profiling_threshold_ * 10) {
+              std::ostringstream self_trace_oss;
+              self->DumpJavaStack(self_trace_oss);
+                      LOG(WARNING) << "Unlock stack : " << self_trace_oss.str();
+          }
+          // END Motorola, IKSWO-60877
+        }
+        lock_start_ms_ = 0;
+      }
+      // END IKJBXLINE-4551
       owner_.store(nullptr, std::memory_order_relaxed);
       SignalWaiterAndReleaseMonitorLock(self);
     } else {
@@ -853,6 +916,42 @@ void Monitor::Wait(Thread* self, int64_t ms, int32_t ns,
   unsigned int prev_lock_count = lock_count_;
   lock_count_ = 0;
 
+  // BEGIN Motorola, IKSWO-60877, chenym7, 02/11/2018
+  std::string owner_name;
+  uint32_t owner_tid = 0;
+  Thread* owner = owner_.load(std::memory_order_relaxed);
+  if (owner != nullptr) {
+      owner_tid = owner->GetTid();
+      owner->GetThreadName(owner_name);
+  }
+  ArtMethod* owners_method;
+  uint32_t owners_dex_pc;
+  GetLockOwnerInfo(&owners_method, &owners_dex_pc, owner);
+
+  if (lock_profiling_threshold_ != 0) {
+    if (lock_start_ms_ > 0) {
+      uint32_t locked_time = static_cast<uint32_t>((MilliTime() - lock_start_ms_));
+      if (locked_time >= lock_profiling_threshold_) {
+          // Log the contention.
+          LOG(WARNING) << StringPrintf("<0x%08x>", GetHashCode())
+              << " for " << PrettyDuration(MsToNs(locked_time))
+              << " wait long " << PrettyContentionInfo(owner_name,
+                                                       owner_tid,
+                                                       owners_method,
+                                                       owners_dex_pc,
+                                                       num_waiters_);
+          //LogContentionEvent(self, locked_time, 300, "", NULL, 0);
+      }
+      if (locked_time >= lock_profiling_threshold_ * 10) {
+        std::ostringstream self_trace_oss;
+        self->DumpJavaStack(self_trace_oss);
+        LOG(WARNING) << "Wait stack : " << self_trace_oss.str();
+      }
+    }
+    lock_start_ms_ = 0;
+  }
+  // END Motorola, IKSWO-60877
+
   AtraceMonitorUnlock();  // For the implict Unlock() just above. This will only end the deepest
                           // nesting, but that is enough for the visualization, and corresponds to
                           // the single Lock() we do afterwards.
@@ -860,6 +959,7 @@ void Monitor::Wait(Thread* self, int64_t ms, int32_t ns,
 
   bool was_interrupted = false;
   bool timed_out = false;
+  lock_start_ms_ = 0;  // Motorola, IKJBXLINE-4551, w17724, 04/11/2013
   // Update monitor state now; it's not safe once we're "suspended".
   owner_.store(nullptr, std::memory_order_relaxed);
   num_waiters_.fetch_add(1, std::memory_order_relaxed);
@@ -941,6 +1041,11 @@ void Monitor::Wait(Thread* self, int64_t ms, int32_t ns,
   lock_count_ = prev_lock_count;
   DCHECK(monitor_lock_.IsExclusiveHeld(self));
   self->GetWaitMutex()->AssertNotHeld(self);
+  // BEGIN Motorola, IKJBXLINE-4551, w17724, 04/11/2013
+  if (lock_profiling_threshold_ != 0) {
+    lock_start_ms_ = MilliTime();
+  }
+  // END IKJBXLINE-4551
 
   num_waiters_.fetch_sub(1, std::memory_order_relaxed);
   RemoveFromWaitSet(self);

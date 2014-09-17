@@ -421,6 +421,8 @@ class Monitor {
   Monitor* next_free_ GUARDED_BY(Locks::allocated_monitor_ids_lock_);
 #endif
 
+  uint64_t lock_start_ms_;  // Motorola, IKJBXLINE-4551, w17724, 04/11/2013
+
   friend class MonitorInfo;
   friend class MonitorList;
   friend class MonitorPool;

@@ -648,6 +648,12 @@ class Runtime {
     return zygote_no_threads_;
   }
 
+  // BEGIN Motorola, a5705c, 03/12/2015, IKVPREL1L-8365
+#ifdef MOTO_ART_COMPILER_MEM_OPT
+  void ShutdownHeap();
+#endif /* MOTO_ART_COMPILER_MEM_OPT */
+  // END IKVPREL1L-8365
+
  private:
   static void InitPlatformSignalHandlers();
 

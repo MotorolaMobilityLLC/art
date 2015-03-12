@@ -144,6 +144,11 @@ func deviceFlags(ctx android.BaseContext) []string {
 		cflags = append(cflags, "-DART_TARGET_LINUX")
 	} else {
 		cflags = append(cflags, "-DART_TARGET_ANDROID")
+		// BEGIN Motorola, a5705c, 03/12/2015, IKVPREL1L-8365
+		if envTrue(ctx, "WITH_MOTO_ART_COMPILER_MEM_OPT") {
+			cflags = append(cflags, "-DMOTO_ART_COMPILER_MEM_OPT=1")
+		}
+		// END IKVPREL1L-8365
 	}
 	minDelta := envDefault(ctx, "LIBART_IMG_TARGET_MIN_BASE_ADDRESS_DELTA", "-0x1000000")
 	maxDelta := envDefault(ctx, "LIBART_IMG_TARGET_MAX_BASE_ADDRESS_DELTA", "0x1000000")

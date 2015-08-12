@@ -202,6 +202,8 @@ void* SignalCatcher::Run(void* arg) {
   SignalSet signals;
   signals.Add(SIGQUIT);
   signals.Add(SIGUSR1);
+  // MOT, a18273, IKSWM-1
+  signals.Add(SIGTERM);
 
   while (true) {
     int signal_number = signal_catcher->WaitForSignal(self, signals);
@@ -215,6 +217,8 @@ void* SignalCatcher::Run(void* arg) {
       signal_catcher->HandleSigQuit();
       break;
     case SIGUSR1:
+    // MOT, a18273, IKSWM-1
+    case SIGTERM:
       signal_catcher->HandleSigUsr1();
       break;
     default:

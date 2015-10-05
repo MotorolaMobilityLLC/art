@@ -347,8 +347,13 @@ Runtime::~Runtime() {
     // This can't be called from the Heap destructor below because it
     // could call RosAlloc::InspectAll() which needs the thread_list
     // to be still alive.
-    heap_->DumpGcPerformanceInfo(LOG_STREAM(INFO));
-
+    // BEGIN Motorola, ubanerji, 10/5/2015, IKSWM-3788
+#ifdef MOTO_ART_COMPILER_MEM_OPT
+    if (heap_ != nullptr)
+#endif /* MOTO_ART_COMPILER_MEM_OPT */
+    {
+      heap_->DumpGcPerformanceInfo(LOG_STREAM(INFO));
+    }
     uint64_t process_cpu_time = process_cpu_end_time - heap_->GetProcessCpuStartTime();
     uint64_t gc_cpu_time = heap_->GetTotalGcCpuTime();
     float ratio = static_cast<float>(gc_cpu_time) / process_cpu_time;

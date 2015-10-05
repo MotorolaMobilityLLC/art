@@ -1682,10 +1682,19 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
 
     if (writer_->GetCompilerOptions().IsAotCompilationEnabled()) {
       // Only need to set the dex cache if we have compilation. Other modes might have unloaded it.
+      // BEGIN Motorola, ubanerji, 10/05/2015, IKSWM-3788
+      // When MEM_OPT is disabled, avoid checking if dex_cache_
+      // is null, and if so calling FindDexCache to fill it. This
+      // is redundant, as dex_cache_ is being populated below when
+      // required, and is also dangerous, if the heap as been shut
+      // down, as FindDexCache refers to the heap.
+#ifndef MOTO_ART_COMPILER_MEM_OPT
       if (dex_cache_ == nullptr || dex_cache_->GetDexFile() != dex_file) {
         dex_cache_ = class_linker_->FindDexCache(Thread::Current(), *dex_file);
         DCHECK(dex_cache_ != nullptr);
       }
+#endif /* MOTO_ART_COMPILER_MEM_OPT */
+    // END IKSWM-3788
     }
   }
 
@@ -1902,8 +1911,14 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
       REQUIRES_SHARED(Locks::mutator_lock_) {
     MethodReference ref = patch.TargetMethod();
     ObjPtr<mirror::DexCache> dex_cache =
+    // BEGIN Motorola, ubanerji, 10/05/2015, IKSWM-3788
+#ifndef MOTO_ART_COMPILER_MEM_OPT
         (dex_file_ == ref.dex_file) ? dex_cache_ : class_linker_->FindDexCache(
             Thread::Current(), *ref.dex_file);
+#else
+        class_linker_->FindDexCache(Thread::Current(), *ref.dex_file);
+#endif /* MOTO_ART_COMPILER_MEM_OPT */
+    // END IKSWM-3788
     ArtMethod* method =
         class_linker_->LookupResolvedMethod(ref.index, dex_cache, class_loader_);
     CHECK(method != nullptr);
@@ -1940,7 +1955,14 @@ class OatWriter::WriteCodeMethodVisitor : public OrderedMethodVisitor {
   ObjPtr<mirror::Class> GetTargetType(const LinkerPatch& patch)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     DCHECK(writer_->HasImage());
+    // BEGIN Motorola, ubanerji, 10/05/2015, IKSWM-3788
+#ifndef MOTO_ART_COMPILER_MEM_OPT
     ObjPtr<mirror::DexCache> dex_cache = GetDexCache(patch.TargetTypeDexFile());
+#else
+    ObjPtr<mirror::DexCache> dex_cache = class_linker_->FindDexCache(Thread::Current(),
+                                                            *patch.TargetTypeDexFile());
+#endif /* MOTO_ART_COMPILER_MEM_OPT */
+    // END IKSWM-3788
     ObjPtr<mirror::Class> type =
         class_linker_->LookupResolvedType(patch.TargetTypeIndex(), dex_cache, class_loader_);
     CHECK(type != nullptr);

@@ -902,6 +902,11 @@ class Dex2Oat final {
     // the runtime.
     LogCompletionTime();
 
+    // BEGIN Motorola, ubanerji, 12/09/2015, IKSWM-13812
+    // Explicitly clear the watchdog.
+    watchdog_.reset();
+    // END IKSWM-13812
+
     if (!kIsDebugBuild && !(kRunningOnMemoryTool && kMemoryToolDetectsLeaks)) {
       // We want to just exit on non-debug builds, not bringing the runtime down
       // in an orderly fashion. So release the following fields.

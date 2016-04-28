@@ -422,13 +422,26 @@ class NetStateEndianOutput FINAL : public EndianOutputBuffered {
 
 #define __ output_->
 
+#define CHECKPOINT(test_and_exit, to_return) \
+  do { \
+    if (test_and_exit == true) { \
+      LOG(WARNING) << "Exiting due to checkpoint at " << __FILE__ << ":" << __LINE__; \
+      return to_return; \
+    } \
+  } while (false)
+
 class Hprof : public SingleRootVisitor {
  public:
   Hprof(const char* output_filename, int fd, bool direct_to_ddms)
       : filename_(output_filename),
         fd_(fd),
-        direct_to_ddms_(direct_to_ddms) {
+        direct_to_ddms_(direct_to_ddms),
+        stop_dump_(false) {
     LOG(INFO) << "hprof: heap dump \"" << filename_ << "\" starting...";
+  }
+
+  void StopDump() {
+    stop_dump_ = true;
   }
 
   void Dump()
@@ -470,7 +483,10 @@ class Hprof : public SingleRootVisitor {
                 << ") in " << PrettyDuration(duration)
                 << " objects " << total_objects_
                 << " objects with stack traces " << total_objects_with_stack_trace_;
-    }
+    } else if (stop_dump_) {
+      // We were asked to stop because we timed out.
+      LOG(INFO) << "hprof: heap dump timed out";
+    } 
   }
 
  private:
@@ -501,10 +517,14 @@ class Hprof : public SingleRootVisitor {
 
     if (header_first) {
       ProcessHeader(true);
+      CHECKPOINT(stop_dump_, void());
       ProcessBody();
+      CHECKPOINT(stop_dump_, void());
     } else {
       ProcessBody();
+      CHECKPOINT(stop_dump_, void());
       ProcessHeader(false);
+      CHECKPOINT(stop_dump_, void());
     }
   }
 
@@ -515,8 +535,11 @@ class Hprof : public SingleRootVisitor {
 
     simple_roots_.clear();
     runtime->VisitRoots(this);
+    CHECKPOINT(stop_dump_, void());
     runtime->VisitImageRoots(this);
+    CHECKPOINT(stop_dump_, void());
     runtime->GetHeap()->VisitObjectsPaused(VisitObjectCallback, this);
+    CHECKPOINT(stop_dump_, void());
 
     output_->StartNewRecord(HPROF_TAG_HEAP_DUMP_END, kHprofTime);
     output_->EndRecord();
@@ -525,6 +548,7 @@ class Hprof : public SingleRootVisitor {
   void ProcessHeader(bool string_first) REQUIRES(Locks::mutator_lock_) {
     // Write the header.
     WriteFixedHeader();
+    CHECKPOINT(stop_dump_, void());
     // Write the string and class tables, and any stack traces, to the header.
     // (jhat requires that these appear before any of the data in the body that refers to them.)
     // jhat also requires the string table appear before class table and stack traces.
@@ -532,13 +556,17 @@ class Hprof : public SingleRootVisitor {
     // WriteStringTable() last in the first pass, to compute the correct length of the output.
     if (string_first) {
       WriteStringTable();
+      CHECKPOINT(stop_dump_, void());
     }
     WriteClassTable();
+    CHECKPOINT(stop_dump_, void());
     WriteStackTraces();
     if (!string_first) {
       WriteStringTable();
+      CHECKPOINT(stop_dump_, void());
     }
     output_->EndRecord();
+    CHECKPOINT(stop_dump_, void());
   }
 
   void WriteClassTable() SHARED_REQUIRES(Locks::mutator_lock_) {
@@ -765,6 +793,7 @@ class Hprof : public SingleRootVisitor {
       }
     }
 
+    CHECKPOINT(stop_dump_, false);
     std::unique_ptr<File> file(new File(out_fd, filename_, true));
     bool okay;
     {
@@ -773,7 +802,7 @@ class Hprof : public SingleRootVisitor {
       ProcessHeap(true);
       okay = !file_output.Errors();
 
-      if (okay) {
+      if (okay && !stop_dump_) {
         // Check for expected size. Output is expected to be less-or-equal than first phase, see
         // b/23521263.
         DCHECK_LE(file_output.SumLength(), overall_size);
@@ -781,11 +810,14 @@ class Hprof : public SingleRootVisitor {
       output_ = nullptr;
     }
 
-    if (okay) {
+    if (okay && !stop_dump_) {
       okay = file->FlushCloseOrErase() == 0;
     } else {
       file->Erase();
     }
+
+    CHECKPOINT(stop_dump_, false);
+
     if (!okay) {
       std::string msg(StringPrintf("Couldn't dump heap; writing \"%s\" failed: %s",
                                    filename_.c_str(), strerror(errno)));
@@ -906,7 +938,108 @@ class Hprof : public SingleRootVisitor {
   std::unordered_set<uint64_t> simple_roots_;
 
   friend class GcRootVisitor;
+  bool stop_dump_; // Should we stop the dump?
   DISALLOW_COPY_AND_ASSIGN(Hprof);
+};
+
+// Watchdog thread to time out heap dumps.
+class WatchDog {
+// WatchDog defines its own CHECK_PTHREAD_CALL to avoid using LOG which uses locks
+#undef CHECK_PTHREAD_CALL
+#define CHECK_WATCH_DOG_PTHREAD_CALL(call, args, what) \
+  do { \
+    int rc = call args; \
+    if (rc != 0) { \
+      errno = rc; \
+      std::string message(# call); \
+      message += " failed for "; \
+      message += reason; \
+      ErrorMessage(message); \
+    } \
+  } while (false)
+
+ public:
+  explicit WatchDog(Hprof* owner) {
+    owner_ = owner;
+    const char* reason = "Heap dump watchdog started";
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_init, (&mutex_, nullptr), reason);
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_cond_init, (&cond_, nullptr), reason);
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_attr_init, (&attr_), reason);
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_create, (&pthread_, &attr_, &CallBack, this), reason);
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_attr_destroy, (&attr_), reason);
+  }
+  ~WatchDog() {
+    const char* reason = "Heap dump watchdog ends";
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_lock, (&mutex_), reason);
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_cond_signal, (&cond_), reason);
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_unlock, (&mutex_), reason);
+
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_join, (pthread_, nullptr), reason);
+
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_cond_destroy, (&cond_), reason);
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_destroy, (&mutex_), reason);
+  }
+
+ private:
+  static void* CallBack(void* arg) {
+    WatchDog* self = reinterpret_cast<WatchDog*>(arg);
+    ::art::SetThreadName("HeapDump Watchdog");
+    self->Wait();
+    return nullptr;
+  }
+
+  NO_RETURN static void ErrorMessage(const std::string& message) {
+    LogMessage::LogLine(__FILE__, __LINE__, LogSeverity::ERROR, message.c_str());
+    exit(1);
+  }
+
+  void Wait() {
+    timespec timeout_ts;
+    timespec second_timeout_ts;
+    InitTimeSpec(true, CLOCK_REALTIME, kWatchDogTimeoutSeconds * 1000, 0, &timeout_ts);
+    InitTimeSpec(true, CLOCK_REALTIME, kWatchDogTimeoutSeconds * 1000 * 2, 0, &second_timeout_ts);
+
+    const char* reason = "Heap dump watchdog thread waiting.";
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_lock, (&mutex_), reason);
+
+    int wait_rc = TEMP_FAILURE_RETRY(pthread_cond_timedwait(&cond_, &mutex_, &timeout_ts));
+    if (wait_rc == ETIMEDOUT) {
+      // Let the hprof dump know if it is taking too long.
+      owner_->StopDump();
+    } else if (wait_rc != 0) {
+      std::string message(StringPrintf("pthread_cond_timedwait failed: %s",
+                                       strerror(errno)));
+      ErrorMessage(message.c_str());
+    } else {
+      // Normal exit.
+      CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_unlock, (&mutex_), reason);
+      return;
+    }
+
+    // Start another timer.
+    wait_rc = TEMP_FAILURE_RETRY(pthread_cond_timedwait(&cond_, &mutex_, &second_timeout_ts));
+    if (wait_rc == ETIMEDOUT) {
+      // Too long, heap dump is still not done. Kill the process.
+      ErrorMessage(StringPrintf("Heap dump did not finish after %" PRId64 " seconds",
+                         kWatchDogTimeoutSeconds * 2));
+    } else if (wait_rc != 0) {
+      std::string message(StringPrintf("pthread_cond_timedwait failed: %s",
+                                       strerror(errno)));
+      ErrorMessage(message.c_str());
+    }
+
+    CHECK_WATCH_DOG_PTHREAD_CALL(pthread_mutex_unlock, (&mutex_), reason);
+  }
+
+  // Heap Dump should be done in 5 seconds.
+  static constexpr int64_t kWatchDogTimeoutSeconds = 5;
+
+  pthread_mutex_t mutex_;
+  pthread_cond_t cond_;
+  pthread_attr_t attr_;
+  pthread_t pthread_;
+
+  Hprof* owner_;
 };
 
 static HprofBasicType SignatureToBasicTypeAndSize(const char* sig, size_t* size_out) {
@@ -1515,10 +1648,23 @@ void DumpHeap(const char* filename, int fd, bool direct_to_ddms) {
     // comment in Heap::VisitObjects().
     heap->IncrementDisableMovingGC(self);
   }
+
+  std::unique_ptr<WatchDog> watchdog_;  // To track HProf dump timing.
   {
     ScopedSuspendAll ssa(__FUNCTION__, true /* long suspend */);
     Hprof hprof(filename, fd, direct_to_ddms);
+    // Start the watchdog. DDMS dumps are generally
+    // slower and don't have time constraints.
+    if (!direct_to_ddms) {
+      watchdog_.reset(new WatchDog(&hprof));
+    }
+
     hprof.Dump();
+
+    // End the watchdog thread.
+    if (!direct_to_ddms) {
+      watchdog_.reset();
+    }
   }
 
   if (heap->IsGcConcurrentAndMoving()) {

@@ -89,6 +89,14 @@
 #include "verify_object-inl.h"
 #include "well_known_classes.h"
 
+// BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
+#ifdef HPROFDUMP_ON_OOM
+#include "hprof/hprof.h"
+#include "base/utils.h"
+#include "cutils/properties.h"
+#endif
+// END IKJBXLINE-638
+
 namespace art {
 
 namespace gc {

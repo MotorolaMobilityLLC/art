@@ -1895,7 +1895,7 @@ void SleepForever() {
 
 // BEGIN Motorola, a18772, 03/17/2013, IKJBXLINE-638
 bool IsSystemServer() {
-#ifdef HAVE_ANDROID_OS
+#ifdef __ANDROID__
   std::string cmd_line;
   std::string system_server("system_server");
 

@@ -113,6 +113,12 @@ ScopedFlock::ScopedFlock() { }
 ScopedFlock::~ScopedFlock() {
   if (file_.get() != nullptr) {
     int flock_result = TEMP_FAILURE_RETRY(flock(file_->Fd(), LOCK_UN));
+    //BEGIN lenovo, zhangtai, 12/05/2016, IKSWN-16826, open_debug_log
+    //print errno when unlock failed
+    if (flock_result == -1) {
+        LOG(ERROR) << "unlock file failed : " << strerror(errno);
+    }
+    //END IKSWN-16826
     CHECK_EQ(0, flock_result);
     int close_result = -1;
     if (file_->ReadOnlyMode()) {

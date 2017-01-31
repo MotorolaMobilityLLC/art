@@ -237,9 +237,6 @@ bool JdwpAdbState::Accept() {
       if (shutting_down_) {
         return false;
       }
-      if (!MakePipe()) {
-        return false;
-      }
     }
 
     int32_t pid = getpid();
@@ -316,6 +313,9 @@ bool JdwpAdbState::Accept() {
     VLOG(jdwp) << "received file descriptor " << clientSock << " from ADB";
     SetAwaitingHandshake(true);
     input_count_ = 0;
+    if (!MakePipe()) {
+      return false;
+    }
     return true;
   }
 }

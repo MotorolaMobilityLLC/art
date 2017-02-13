@@ -25,7 +25,7 @@
 
 // BEGIN Motorola, ubanerji, 03/16/2016, IKSWM-6668
 // Needed to read system properties.
-#ifdef __ANDROID__
+#ifdef HAVE_ANDROID_OS
 #include "cutils/properties.h"
 #endif
 // END IKSWM-6668
@@ -1986,7 +1986,7 @@ void Runtime::AddCurrentRuntimeFeaturesAsDex2OatArguments(std::vector<std::strin
   argv->push_back(instruction_set);
 
   // BEGIN Motorola, ubanerji, 03/16/2016, IKSWM-6668
-#ifdef __ANDROID__
+#ifdef HAVE_ANDROID_OS
   std::string dex2oat_isa_features_key;
   dex2oat_isa_features_key += "dalvik.vm.isa." + instruction_set + ".features";
   char dex2oat_isa_features[PROPERTY_VALUE_MAX];

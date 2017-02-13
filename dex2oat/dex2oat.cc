@@ -50,14 +50,14 @@
 #include "base/dumpable.h"
 
 // BEGIN Motorola, a5705c, 03/09/2015, IKDLUPGRD-2361
-#ifdef __ANDROID__
+#ifdef HAVE_ANDROID_OS
 #include <sys/file.h>
 #include <sys/stat.h>
 
 #include "base/logging.h"
 #include "base/stringprintf.h"
 #include "base/unix_file/fd_file.h"
-#endif /* __ANDROID__ */
+#endif /* HAVE_ANDROID_OS */
 // END IKDLUPGRD-2361
 
 #include "base/macros.h"
@@ -102,7 +102,7 @@
 #include "utils.h"
 #include "well_known_classes.h"
 #include "zip_archive.h"
-#ifdef __ANDROID__
+#ifdef HAVE_ANDROID_OS
 #include "cutils/properties.h"
 #endif
 
@@ -539,7 +539,7 @@ class WatchDog {
 };
 
 // BEGIN Motorola, a5705c, 03/09/2015, IKDLUPGRD-2361
-#ifdef __ANDROID__
+#ifdef HAVE_ANDROID_OS
 // A copy of ScopedFlock with minor changes (i.e., open the file with readonly)
 class MyScopedFlock {
  public:
@@ -591,7 +591,7 @@ class MyScopedFlock {
   std::unique_ptr<File> file_;
   DISALLOW_COPY_AND_ASSIGN(MyScopedFlock);
 };
-#endif /* __ANDROID__ */
+#endif /* HAVE_ANDROID_OS */
 // END IKDLUPGRD-2361
 
 class Dex2Oat FINAL {
@@ -686,7 +686,7 @@ class Dex2Oat FINAL {
   }
 
   // BEGIN Motorola, a5705c, 03/30/2015, IKSWL-5293
-#ifdef __ANDROID__
+#ifdef HAVE_ANDROID_OS
   static void lockOrWaitIfNecessary(MyScopedFlock& dex2oat_flock) {
     const uint64_t kWaitDex2oatWarningDuration = 5000;  // 5 seconds;
     const char* kDex2oatLockFileName = "/system/framework/boot.oat";
@@ -726,7 +726,7 @@ class Dex2Oat FINAL {
       }
     }
   }
-#endif /* __ANDROID__ */
+#endif /* HAVE_ANDROID_OS */
   // END IKSWL-5293
 
   struct ParserOptions {
@@ -1046,12 +1046,12 @@ class Dex2Oat FINAL {
     }
 
     // BEGIN Motorola, a5705c, 03/09/2015, IKDLUPGRD-2361
-#ifdef __ANDROID__
+#ifdef HAVE_ANDROID_OS
     MyScopedFlock dex2oat_flock;
     // BEGIN Motorola, a5705c, 03/30/2015, IKSWL-5293
     lockOrWaitIfNecessary(dex2oat_flock);
     // END IKSWL-5293
-#endif /* __ANDROID__ */
+#endif /* HAVE_ANDROID_OS */
     // END IKDLUPGRD-2361
 
     // Done with usage checks, enable watchdog if requested
@@ -1368,7 +1368,7 @@ class Dex2Oat FINAL {
     InsertCompileOptions(argc, argv);
 
     // Override the number of compiler threads with optimal value (thru system property)
-    #ifdef __ANDROID__
+    #ifdef HAVE_ANDROID_OS
     const char* propertyName = "ro.sys.fw.dex2oat_thread_count";
     char thread_count_str[PROPERTY_VALUE_MAX];
 

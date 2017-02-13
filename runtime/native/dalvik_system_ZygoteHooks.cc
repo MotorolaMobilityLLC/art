@@ -34,7 +34,7 @@
 #if defined(__linux__)
 #include <sys/prctl.h>
 #endif
-#ifdef __ANDROID__
+#ifdef HAVE_ANDROID_OS
 #include <cutils/properties.h>
 #endif
 #include <sys/resource.h>
@@ -61,7 +61,7 @@ static void EnableDebugger() {
 #endif
   // We don't want core dumps, though, so set the core dump size to 0.
   rlimit rl;
-#ifdef __ANDROID__
+#ifdef HAVE_ANDROID_OS
   char prop_value[PROPERTY_VALUE_MAX];
   property_get("persist.debug.trace", prop_value, "0");
   if (prop_value[0] == '1') {

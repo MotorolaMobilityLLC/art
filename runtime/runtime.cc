@@ -2044,6 +2044,12 @@ bool Runtime::SaveProfileInfo() const {
   return (jit_ != nullptr) && jit_->SaveProfilingInfo();
 }
 
+#ifdef MTK_ARTOPT_VERSION
+__attribute__((weak))
+void Runtime::MTK_DumpVersion(void) {
+}
+#endif
+
 void Runtime::EnvSnapshot::TakeSnapshot() {
   char** env = GetEnviron();
   for (size_t i = 0; env[i] != nullptr; ++i) {

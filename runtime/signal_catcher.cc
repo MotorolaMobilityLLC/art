@@ -151,6 +151,10 @@ void SignalCatcher::HandleSigQuit() {
   }
   os << "----- end " << getpid() << " -----\n";
   Output(os.str());
+
+#ifdef MTK_ARTOPT_VERSION
+  runtime->MTK_DumpVersion();
+#endif
 }
 
 void SignalCatcher::HandleSigUsr1() {

@@ -2013,19 +2013,9 @@ void Heap::GetReferringObjects(mirror::Object* o, int32_t max_count,
 }
 
 void Heap::CollectGarbage(bool clear_soft_references) {
-#ifdef MTK_ART_CLAMP_GC_DEADLOCK_FIX
-  if (is_gc_and_clamp_growth_limit_running_) {
-    LOG(INFO) << "ClampGrowthLimit is runnning, skip GC.";
-    return;
-  }
-  is_gc_and_clamp_growth_limit_running_ = true;
-#endif
   // Even if we waited for a GC we still need to do another GC since weaks allocated during the
   // last GC will not have necessarily been cleared.
   CollectGarbageInternal(gc_plan_.back(), kGcCauseExplicit, clear_soft_references);
-#ifdef MTK_ART_CLAMP_GC_DEADLOCK_FIX
-  is_gc_and_clamp_growth_limit_running_ = false;
-#endif
 }
 
 bool Heap::SupportHomogeneousSpaceCompactAndCollectorTransitions() const {
@@ -3658,9 +3648,6 @@ void Heap::ClampGrowthLimit() {
   if (main_space_backup_.get() != nullptr) {
     main_space_backup_->ClampGrowthLimit();
   }
-#ifdef MTK_ART_CLAMP_GC_DEADLOCK_FIX
-  is_gc_and_clamp_growth_limit_running_ = false;
-#endif
 }
 
 void Heap::ClearGrowthLimit() {

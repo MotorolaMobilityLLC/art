@@ -357,6 +357,7 @@ ifeq ($(MTK_ART_OPT_ENABLE),true)
   ART_HOST_ASFLAGS := -DMTK_ART_COMMON
   ART_TARGET_ASFLAGS := -DMTK_ART_COMMON
   MTK_CFLAGS += -DMTK_ART_COMMON
+  MTK_CFLAGS += -DMTK_ARTOPT_VERSION
 
   # Turn off this in release build
   # MTK_CFLAGS += -DMTK_ART_LOG
@@ -373,8 +374,16 @@ ifeq ($(MTK_ART_RUNTIME_FREED_FIX),true)
   MTK_CFLAGS += -DMTK_ART_RUNTIME_FREED_FIX
 endif
 
+ifeq ($(MTK_ART_RUNTIME_FUTEX_USAGE_FIX),)
+  MTK_ART_RUNTIME_FUTEX_USAGE_FIX := true
+endif
+
+ifeq ($(MTK_ART_RUNTIME_FUTEX_USAGE_FIX),true)
+  MTK_CFLAGS += -DMTK_ART_RUNTIME_FUTEX_USAGE_FIX
+endif
+
 #
-### MTK fix ART oat_file timing issue
+## MTK fix ART oat_file timing issue
 #
 ifeq ($(MTK_ART_FIX_OAT_FILE_TIMING_ISSUE),)
   MTK_ART_FIX_OAT_FILE_TIMING_ISSUE := true
@@ -401,26 +410,6 @@ endif
 
 ifeq ($(MTK_ART_RUNTIME_CLAMP_GROWTH_LIMIT_GC_LOCK),true)
   MTK_CFLAGS += -DMTK_ART_RUNTIME_CLAMP_GROWTH_LIMIT_GC_LOCK
-endif
-
-
-#
-## MTK fix ART dump backtrace deadlock issues
-#
-ifeq ($(MTK_ART_GOOGLE_PATCH_237293_238341),)
-  MTK_ART_GOOGLE_PATCH_237293_238341 := true
-endif
-
-ifeq ($(MTK_ART_GOOGLE_PATCH_237293_238341),true)
-  MTK_CFLAGS += -DMTK_ART_GOOGLE_PATCH_237293_238341
-endif
-
-ifeq ($(MTK_ART_CLAMP_GC_DEADLOCK_FIX),)
-  MTK_ART_CLAMP_GC_DEADLOCK_FIX := true
-endif
-
-ifeq ($(MTK_ART_CLAMP_GC_DEADLOCK_FIX),true)
-  MTK_CFLAGS += -DMTK_ART_CLAMP_GC_DEADLOCK_FIX
 endif
 
 art_host_non_debug_cflags := $(art_non_debug_cflags)

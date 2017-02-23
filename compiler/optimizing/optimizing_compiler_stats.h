@@ -83,6 +83,7 @@ enum MethodCompilationStat {
   kMtkOptimizingOptStat14,
   kMtkOptimizingOptStat15,
   kMtkOptimizingOptStat16,
+  kMtkOptimizingOptStat17,
 #endif
   kLastStat
 };

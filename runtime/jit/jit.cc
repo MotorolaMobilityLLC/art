@@ -597,20 +597,6 @@ class JitCompileTask FINAL : public Task {
   DISALLOW_IMPLICIT_CONSTRUCTORS(JitCompileTask);
 };
 
-#ifdef MTK_ART_COMMON
-__attribute__((weak))
-int32_t MTKSetCounter(int32_t starting_count, int32_t count) {
-  return starting_count + count;
-}
-
-__attribute__((weak))
-void MTKAddSamples1(MTKJitCodeCache* mtk_code_cache,
-                    ArtMethod* method) {
-  UNUSED(mtk_code_cache);
-  UNUSED(method);
-}
-#endif
-
 void Jit::AddSamples(Thread* self, ArtMethod* method, uint16_t count, bool with_backedges) {
   if (thread_pool_ == nullptr) {
     // Should only see this when shutting down.
@@ -633,11 +619,7 @@ void Jit::AddSamples(Thread* self, ArtMethod* method, uint16_t count, bool with_
   if (Jit::ShouldUsePriorityThreadWeight()) {
     count *= priority_thread_weight_;
   }
-  #ifdef MTK_ART_COMMON
-  int32_t new_count = MTKSetCounter(starting_count, count);
-  #else
   int32_t new_count = starting_count + count;   // int32 here to avoid wrap-around;
-  #endif
   if (starting_count < warm_method_threshold_) {
     if ((new_count >= warm_method_threshold_) &&
         (method->GetProfilingInfo(sizeof(void*)) == nullptr)) {
@@ -702,9 +684,6 @@ void Jit::MethodEntered(Thread* thread, ArtMethod* method) {
     Runtime::Current()->GetInstrumentation()->UpdateMethodsCode(
         method, profiling_info->GetSavedEntryPoint());
   } else {
-    #ifdef MTK_ART_COMMON
-    MTKAddSamples1(code_cache_->GetMTKJitCodeCache(), method);
-    #endif
     AddSamples(thread, method, 1, /* with_backedges */false);
   }
 }

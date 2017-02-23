@@ -46,10 +46,6 @@ class JitInstrumentationCache;
 static constexpr int kJitCodeAlignment = 16;
 using CodeCacheBitmap = gc::accounting::MemoryRangeBitmap<kJitCodeAlignment>;
 
-#ifdef MTK_ART_COMMON
-class MTKJitCodeCache;
-#endif
-
 class JitCodeCache {
  public:
   static constexpr size_t kMaxCapacity = 64 * MB;
@@ -192,12 +188,6 @@ class JitCodeCache {
 
   bool IsOsrCompiled(ArtMethod* method) REQUIRES(!lock_);
 
-  #ifdef MTK_ART_COMMON
-  MTKJitCodeCache* GetMTKJitCodeCache() {
-    return mtk_code_cache_;
-  }
-  #endif
-
  private:
   // Take ownership of maps.
   JitCodeCache(MemMap* code_map,
@@ -333,10 +323,6 @@ class JitCodeCache {
 
   // Number of code cache collections done throughout the lifetime of the JIT.
   size_t number_of_collections_ GUARDED_BY(lock_);
-
-  #ifdef MTK_ART_COMMON
-  MTKJitCodeCache* mtk_code_cache_;
-  #endif
 
   // Histograms for keeping track of stack map size statistics.
   Histogram<uint64_t> histogram_stack_map_memory_use_ GUARDED_BY(lock_);

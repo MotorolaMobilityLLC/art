@@ -53,13 +53,6 @@ static constexpr size_t kStackMapSizeLogThreshold = 50 * KB;
     }                                                       \
   } while (false)                                           \
 
-#ifdef MTK_ART_COMMON
-__attribute__((weak))
-MTKJitCodeCache* GenMTKJitCodeCache() {
-  return nullptr;
-}
-#endif
-
 JitCodeCache* JitCodeCache::Create(size_t initial_capacity,
                                    size_t max_capacity,
                                    bool generate_debug_info,
@@ -146,9 +139,6 @@ JitCodeCache::JitCodeCache(MemMap* code_map,
       number_of_osr_compilations_(0),
       number_of_deoptimizations_(0),
       number_of_collections_(0),
-      #ifdef MTK_ART_COMMON
-      mtk_code_cache_(GenMTKJitCodeCache()),
-      #endif
       histogram_stack_map_memory_use_("Memory used for stack maps", 16),
       histogram_code_memory_use_("Memory used for compiled code", 16),
       histogram_profiling_info_memory_use_("Memory used for profiling info", 16) {

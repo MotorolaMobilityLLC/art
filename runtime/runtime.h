@@ -658,6 +658,10 @@ class Runtime {
     return env_snapshot_.GetSnapshot();
   }
 
+#ifdef MTK_ARTOPT_VERSION
+  void MTK_DumpVersion(void);
+#endif
+
  private:
   static void InitPlatformSignalHandlers();
 

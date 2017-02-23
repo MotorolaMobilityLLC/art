@@ -267,22 +267,6 @@ void ProfileSaver::FetchAndCacheResolvedClassesAndMethods() {
       total_number_of_profile_entries_cached);
 }
 
-#ifdef MTK_ART_COMMON
-namespace jit {
-class MTKJitCodeCache;
-
-__attribute__((weak))
-void MTKGetCompiledArtMethods(MTKJitCodeCache* mtk_code_cache,
-                              const std::set<std::string>& dex_base_locations,
-                              std::vector<MethodReference>& methods)
-                              SHARED_REQUIRES(Locks::mutator_lock_) {
-  UNUSED(mtk_code_cache);
-  UNUSED(dex_base_locations);
-  UNUSED(methods);
-}
-
-}
-#endif
 bool ProfileSaver::ProcessProfilingInfo(uint16_t* new_methods) {
   ScopedTrace trace(__PRETTY_FUNCTION__);
   SafeMap<std::string, std::set<std::string>> tracked_locations;
@@ -305,10 +289,6 @@ bool ProfileSaver::ProcessProfilingInfo(uint16_t* new_methods) {
     std::vector<MethodReference> methods;
     {
       ScopedObjectAccess soa(Thread::Current());
-      #ifdef MTK_ART_COMMON
-      jit::MTKGetCompiledArtMethods(jit_code_cache_->GetMTKJitCodeCache(),
-                                    locations, methods);
-      #endif
       jit_code_cache_->GetProfiledMethods(locations, methods);
       total_number_of_code_cache_queries_++;
     }

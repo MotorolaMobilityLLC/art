@@ -144,6 +144,10 @@ static jlong ZygoteHooks_nativePreFork(JNIEnv* env, jclass) {
   Runtime* runtime = Runtime::Current();
   CHECK(runtime->IsZygote()) << "runtime instance not started with -Xzygote";
 
+  #ifdef MTK_ARTOPT_VERSION
+  //runtime->MTK_DumpVersion();
+  #endif
+
   runtime->PreZygoteFork();
 
   if (Trace::GetMethodTracingMode() != TracingMode::kTracingInactive) {

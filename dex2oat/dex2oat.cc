@@ -1215,6 +1215,8 @@ class Dex2Oat FINAL {
     original_argc = argc;
     original_argv = argv;
 
+    std::string dex_filename; // Motorola, yangq2, 03/29/2017, IKANGEROW-1770
+
     InitLogging(argv);
 
     // Skip over argv[0].
@@ -1246,6 +1248,7 @@ class Dex2Oat FINAL {
       }
       if (option.starts_with("--dex-file=")) {
         dex_filenames_.push_back(option.substr(strlen("--dex-file=")).data());
+        dex_filename = option.substr(strlen("--dex-file=")).data(); // Motorola, yangq2, 03/29/2017, IKANGEROW-1770
       } else if (option.starts_with("--dex-location=")) {
         dex_locations_.push_back(option.substr(strlen("--dex-location=")).data());
       } else if (option.starts_with("--zip-fd=")) {
@@ -1361,6 +1364,14 @@ class Dex2Oat FINAL {
         Usage("Unknown argument %s", option.data());
       }
     }
+
+    // BEGIN Motorola, yangq2, 03/29/2017, IKANGEROW-1770
+    if (dex_filename.find("com.tencent.mm") != std::string::npos &&
+        dex_filename.find("patch") != std::string::npos) {
+      compiler_options_->SetCompilerFilter(CompilerFilter::kSpaceProfile);
+      LOG(INFO) << "Set space-profile for com.tencent.mm patch";
+    }
+    // END IKANGEROW-1770
 
     ProcessOptions(parser_options.get());
 

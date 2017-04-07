@@ -1370,8 +1370,14 @@ class Dex2Oat FINAL {
         dex_filename.find("patch") != std::string::npos) {
       compiler_options_->SetCompilerFilter(CompilerFilter::kSpaceProfile);
       LOG(INFO) << "Set space-profile for com.tencent.mm patch";
-    }
     // END IKANGEROW-1770
+    // BEGIN Motorola, yangq2, 04/07/2017, IKANGEROW-3842
+    } else if (dex_filename.find("googlequicksearchbox") != std::string::npos ||
+        dex_filename.find("com.google.android.gms") != std::string::npos) {
+      compiler_options_->SetCompilerFilter(CompilerFilter::kInterpretOnly);
+      LOG(INFO) << "Set interpret-only for googlequicksearchbox/gms";
+    }
+    // END IKANGEROW-3842
 
     ProcessOptions(parser_options.get());
 

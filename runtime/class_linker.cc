@@ -8587,7 +8587,26 @@ void ClassLinker::SetEntryPointsForObsoleteMethod(ArtMethod* method) const {
 }
 
 void ClassLinker::DumpForSigQuit(std::ostream& os) {
-  ScopedObjectAccess soa(Thread::Current());
+  Thread* self = Thread::Current();
+  ScopedObjectAccess soa(self);
+  // Avoid a deadlock involving three threads:
+  //
+  // 1. A thread running GC (e.g the HeapTaskDaemon thread), revoking
+  //    local mark stacks and disabling weak references access, and
+  //    waiting for all mutator thread to pass through a GC barrier
+  //    (thread #2 below).
+  // 2. A mutator thread waiting on `Locks::classlinker_classes_lock_`
+  //    (and thus not passing through the GC barrier on which thread
+  //    #1 is waiting).
+  // 3. The signal catcher thread, holding
+  //    `Locks::classlinker_classes_lock_`, and waiting on a condition
+  //    variable regarding weak references access (disabled by thread
+  //    #1 in GC code).
+  //
+  // (See b/72457759.)
+  gc::ScopedGCCriticalSection gcs(self,
+                                  gc::kGcCauseClassLinker,
+                                  gc::kCollectorTypeClassLinker);
   ReaderMutexLock mu(soa.Self(), *Locks::classlinker_classes_lock_);
   os << "Zygote loaded classes=" << NumZygoteClasses() << " post zygote classes="
      << NumNonZygoteClasses() << "\n";

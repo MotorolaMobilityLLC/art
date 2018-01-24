@@ -1,0 +1,32 @@
+JNI_OnLoad called
+Elapse time: 1m
+Elapse time: 2m
+Elapse time: 3m
+Elapse time: 4m
+Elapse time: 5m
+Elapse time: 6m
+Elapse time: 7m
+Elapse time: 8m
+Elapse time: 9m
+Elapse time: 10m
+Elapse time: 11m
+Elapse time: 12m
+Elapse time: 13m
+Elapse time: 14m
+Elapse time: 15m
+Elapse time: 16m
+Elapse time: 17m
+Elapse time: 18m
+Elapse time: 19m
+Elapse time: 20m
+Elapse time: 21m
+Elapse time: 22m
+Elapse time: 23m
+Elapse time: 24m
+Elapse time: 25m
+Elapse time: 26m
+Elapse time: 27m
+Elapse time: 28m
+Elapse time: 29m
+Elapse time: 30m
+Test PASS!

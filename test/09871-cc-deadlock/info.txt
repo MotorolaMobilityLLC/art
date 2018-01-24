@@ -1,0 +1,4 @@
+This test can reproduce deadlock issue of Signal Catcher, HeapTaskDaemon and a thread of executing class linker
+operation with HIGH probability.
+It can't 100% to reproduce. The issue is reproduced with some conditions that contains device hardware ability,
+system loading and software behaviours.

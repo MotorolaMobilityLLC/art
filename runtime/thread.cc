@@ -1718,7 +1718,9 @@ void Thread::DumpState(std::ostream& os, const Thread* thread, pid_t tid) {
   // Grab the scheduler stats for this thread.
   std::string scheduler_stats;
   if (ReadFileToString(StringPrintf("/proc/self/task/%d/schedstat", tid), &scheduler_stats)) {
-    scheduler_stats.resize(scheduler_stats.size() - 1);  // Lose the trailing '\n'.
+    if (scheduler_stats.size() > 0) {
+      scheduler_stats.resize(scheduler_stats.size() - 1);  // Lose the trailing '\n'.
+    }
   } else {
     scheduler_stats = "0 0 0";
   }

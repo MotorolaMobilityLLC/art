@@ -1826,9 +1826,10 @@ void DumpHeap(const char* filename, int fd, bool direct_to_ddms) {
       return;
   }
 
+  std::string name;
   if (filename == nullptr) {
-    std::string name(android::base::StringPrintf("/data/misc/heap-dump-tm%d-pid%d.hprof",
-                                  (uint32_t)time(NULL), getpid()));
+    name = android::base::StringPrintf("/data/misc/heap-dump-tm%d-pid%d.hprof",
+                                  (uint32_t)time(NULL), getpid());
     filename = name.c_str();
   }
 #else

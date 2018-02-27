@@ -747,12 +747,12 @@ bool Monitor::Unlock(Thread* self) {
           uint32_t locked_time = static_cast<uint32_t>((MilliTime() - lock_start_ms_));
           if (locked_time >= lock_profiling_threshold_) {
             LOG(WARNING) << StringPrintf("<0x%08x>", GetHashCode())
+                         << " For " << PrettyDuration(MsToNs(locked_time))
                          << " Unlock long " << PrettyContentionInfo(owner_name,
                                                                     owner_tid,
                                                                     owners_method,
                                                                     owners_dex_pc,
-                                                                    num_waiters_)
-                         << " for " << PrettyDuration(MsToNs(locked_time));
+                                                                    num_waiters_);
             // Log the contention.
             LogContentionEvent(
                 self
@@ -885,12 +885,12 @@ void Monitor::Wait(Thread* self, int64_t ms, int32_t ns,
       if (locked_time >= lock_profiling_threshold_) {
           // Log the contention.
           LOG(WARNING) << StringPrintf("<0x%08x>", GetHashCode())
-              << " Wait long " << PrettyContentionInfo(owner_name,
+              << " For " << PrettyDuration(MsToNs(locked_time))
+              << " wait long " << PrettyContentionInfo(owner_name,
                                                        owner_tid,
                                                        owners_method,
                                                        owners_dex_pc,
-                                                       num_waiters_)
-              << " for " << PrettyDuration(MsToNs(locked_time));
+                                                       num_waiters_);
           //LogContentionEvent(self, locked_time, 300, "", NULL, 0);
       }
       if (locked_time >= lock_profiling_threshold_ * 10) {

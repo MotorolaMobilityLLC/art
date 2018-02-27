@@ -762,6 +762,11 @@ bool Monitor::Unlock(Thread* self) {
                 , owners_dex_pc
                 );
           }
+          if (locked_time >= lock_profiling_threshold_ * 10) {
+                        std::ostringstream self_trace_oss;
+                        self->DumpJavaStack(self_trace_oss);
+                        LOG(WARNING) << "Unlock stack : " << self_trace_oss.str();
+                      }
           // END Motorola, IKSWO-60877
         }
         lock_start_ms_ = 0;
@@ -887,6 +892,11 @@ void Monitor::Wait(Thread* self, int64_t ms, int32_t ns,
                                                        num_waiters_)
               << " for " << PrettyDuration(MsToNs(locked_time));
           //LogContentionEvent(self, locked_time, 300, "", NULL, 0);
+      }
+      if (locked_time >= lock_profiling_threshold_ * 10) {
+        std::ostringstream self_trace_oss;
+        self->DumpJavaStack(self_trace_oss);
+        LOG(WARNING) << "Wait stack : " << self_trace_oss.str();
       }
     }
     lock_start_ms_ = 0;

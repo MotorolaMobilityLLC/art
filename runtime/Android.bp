@@ -379,7 +379,10 @@ cc_defaults {
             ],
         },
     },
-    cflags: ["-DBUILDING_LIBART=1"],
+    cflags: [
+        "-DBUILDING_LIBART=1",
+        "-DMTK_ART_THREAD_DUMP_LOGGING"
+    ],
     generated_sources: ["art_operator_srcs"],
     // asm_support_gen.h (used by asm_support.h) is generated with cpp-define-generator
     generated_headers: ["cpp-define-generator-asm-support"],

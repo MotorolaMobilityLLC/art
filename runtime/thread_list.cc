@@ -216,15 +216,19 @@ class DumpCheckpoint FINAL : public Closure {
     // request.
     Thread* self = Thread::Current();
     CHECK(self != nullptr);
-    std::ostringstream local_os;
-    {
-      ScopedObjectAccess soa(self);
-      thread->Dump(local_os, dump_native_stack_, backtrace_map_.get());
-    }
-    {
-      // Use the logging lock to ensure serialization when writing to the common ostream.
-      MutexLock mu(self, *Locks::logging_lock_);
-      *os_ << local_os.str() << std::endl;
+    if (MicroTime() - Runtime::Current()->GetThreadList()->GetDumpStartTime() < 10 * 1000 * 1000) {
+      std::ostringstream local_os;
+      {
+        ScopedObjectAccess soa(self);
+        thread->Dump(local_os, dump_native_stack_, backtrace_map_.get());
+      }
+      {
+        // Use the logging lock to ensure serialization when writing to the common ostream.
+        MutexLock mu(self, *Locks::logging_lock_);
+        *os_ << local_os.str() << std::endl;
+      }
+    } else {
+      LOG(WARNING) << "dump timeout : " << thread->GetThreadId();
     }
     barrier_.Pass(self);
   }
@@ -322,6 +326,7 @@ size_t ThreadList::RunCheckpoint(Closure* checkpoint_function, Closure* callback
   Locks::mutator_lock_->AssertNotExclusiveHeld(self);
   Locks::thread_list_lock_->AssertNotHeld(self);
   Locks::thread_suspend_count_lock_->AssertNotHeld(self);
+  dump_start_time_ = MicroTime();
 
   std::vector<Thread*> suspended_count_modified_threads;
   size_t count = 0;

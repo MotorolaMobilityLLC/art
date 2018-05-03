@@ -181,6 +181,10 @@ class ThreadList {
     return empty_checkpoint_barrier_.get();
   }
 
+  uint64_t GetDumpStartTime() const {
+    return dump_start_time_;
+  }
+
  private:
   uint32_t AllocThreadId(Thread* self);
   void ReleaseThreadId(Thread* self, uint32_t id) REQUIRES(!Locks::allocated_thread_ids_lock_);
@@ -234,6 +238,8 @@ class ThreadList {
   const uint64_t thread_suspend_timeout_ns_;
 
   std::unique_ptr<Barrier> empty_checkpoint_barrier_;
+
+  uint64_t dump_start_time_ = 0;
 
   friend class Thread;
 

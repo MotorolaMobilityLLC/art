@@ -258,6 +258,8 @@ static inline size_t HashBytes(const uint8_t* data, size_t len) {
   return hash;
 }
 
+bool IsSystemServer();  // Motorola, a18772, 03/17/2013, IKJBXLINE-638
+
 }  // namespace art
 
 #endif  // ART_LIBARTBASE_BASE_UTILS_H_

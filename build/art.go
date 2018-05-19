@@ -135,6 +135,12 @@ func deviceFlags(ctx android.BaseContext) []string {
 		cflags = append(cflags, "-DART_TARGET_LINUX")
 	} else {
 		cflags = append(cflags, "-DART_TARGET_ANDROID")
+		// BEGIN Motorola, a18772, 06/28/2017, IKJBXLINE-638
+		buildVariant := envDefault(ctx, "TARGET_BUILD_VARIANT", "user")
+                if buildVariant != "user" {
+			cflags = append(cflags, "-DHPROFDUMP_ON_OOM")
+		}
+		// END IKJBXLINE-638
 	}
 	minDelta := envDefault(ctx, "LIBART_IMG_TARGET_MIN_BASE_ADDRESS_DELTA", "-0x1000000")
 	maxDelta := envDefault(ctx, "LIBART_IMG_TARGET_MAX_BASE_ADDRESS_DELTA", "0x1000000")

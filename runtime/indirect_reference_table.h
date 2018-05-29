@@ -231,6 +231,11 @@ class IndirectReferenceTable {
   // invalid state. Use IsValid to check whether the object is in an invalid
   // state.
   IndirectReferenceTable(size_t max_count,
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+                         size_t warning_count,
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
                          IndirectRefKind kind,
                          ResizableCapacity resizable,
                          std::string* error_msg);
@@ -382,7 +387,13 @@ class IndirectReferenceTable {
   }
 
   // Resize the backing table. Currently must be larger than the current size.
-  bool Resize(size_t new_size, std::string* error_msg);
+  bool Resize(size_t new_size,
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+    size_t new_w_size,
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
+    std::string* error_msg);
 
   void RecoverHoles(IRTSegmentState from);
 
@@ -406,6 +417,13 @@ class IndirectReferenceTable {
 
   // max #of entries allowed (modulo resizing).
   size_t max_entries_;
+
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+  // #of entries allowed before issuing a warning and trigger a heap dump
+  size_t warning_entries_;
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
 
   // Some values to retain old behavior with holes. Description of the algorithm is in the .cc
   // file.

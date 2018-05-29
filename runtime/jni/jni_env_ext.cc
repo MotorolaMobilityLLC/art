@@ -77,7 +77,13 @@ JNIEnvExt::JNIEnvExt(Thread* self_in, JavaVMExt* vm_in, std::string* error_msg)
     : self_(self_in),
       vm_(vm_in),
       local_ref_cookie_(kIRTFirstSegment),
-      locals_(kLocalsInitial, kLocal, IndirectReferenceTable::ResizableCapacity::kYes, error_msg),
+      locals_(kLocalsInitial,
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+                  0 /* warning threshold, not supported for local refs */,
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
+	              kLocal, IndirectReferenceTable::ResizableCapacity::kYes, error_msg),
       monitors_("monitors", kMonitorsInitial, kMonitorsMax),
       critical_(0),
       check_jni_(false),

@@ -63,6 +63,14 @@ static constexpr size_t kGlobalsMax = 51200;  // Arbitrary sanity check. (Must f
 
 static constexpr size_t kWeakGlobalsMax = 51200;  // Arbitrary sanity check. (Must fit in 16 bits.)
 
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+static constexpr size_t kGlobalsWarning = kGlobalsMax - kGlobalsMax/100; // 99%
+
+static constexpr size_t kWeakGlobalsWarning = kWeakGlobalsMax - kWeakGlobalsMax/100; // 99%
+#endif /* HPROFDUMP_ON_OOM */
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+
 bool JavaVMExt::IsBadJniVersion(int version) {
   // We don't support JNI_VERSION_1_1. These are the only other valid versions.
   return version != JNI_VERSION_1_2 && version != JNI_VERSION_1_4 && version != JNI_VERSION_1_6;
@@ -496,10 +504,21 @@ JavaVMExt::JavaVMExt(Runtime* runtime,
       tracing_enabled_(runtime_options.Exists(RuntimeArgumentMap::JniTrace)
                        || VLOG_IS_ON(third_party_jni)),
       trace_(runtime_options.GetOrDefault(RuntimeArgumentMap::JniTrace)),
-      globals_(kGlobalsMax, kGlobal, IndirectReferenceTable::ResizableCapacity::kNo, error_msg),
+      globals_(kGlobalsMax,
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+               kGlobalsWarning,
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
+               kGlobal, IndirectReferenceTable::ResizableCapacity::kNo, error_msg),
       libraries_(new Libraries),
       unchecked_functions_(&gJniInvokeInterface),
       weak_globals_(kWeakGlobalsMax,
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+                    kWeakGlobalsWarning,
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
                     kWeakGlobal,
                     IndirectReferenceTable::ResizableCapacity::kNo,
                     error_msg),

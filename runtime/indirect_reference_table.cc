@@ -30,6 +30,14 @@
 
 #include <cstdlib>
 
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+#include "hprof/hprof.h"
+#include "base/utils.h"
+#include "android-base/properties.h"
+#endif
+// END IKSWO-48276
+
 namespace art {
 
 static constexpr bool kDumpStackOnNonLocalReference = false;
@@ -64,12 +72,22 @@ void IndirectReferenceTable::AbortIfNoCheckJNI(const std::string& msg) {
 }
 
 IndirectReferenceTable::IndirectReferenceTable(size_t max_count,
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+                                               size_t warning_count,
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
                                                IndirectRefKind desired_kind,
                                                ResizableCapacity resizable,
                                                std::string* error_msg)
     : segment_state_(kIRTFirstSegment),
       kind_(desired_kind),
       max_entries_(max_count),
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+      warning_entries_(warning_count),
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
       current_num_holes_(0),
       resizable_(resizable) {
   CHECK(error_msg != nullptr);
@@ -210,7 +228,13 @@ static inline void CheckHoleCount(IrtEntry* table,
   }
 }
 
-bool IndirectReferenceTable::Resize(size_t new_size, std::string* error_msg) {
+bool IndirectReferenceTable::Resize(size_t new_size,
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+                                    size_t new_w_size,
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
+                                    std::string* error_msg) {
   CHECK_GT(new_size, max_entries_);
 
   constexpr size_t kMaxEntries = kMaxTableSizeInBytes / sizeof(IrtEntry);
@@ -234,6 +258,11 @@ bool IndirectReferenceTable::Resize(size_t new_size, std::string* error_msg) {
   table_mem_map_ = std::move(new_map);
   table_ = reinterpret_cast<IrtEntry*>(table_mem_map_.Begin());
   max_entries_ = new_size;
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+  warning_entries_ = new_w_size;
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
 
   return true;
 }
@@ -253,6 +282,39 @@ IndirectRef IndirectReferenceTable::Add(IRTSegmentState previous_state,
   CHECK(obj != nullptr);
   VerifyObject(obj);
   DCHECK(table_ != nullptr);
+
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+  if (top_index == warning_entries_ && (kind_ == kGlobal || kind_ == kWeakGlobal)) {
+    // Check whether the hprof dump property is set.
+    std::string dump_prop = android::base::GetProperty("debug.mot.hprofdump", "");
+    if (!dump_prop.empty()) {
+      // Check whether the current process is system server.
+      // Note: DO NOT try to run hprof dump from current thread, as it'll need
+      // to wait for a GC while it has held the global JNI lock, meanwhile
+      // HeapTaskDaemon could be waiting for the global JNI lock, so it's a
+      // deadlock.
+      if (IsSystemServer()) {
+        class HprofDumpTask {
+         public:
+          static void* Run(void *) {
+            LOG(INFO) << "Dumping the system server hprof data ...";
+            Runtime* runtime = Runtime::Current();
+            CHECK(runtime->AttachCurrentThread("hprof dumper", false,
+                  runtime->GetSystemThreadGroup(), !runtime->IsAotCompiler()));
+            hprof::DumpHeap(nullptr, -1, false);
+            runtime->DetachCurrentThread();
+            return nullptr;
+          }
+        };
+        pthread_t pthread;
+        CHECK_PTHREAD_CALL(pthread_create, (&pthread, nullptr, &HprofDumpTask::Run,
+                           nullptr), "hprof dump thread");
+      }
+    }
+  }
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
 
   if (top_index == max_entries_) {
     if (resizable_ == ResizableCapacity::kNo) {
@@ -276,7 +338,13 @@ IndirectRef IndirectReferenceTable::Add(IRTSegmentState previous_state,
     }
 
     std::string inner_error_msg;
-    if (!Resize(max_entries_ * 2, &inner_error_msg)) {
+    if (!Resize(max_entries_ * 2,
+// BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+                warning_entries_ * 2,
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
+                &inner_error_msg)) {
       std::ostringstream oss;
       oss << "JNI ERROR (app bug): " << kind_ << " table overflow "
           << "(max=" << max_entries_ << ")" << std::endl
@@ -503,7 +571,13 @@ bool IndirectReferenceTable::EnsureFreeCapacity(size_t free_capacity, std::strin
     return false;
   }
 
-  if (!Resize(top_index + free_capacity, error_msg)) {
+  if (!Resize(top_index + free_capacity,
+// BEGIN Motorola, chenym7, 05/09/2018, IKSWO-48276
+#ifdef HPROFDUMP_ON_OOM
+              warning_entries_ + free_capacity,
+#endif /* HPROFDUMP_ON_OOM */
+// END IKSWO-48276
+              error_msg)) {
     LOG(WARNING) << "JNI ERROR: Unable to reserve space in EnsureFreeCapacity (" << free_capacity
                  << "): " << std::endl
                  << MutatorLockedDumpable<IndirectReferenceTable>(*this)

@@ -186,7 +186,8 @@ class VerifierDepsTest : public CommonCompilerTest {
                             true /* allow_soft_failures */,
                             true /* need_precise_constants */,
                             false /* verify to dump */,
-                            true /* allow_thread_suspension */);
+                            true /* allow_thread_suspension */,
+                            0u /* api_level */);
     verifier.Verify();
     Thread::Current()->SetVerifierDeps(nullptr);
     return !verifier.HasFailures();

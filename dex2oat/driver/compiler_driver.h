@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ART_COMPILER_DRIVER_COMPILER_DRIVER_H_
-#define ART_COMPILER_DRIVER_COMPILER_DRIVER_H_
+#ifndef ART_DEX2OAT_DRIVER_COMPILER_DRIVER_H_
+#define ART_DEX2OAT_DRIVER_COMPILER_DRIVER_H_
 
 #include <atomic>
 #include <set>
@@ -79,15 +79,6 @@ class TimingLogger;
 class VdexFile;
 class VerificationResults;
 
-enum EntryPointCallingConvention {
-  // ABI of invocations to a method's interpreter entry point.
-  kInterpreterAbi,
-  // ABI of calls to a method's native code, only used for native methods.
-  kJniAbi,
-  // ABI of calls to a method's quick code entry point.
-  kQuickAbi
-};
-
 class CompilerDriver {
  public:
   // Create a compiler targeting the requested "instruction_set".
@@ -119,19 +110,6 @@ class CompilerDriver {
   void CompileAll(jobject class_loader,
                   const std::vector<const DexFile*>& dex_files,
                   TimingLogger* timings)
-      REQUIRES(!Locks::mutator_lock_);
-
-  // Compile a single Method. (For testing only.)
-  void CompileOne(Thread* self,
-                  jobject class_loader,
-                  const DexFile& dex_file,
-                  uint16_t class_def_idx,
-                  uint32_t method_idx,
-                  uint32_t access_flags,
-                  InvokeType invoke_type,
-                  const dex::CodeItem* code_item,
-                  Handle<mirror::DexCache> dex_cache,
-                  Handle<mirror::ClassLoader> h_class_loader)
       REQUIRES(!Locks::mutator_lock_);
 
   const CompilerOptions& GetCompilerOptions() const {
@@ -360,7 +338,7 @@ class CompilerDriver {
   // Compiler for dex to dex (quickening).
   optimizer::DexToDexCompiler dex_to_dex_compiler_;
 
-  friend class CommonCompilerTest;
+  friend class CommonCompilerDriverTest;
   friend class CompileClassVisitor;
   friend class DexToDexDecompilerTest;
   friend class InitializeClassVisitor;
@@ -370,4 +348,4 @@ class CompilerDriver {
 
 }  // namespace art
 
-#endif  // ART_COMPILER_DRIVER_COMPILER_DRIVER_H_
+#endif  // ART_DEX2OAT_DRIVER_COMPILER_DRIVER_H_

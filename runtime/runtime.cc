@@ -1270,6 +1270,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
   // Generational CC collection is currently only compatible with Baker read barriers.
   bool use_generational_cc = kUseBakerReadBarrier && xgc_option.generational_cc;
 
+  image_space_loading_order_ = runtime_options.GetOrDefault(Opt::ImageSpaceLoadingOrder);
+
   heap_ = new gc::Heap(runtime_options.GetOrDefault(Opt::MemoryInitialSize),
                        runtime_options.GetOrDefault(Opt::HeapGrowthLimit),
                        runtime_options.GetOrDefault(Opt::HeapMinFree),
@@ -1307,7 +1309,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
                        use_generational_cc,
                        runtime_options.GetOrDefault(Opt::HSpaceCompactForOOMMinIntervalsMs),
                        runtime_options.Exists(Opt::DumpRegionInfoBeforeGC),
-                       runtime_options.Exists(Opt::DumpRegionInfoAfterGC));
+                       runtime_options.Exists(Opt::DumpRegionInfoAfterGC),
+                       image_space_loading_order_);
 
   if (!heap_->HasBootImageSpace() && !allow_dex_file_fallback_) {
     LOG(ERROR) << "Dex file fallback disabled, cannot continue without image.";
@@ -2771,6 +2774,29 @@ void Runtime::WaitForThreadPoolWorkersToStart() {
   if (stpu.GetThreadPool() != nullptr) {
     stpu.GetThreadPool()->WaitForWorkersToBeCreated();
   }
+}
+
+void Runtime::NotifyStartupCompleted() {
+  bool expected = false;
+  if (!startup_completed_.compare_exchange_strong(expected, true, std::memory_order_seq_cst)) {
+    // Right now NotifyStartupCompleted will be called up to twice, once from profiler and up to
+    // once externally. For this reason there are no asserts.
+    return;
+  }
+  VLOG(startup) << "Startup completed notified";
+
+  // Notify the profiler saver that startup is now completed.
+  ProfileSaver::NotifyStartupCompleted();
+
+  {
+    // Delete the thread pool used for app image loading startup is completed.
+    ScopedTrace trace2("Delete thread pool");
+    DeleteThreadPool();
+  }
+}
+
+bool Runtime::GetStartupCompleted() const {
+  return startup_completed_.load(std::memory_order_seq_cst);
 }
 
 }  // namespace art

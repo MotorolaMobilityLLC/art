@@ -54,8 +54,8 @@
 #include "dex/dex_to_dex_compiler.h"
 #include "dex/verification_results.h"
 #include "dex/verified_method.h"
-#include "dex_compilation_unit.h"
 #include "driver/compiler_options.h"
+#include "driver/dex_compilation_unit.h"
 #include "gc/accounting/card_table-inl.h"
 #include "gc/accounting/heap_bitmap.h"
 #include "gc/space/image_space.h"
@@ -643,55 +643,6 @@ static void CompileMethodQuick(
                        quick_fn);
 }
 
-// Compile a single Method. (For testing only.)
-void CompilerDriver::CompileOne(Thread* self,
-                                jobject class_loader,
-                                const DexFile& dex_file,
-                                uint16_t class_def_idx,
-                                uint32_t method_idx,
-                                uint32_t access_flags,
-                                InvokeType invoke_type,
-                                const dex::CodeItem* code_item,
-                                Handle<mirror::DexCache> dex_cache,
-                                Handle<mirror::ClassLoader> h_class_loader) {
-  // Can we run DEX-to-DEX compiler on this class ?
-  optimizer::DexToDexCompiler::CompilationLevel dex_to_dex_compilation_level =
-      GetDexToDexCompilationLevel(self,
-                                  *this,
-                                  class_loader,
-                                  dex_file,
-                                  dex_file.GetClassDef(class_def_idx));
-
-  CompileMethodQuick(self,
-                     this,
-                     code_item,
-                     access_flags,
-                     invoke_type,
-                     class_def_idx,
-                     method_idx,
-                     h_class_loader,
-                     dex_file,
-                     dex_to_dex_compilation_level,
-                     dex_cache);
-
-  const size_t num_methods = dex_to_dex_compiler_.NumCodeItemsToQuicken(self);
-  if (num_methods != 0) {
-    DCHECK_EQ(num_methods, 1u);
-    CompileMethodDex2Dex(self,
-                         this,
-                         code_item,
-                         access_flags,
-                         invoke_type,
-                         class_def_idx,
-                         method_idx,
-                         h_class_loader,
-                         dex_file,
-                         dex_to_dex_compilation_level,
-                         dex_cache);
-    dex_to_dex_compiler_.ClearState();
-  }
-}
-
 void CompilerDriver::Resolve(jobject class_loader,
                              const std::vector<const DexFile*>& dex_files,
                              TimingLogger* timings) {
@@ -745,11 +696,12 @@ void CompilerDriver::ResolveConstStrings(const std::vector<const DexFile*>& dex_
             (method.GetAccessFlags() & kAccStatic) != 0;
         const bool is_startup_clinit = is_startup_class && is_clinit;
 
-        if (only_startup_strings &&
-            profile_compilation_info != nullptr &&
-            (!profile_compilation_info->GetMethodHotness(method.GetReference()).IsStartup() &&
-             !is_startup_clinit)) {
-          continue;
+        if (profile_compilation_info != nullptr && !is_startup_clinit) {
+          ProfileCompilationInfo::MethodHotness hotness =
+              profile_compilation_info->GetMethodHotness(method.GetReference());
+          if (only_startup_strings ? !hotness.IsStartup() : !hotness.IsInProfile()) {
+            continue;
+          }
         }
 
         // Resolve const-strings in the code. Done to have deterministic allocation behavior. Right
@@ -903,7 +855,7 @@ void CompilerDriver::PreCompile(jobject class_loader,
     // Avoid adding the dex files in the case where we aren't going to add compiled methods.
     // This reduces RAM usage for this case.
     for (const DexFile* dex_file : dex_files) {
-      // Can be already inserted if the caller is CompileOne. This happens for gtests.
+      // Can be already inserted. This happens for gtests.
       if (!compiled_methods_.HaveDexFile(dex_file)) {
         compiled_methods_.AddDexFile(dex_file);
       }

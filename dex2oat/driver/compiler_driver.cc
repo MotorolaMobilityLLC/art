@@ -85,8 +85,7 @@
 #include "utils/dex_cache_arrays_layout-inl.h"
 #include "utils/swap_space.h"
 #include "vdex_file.h"
-#include "verifier/method_verifier-inl.h"
-#include "verifier/method_verifier.h"
+#include "verifier/class_verifier.h"
 #include "verifier/verifier_deps.h"
 #include "verifier/verifier_enums.h"
 
@@ -668,6 +667,11 @@ void CompilerDriver::Resolve(jobject class_loader,
 void CompilerDriver::ResolveConstStrings(const std::vector<const DexFile*>& dex_files,
                                          bool only_startup_strings,
                                          TimingLogger* timings) {
+  if (only_startup_strings && GetCompilerOptions().GetProfileCompilationInfo() == nullptr) {
+    // If there is no profile, don't resolve any strings. Resolving all of the strings in the image
+    // will cause a bloated app image and slow down startup.
+    return;
+  }
   ScopedObjectAccess soa(Thread::Current());
   StackHandleScope<1> hs(soa.Self());
   ClassLinker* const class_linker = Runtime::Current()->GetClassLinker();
@@ -690,6 +694,12 @@ void CompilerDriver::ResolveConstStrings(const std::vector<const DexFile*>& dex_
       const bool is_startup_class =
           profile_compilation_info != nullptr &&
           profile_compilation_info->ContainsClass(*dex_file, accessor.GetClassIdx());
+
+      // Skip methods that failed to verify since they may contain invalid Dex code.
+      if (GetClassStatus(ClassReference(dex_file, accessor.GetClassDefIndex())) <
+          ClassStatus::kRetryVerificationAtRuntime) {
+        continue;
+      }
 
       for (const ClassAccessor::Method& method : accessor.GetMethods()) {
         const bool is_clinit = (method.GetAccessFlags() & kAccConstructor) != 0 &&
@@ -874,6 +884,9 @@ void CompilerDriver::PreCompile(jobject class_loader,
     return;
   }
 
+  Verify(class_loader, dex_files, timings, verification_results);
+  VLOG(compiler) << "Verify: " << GetMemoryUsageString(false);
+
   if (GetCompilerOptions().IsForceDeterminism() && GetCompilerOptions().IsBootImage()) {
     // Resolve strings from const-string. Do this now to have a deterministic image.
     ResolveConstStrings(dex_files, /*only_startup_strings=*/ false, timings);
@@ -881,9 +894,6 @@ void CompilerDriver::PreCompile(jobject class_loader,
   } else if (GetCompilerOptions().ResolveStartupConstStrings()) {
     ResolveConstStrings(dex_files, /*only_startup_strings=*/ true, timings);
   }
-
-  Verify(class_loader, dex_files, timings, verification_results);
-  VLOG(compiler) << "Verify: " << GetMemoryUsageString(false);
 
   if (had_hard_verifier_failure_ && GetCompilerOptions().AbortOnHardVerifierFailure()) {
     // Avoid dumping threads. Even if we shut down the thread pools, there will still be three
@@ -1884,16 +1894,16 @@ class VerifyClassVisitor : public CompilationVisitor {
           soa.Self(), dex_file)));
       std::string error_msg;
       failure_kind =
-          verifier::MethodVerifier::VerifyClass(soa.Self(),
-                                                &dex_file,
-                                                dex_cache,
-                                                class_loader,
-                                                class_def,
-                                                Runtime::Current()->GetCompilerCallbacks(),
-                                                true /* allow soft failures */,
-                                                log_level_,
-                                                sdk_version_,
-                                                &error_msg);
+          verifier::ClassVerifier::VerifyClass(soa.Self(),
+                                               &dex_file,
+                                               dex_cache,
+                                               class_loader,
+                                               class_def,
+                                               Runtime::Current()->GetCompilerCallbacks(),
+                                               true /* allow soft failures */,
+                                               log_level_,
+                                               sdk_version_,
+                                               &error_msg);
       if (failure_kind == verifier::FailureKind::kHardFailure) {
         LOG(ERROR) << "Verification failed on class " << PrettyDescriptor(descriptor)
                    << " because: " << error_msg;

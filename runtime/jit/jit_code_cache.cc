@@ -1058,9 +1058,7 @@ uint8_t* JitCodeCache::CommitCodeInternal(Thread* self,
     // based TLB shootdown. The sync-core flavor of membarrier was introduced in Linux 4.16 to
     // address this (see mbarrier(2)). The membarrier here will fail on prior kernels and on
     // platforms lacking the appropriate support.
-    if (art::membarrier(art::MembarrierCommand::kPrivateExpeditedSyncCore) != 0 && HasDualCodeMapping()) {
-      CHECK(memcmp(code_ptr, TranslateAddress(code_ptr, exec_pages_, non_exec_pages_), code_size) == 0);
-    }
+    art::membarrier(art::MembarrierCommand::kPrivateExpeditedSyncCore);
 
     number_of_compilations_++;
   }

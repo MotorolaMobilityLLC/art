@@ -21,10 +21,10 @@ namespace art {
 struct ProfileSaverOptions {
  public:
   static constexpr uint32_t kMinSavePeriodMs = 40 * 1000;  // 40 seconds
-  static constexpr uint32_t kSaveResolvedClassesDelayMs = 5 * 1000;  // 5 seconds
+  static constexpr uint32_t kSaveResolvedClassesDelayMs = 10 * 1000;  // 10 seconds
   // Minimum number of JIT samples during launch to mark a method as hot in the profile.
   static constexpr uint32_t kHotStartupMethodSamples = 1;
-  static constexpr uint32_t kHotStartupMethodSamplesLowRam = 256;
+  static constexpr uint32_t kHotStartupMethodSamplesLowRam = 1;
   static constexpr uint32_t kMinMethodsToSave = 10;
   static constexpr uint32_t kMinClassesToSave = 10;
   static constexpr uint32_t kMinNotificationBeforeWake = 10;

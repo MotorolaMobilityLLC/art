@@ -646,7 +646,7 @@ bool JitCodeCache::WaitForPotentialCollectionToComplete(Thread* self) {
 }
 
 static uintptr_t FromCodeToAllocation(const void* code) {
-  size_t alignment = GetInstructionSetAlignment(kRuntimeISA);
+  size_t alignment = kJitCodeAlignment;
   return reinterpret_cast<uintptr_t>(code) - RoundUp(sizeof(OatQuickMethodHeader), alignment);
 }
 
@@ -990,7 +990,10 @@ uint8_t* JitCodeCache::CommitCodeInternal(Thread* self,
   {
     ScopedCodeCacheWrite scc(this);
 
-    size_t alignment = GetInstructionSetAlignment(kRuntimeISA);
+    // Align to cacheline size to avoid cache update cross active code. The size chosen here
+    // is currently known maximum across the supported architectures.
+    size_t alignment = kJitCodeAlignment;
+
     // Ensure the header ends up at expected instruction alignment.
     size_t header_size = RoundUp(sizeof(OatQuickMethodHeader), alignment);
     size_t total_size = header_size + code_size;
@@ -1049,7 +1052,6 @@ uint8_t* JitCodeCache::CommitCodeInternal(Thread* self,
     // flushed is for the executable mapping of the code just added.
     uint8_t* x_memory = reinterpret_cast<uint8_t*>(method_header);
     FlushInstructionCache(x_memory, x_memory + total_size);
-
     // Ensure CPU instruction pipelines are flushed for all cores. This is necessary for
     // correctness as code may still be in instruction pipelines despite the i-cache flush. It is
     // not safe to assume that changing permissions with mprotect (RX->RWX->RX) will cause a TLB
@@ -2157,12 +2159,10 @@ void JitCodeCache::InvalidateCompiledCodeFor(ArtMethod* method,
   }
 }
 
-uint8_t* JitCodeCache::AllocateCode(size_t allocation_size) {
-  // Each allocation should be on its own set of cache lines. The allocation must be large enough
-  // for header, code, and any padding.
+uint8_t* JitCodeCache::AllocateCode(size_t code_size) {
+  size_t alignment = kJitCodeAlignment;
   uint8_t* result = reinterpret_cast<uint8_t*>(
-      mspace_memalign(exec_mspace_, kJitCodeAlignment, allocation_size));
-  size_t alignment = GetInstructionSetAlignment(kRuntimeISA);
+      mspace_memalign(exec_mspace_, alignment, code_size));
   size_t header_size = RoundUp(sizeof(OatQuickMethodHeader), alignment);
   // Ensure the header ends up at expected instruction alignment.
   DCHECK_ALIGNED_PARAM(reinterpret_cast<uintptr_t>(result + header_size), alignment);

@@ -74,13 +74,13 @@ namespace jit {
 class MarkCodeClosure;
 class ScopedCodeCacheWrite;
 
-// Alignment in bytes that will suit all architectures for JIT code cache allocations.  The
-// allocated block is used for method header followed by generated code. Allocations should be
-// aligned to avoid sharing cache lines between different allocations. The alignment should be
-// determined from the hardware, but this isn't readily exposed in userland plus some hardware
-// misreports.
+// Alignment in bits that will suit all architectures.
+// Allocations in the JIT code cache have code prefixed with a method header. Allocations should
+// be aligned to avoid sharing cache lines between different allocations. D$ size is typically
+// 64bytes and I$ is either 32 or 64bytes. NB this size should determined from the hardware, but
+// this isn't readily exposed in userland plus some devices have 128-byte cache lines, but report
+// it as 64-byte when reading size info from CPU.
 static constexpr int kJitCodeAlignment = 64;
-
 using CodeCacheBitmap = gc::accounting::MemoryRangeBitmap<kJitCodeAlignment>;
 
 class JitCodeCache {

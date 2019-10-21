@@ -86,7 +86,6 @@
 #include "gc/system_weak.h"
 #include "handle_scope-inl.h"
 #include "hidden_api.h"
-#include "hidden_api_jni.h"
 #include "image-inl.h"
 #include "instrumentation.h"
 #include "intern_table-inl.h"
@@ -494,7 +493,7 @@ Runtime::~Runtime() {
   // elements of WellKnownClasses to be null, see b/65500943.
   WellKnownClasses::Clear();
 
-  hiddenapi::JniShutdownNativeCallerCheck();
+  JniShutdownNativeCallerCheck();
 }
 
 struct AbortState {
@@ -1842,7 +1841,7 @@ void Runtime::InitNativeMethods() {
 
   // Having loaded native libraries for Managed Core library, enable field and
   // method resolution checks via JNI from native code.
-  hiddenapi::JniInitializeNativeCallerCheck();
+  JniInitializeNativeCallerCheck();
 
   VLOG(startup) << "Runtime::InitNativeMethods exiting";
 }

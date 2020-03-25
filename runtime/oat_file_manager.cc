@@ -692,6 +692,22 @@ std::vector<std::unique_ptr<const DexFile>> OatFileManager::OpenDexFilesFromOat(
       LOG(ERROR) << out.str();
     }
   }
+
+  if (VLOG_IS_ON(oat)) {
+    if (source_oat_file == nullptr) {
+      LOG(WARNING) << "source_oat_file is null"
+                   << ", dex_files.size:" << dex_files.size()
+                   << ", runtime_debuggable:" << runtime->IsJavaDebuggable()
+                   << ", oat_is_uptodate:" << oat_file_assistant.IsUpToDate();
+    } else {
+      LOG(WARNING) << "source_oat_file:" << source_oat_file->GetLocation()
+                   << "(executable:" << source_oat_file->IsExecutable()
+                   << ", debuggable:" << source_oat_file->IsDebuggable()
+                   << "), runtime_debuggable:" << runtime->IsJavaDebuggable()
+                   << ", oat_is_uptodate:" << oat_file_assistant.IsUpToDate()
+                   << ", dex_files.size:" << dex_files.size();
+    }
+  }
   return dex_files;
 }
 

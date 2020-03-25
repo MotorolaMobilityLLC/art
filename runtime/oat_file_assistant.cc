@@ -657,6 +657,20 @@ bool OatFileAssistant::ValidateBootClassPathChecksums(const OatFile& oat_file) {
 
 OatFileAssistant::OatFileInfo& OatFileAssistant::GetBestInfo() {
   ScopedTrace trace("GetBestInfo");
+
+  if (VLOG_IS_ON(oat)) {
+    const std::string *odexname = odex_.Filename();
+    const std::string *oatname = oat_.Filename();
+    VLOG(oat) << "odexname:" << odexname->c_str()
+                 << ", odexstatus:" << odex_.Status()
+                 << ", oatname:" << oatname->c_str()
+                 << ", oatstatus:" << oat_.Status()
+                 << ", oatuseable:" << oat_.IsUseable()
+                 << ", dex_parent_writable_:" << dex_parent_writable_
+                 << ", dex_location_:" << dex_location_
+                 << ", UseFdToReadFiles:" << UseFdToReadFiles();
+  }
+
   // TODO(calin): Document the side effects of class loading when
   // running dalvikvm command line.
   if (dex_parent_writable_ || UseFdToReadFiles()) {
@@ -804,6 +818,23 @@ OatFileAssistant::DexOptNeeded OatFileAssistant::OatFileInfo::GetDexOptNeeded(
 
   bool filter_okay = CompilerFilterIsOkay(target, profile_changed, downgrade);
   bool class_loader_context_okay = ClassLoaderContextIsOkay(context, context_fds);
+
+  if (VLOG_IS_ON(oat)) {
+    const std::string *name = Filename();
+    VLOG(oat) << "[OatFileInfo::GetDexOptNeeded] "
+            << "file:" << name->c_str()
+            << ", class_loader_context_okay:" << class_loader_context_okay
+            << ", target_filter:" << target
+            << ", downgrade:" << downgrade
+            << ", profile_changed:" << profile_changed
+            << ", filter_okay:" << filter_okay
+            << ", Status:" << Status()
+            << ", IsUseable:" << IsUseable()
+            << ", IsOatLocation:" << IsOatLocation()
+            << ", odexstatus:" << oat_file_assistant_->OdexFileStatus()
+            << ", oatstatus:" << oat_file_assistant_->OatFileStatus()
+            << ", hasOriginDex:" << oat_file_assistant_->HasOriginalDexFiles();
+  }
 
   // Only check the filter and relocation if the class loader context is ok.
   // If it is not, we will return kDex2OatFromScratch as the compilation needs to be redone.

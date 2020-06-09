@@ -18,10 +18,13 @@
 # This script creates a boot image profile based on input profiles.
 #
 
-if [[ "$#" -lt 2 ]]; then
-  echo "Usage $0 <output> <profman args> <profiles>+"
-  echo "Also outputs <output>.txt and <output>.preloaded-classes"
-  echo 'Example: generate-boot-image-profile.sh boot.prof --profman-arg --boot-image-sampled-method-threshold=1 profiles/0/*/primary.prof'
+if [[ "$#" -lt 1 ]]; then
+  echo "Usage1 $0 <output> <profman args> <profiles>+"
+  echo "  Also outputs <output>.txt and <output>.preloaded-classes"
+  echo '  Example: generate-boot-image-profile.sh boot.prof --profman-arg --boot-image-sampled-method-threshold=1 profiles/cur/0/*/primary.prof'
+  echo "Usage2 $0 <input>"
+  echo "  Just dump profile file <input> to <input>.txt and <input>.preloaded-classes format"
+  echo '  Example: generate-boot-image-profile.sh android.prof'
   exit 1
 fi
 
@@ -50,16 +53,37 @@ done
 # verification. Skip it.
 jar_args=()
 boot_jars=$("$ANDROID_BUILD_TOP"/art/tools/bootjars.sh --target)
-jar_dir=$ANDROID_BUILD_TOP/$(get_build_var TARGET_OUT_JAVA_LIBRARIES)
+product_out=$ANDROID_BUILD_TOP/$(get_build_var PRODUCT_OUT)
+apex1_jar_dir=$product_out/apex
+apex2_jar_dir=$product_out/system/apex
+system_jar_dir=$product_out/system/framework
+systemext_jar_dir=$product_out/system_ext/framework
 for file in $boot_jars; do
-  filename="$jar_dir/$file.jar"
+  # See stemOf(moduleName string)in build/soong/java/dexpreopt_config.go
+  # b/139391334: the stem of framework-minus-apex is framework
+  # This is hard coded here until we find a good way to query the stem
+  # of a module before any other mutators are run
+  if [ "$file" == "framework-minus-apex" ]; then
+    file="framework"
+  fi
+  filename=$(find $apex1_jar_dir $apex2_jar_dir $system_jar_dir $systemext_jar_dir -name $file.jar 2>/dev/null)
+  if [ -z "$filename" ]; then
+    echo "$file.jar not found, please fix it... $filename"
+    exit
+  fi
   jar_args+=("--apk=$filename")
   jar_args+=("--dex-location=$filename")
 done
 profman_args+=("${jar_args[@]}")
 
 # Generate the profile.
-"$ANDROID_HOST_OUT/bin/profman" --generate-boot-image-profile "--reference-profile-file=$OUT_PROFILE" "${profman_args[@]}"
+if [[ "$#" -gt 1 ]]; then
+  echo "Generating profile to $OUT_PROFILE"
+  "$ANDROID_HOST_OUT/bin/profman" --generate-boot-image-profile "--reference-profile-file=$OUT_PROFILE" "${profman_args[@]}"
+else
+  echo "Dump only mode, skip profile generating..."
+  echo "Select $OUT_PROFILE as an <input> profile"
+fi
 
 # Convert it to text.
 echo Dumping profile to $OUT_PROFILE.txt

@@ -116,10 +116,15 @@ void SignalCatcher::Output(const std::string& s) {
 
 void SignalCatcher::HandleSigQuit() {
   Runtime* runtime = Runtime::Current();
+  // BEGIN Motorola, zhangj36, 23/07/2020, IKSWQ-122797
+  struct timeval curTime;
+  gettimeofday(&curTime, NULL);
+  int milli = curTime.tv_usec / 1000;
+  std::string milliStr = std::to_string(milli);
   std::ostringstream os;
   os << "\n"
-      << "----- pid " << getpid() << " at " << GetIsoDate() << " -----\n";
-
+      << "----- pid " << getpid() << " at " << GetIsoDate() << ":" << milliStr <<" -----\n";
+  // END IKSWQ-122797
   DumpCmdLine(os);
 
   // Note: The strings "Build fingerprint:" and "ABI:" are chosen to match the format used by

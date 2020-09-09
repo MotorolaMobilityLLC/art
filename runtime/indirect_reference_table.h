@@ -386,7 +386,8 @@ class IndirectReferenceTable {
     return reinterpret_cast<IndirectRef>(EncodeIndirectRef(table_index, serial));
   }
 
-  // Resize the backing table. Currently must be larger than the current size.
+  // Resize the backing table to be at least new_size elements long. Currently
+  // must be larger than the current size. After return max_entries_ >= new_size.
   bool Resize(size_t new_size,
 // BEGIN Motorola, a5705c, 01/16/2018, IKSWO-48276
 #ifdef HPROFDUMP_ON_OOM

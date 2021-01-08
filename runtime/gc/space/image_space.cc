@@ -3694,7 +3694,9 @@ bool ImageSpace::LoadBootImage(
   std::ostringstream oss;
   bool first = true;
   for (const auto& msg : error_msgs) {
-    if (!first) {
+    if (first) {
+      first = false;
+    } else {
       oss << "\n    ";
     }
     oss << msg;

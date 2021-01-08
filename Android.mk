@@ -348,8 +348,10 @@ include $(BUILD_PHONY_PACKAGE)
 # value of TARGET_FLATTEN_APEX.
 ifeq ($(TARGET_FLATTEN_APEX),true)
 art_apex_manifest_file := $(PRODUCT_OUT)/system/apex/$(TARGET_ART_APEX)/apex_manifest.pb
+TARGET_ART_APEX_SYMBOL := $(PRODUCT_OUT)/symbols/system/apex/$(TARGET_ART_APEX)
 else
 art_apex_manifest_file := $(PRODUCT_OUT)/apex/$(TARGET_ART_APEX)/apex_manifest.pb
+TARGET_ART_APEX_SYMBOL := $(PRODUCT_OUT)/symbols/apex/$(TARGET_ART_APEX)
 endif
 
 art_apex_symlink_timestamp := $(call intermediates-dir-for,FAKE,com.android.art)/symlink.timestamp
@@ -357,6 +359,7 @@ $(art_apex_manifest_file): $(art_apex_symlink_timestamp)
 $(art_apex_manifest_file): PRIVATE_LINK_NAME := $(TARGET_OUT_UNSTRIPPED)/apex/com.android.art
 $(art_apex_symlink_timestamp):
 	$(hide) mkdir -p $(dir $(PRIVATE_LINK_NAME))
+	$(hide) mkdir -p $(TARGET_ART_APEX_SYMBOL)
 	$(hide) ln -sf $(TARGET_ART_APEX) $(PRIVATE_LINK_NAME)
 	$(hide) touch $@
 

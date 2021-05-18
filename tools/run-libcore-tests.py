@@ -136,7 +136,7 @@ def get_expected_failures():
       failures.append("art/tools/libcore_gcstress_failures.txt")
     if args.gcstress and args.debug:
       failures.append("art/tools/libcore_gcstress_debug_failures.txt")
-    if args.debug and not args.gcstress:
+    if args.debug and not args.gcstress and args.getrandom:
       failures.append("art/tools/libcore_debug_failures.txt")
     if not args.getrandom:
       failures.append("art/tools/libcore_fugu_failures.txt")
@@ -226,7 +226,13 @@ def main():
       raise AssertionError(f"Missing {jar}. Run buildbot-build.sh first.")
 
   if not args.jobs:
-    args.jobs = get_target_cpu_count() if args.mode == "device" else multiprocessing.cpu_count()
+    if args.mode == "device":
+      args.jobs = get_target_cpu_count()
+    else:
+      args.jobs = multiprocessing.cpu_count()
+      if args.gcstress:
+        # TODO: Investigate and fix the underlying issues.
+        args.jobs = args.jobs // 2
 
   def run_test(test_name):
     cmd = " ".join(get_vogar_command(test_name))
@@ -238,7 +244,7 @@ def main():
                           universal_newlines=True) as proc:
       return test_name, cmd, proc.communicate()[0], proc.wait()
 
-  failed_regex = re.compile(r"^.* FAIL \(EXEC_FAILED\)$", re.MULTILINE)
+  failed_regex = re.compile(r"^.* FAIL \((?:EXEC_FAILED|ERROR)\)$", re.MULTILINE)
   failed_tests, max_exit_code = [], 0
   with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
     futures = [pool.submit(run_test, test_name) for test_name in get_test_names()]

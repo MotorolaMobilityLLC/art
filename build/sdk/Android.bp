@@ -140,9 +140,6 @@ art_module_sdk {
                 "libnativehelper_compat_libc++",
                 "libnativeloader_lazy",
             ],
-            native_static_libs: [
-                "libctstiagent",
-            ],
         },
 
         linux_bionic: {
@@ -183,10 +180,13 @@ art_module_exports {
                 "okhttp-norepackage",
             ],
             native_binaries: [
-                "hiddenapi",
                 "dex2oat",
                 "dex2oatd",
+                "dexdump",
+                "hiddenapi",
+                "oatdump",
                 "profman",
+                "veridex",
             ],
             native_libs: [
                 "libartpalette", // libdexfile dependency
@@ -261,5 +261,8 @@ art_module_exports {
 
     native_shared_libs: [
         "libjavacoretests",
+    ],
+    native_static_libs: [
+        "libctstiagent",
     ],
 }

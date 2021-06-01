@@ -171,6 +171,10 @@ static constexpr size_t kVerifyObjectAllocationStackSize = 16 * KB /
 static constexpr size_t kDefaultAllocationStackSize = 8 * MB /
     sizeof(mirror::HeapReference<mirror::Object>);
 
+// After a GC (due to allocation failure) we should retrieve at least this
+// fraction of the current max heap size. Otherwise throw OOME.
+static constexpr double kMinFreeHeapAfterGcForAlloc = 0.01;
+
 // For deterministic compilation, we need the heap to be at a well-known address.
 static constexpr uint32_t kAllocSpaceBeginForDeterministicAoT = 0x40000000;
 // Dump the rosalloc stats on SIGQUIT.
@@ -1446,7 +1450,16 @@ void Heap::ThrowOutOfMemoryError(Thread* self, size_t byte_count, AllocatorType 
       CHECK(space != nullptr) << "allocator_type:" << allocator_type
                               << " byte_count:" << byte_count
                               << " total_bytes_free:" << total_bytes_free;
-      space->LogFragmentationAllocFailure(oss, byte_count);
+      // LogFragmentationAllocFailure returns true if byte_count is greater than
+      // the largest free contiguous chunk in the space. Return value false
+      // means that we are throwing OOME because the amount of free heap after
+      // GC is less than kMinFreeHeapAfterGcForAlloc in proportion of the heap-size.
+      // Log an appropriate message in that case.
+      if (!space->LogFragmentationAllocFailure(oss, byte_count)) {
+        oss << "; giving up on allocation because <"
+            << kMinFreeHeapAfterGcForAlloc * 100
+            << "% of heap free after GC.";
+      }
     }
   }
   self->ThrowOutOfMemoryError(oss.str().c_str());
@@ -1788,9 +1801,6 @@ mirror::Object* Heap::AllocateInternalWithGc(Thread* self,
                                              size_t* usable_size,
                                              size_t* bytes_tl_bulk_allocated,
                                              ObjPtr<mirror::Class>* klass) {
-  // After a GC (due to allocation failure) we should retrieve at least this
-  // fraction of the current max heap size. Otherwise throw OOME.
-  constexpr double kMinFreeHeapAfterGcForAlloc = 0.01;
   bool was_default_allocator = allocator == GetCurrentAllocator();
   // Make sure there is no pending exception since we may need to throw an OOME.
   self->AssertNoPendingException();
@@ -4146,11 +4156,11 @@ int Heap::CheckPerfettoJHPEnabled() {
   return GetHeapSampler().IsEnabled();
 }
 
-void Heap::JHPCheckNonTlabSampleAllocation(Thread* self, mirror::Object* ret, size_t alloc_size) {
+void Heap::JHPCheckNonTlabSampleAllocation(Thread* self, mirror::Object* obj, size_t alloc_size) {
   bool take_sample = false;
   size_t bytes_until_sample = 0;
   HeapSampler& prof_heap_sampler = GetHeapSampler();
-  if (ret != nullptr && prof_heap_sampler.IsEnabled()) {
+  if (obj != nullptr && prof_heap_sampler.IsEnabled()) {
     // An allocation occurred, sample it, even if non-Tlab.
     // In case take_sample is already set from the previous GetSampleOffset
     // because we tried the Tlab allocation first, we will not use this value.
@@ -4163,9 +4173,9 @@ void Heap::JHPCheckNonTlabSampleAllocation(Thread* self, mirror::Object* ret, si
                                       &bytes_until_sample);
     prof_heap_sampler.SetBytesUntilSample(bytes_until_sample);
     if (take_sample) {
-      prof_heap_sampler.ReportSample(ret, alloc_size);
+      prof_heap_sampler.ReportSample(obj, alloc_size);
     }
-    VLOG(heap) << "JHP:NonTlab:AllocNonvirtual";
+    VLOG(heap) << "JHP:NonTlab Non-moving or Large Allocation";
   }
 }
 

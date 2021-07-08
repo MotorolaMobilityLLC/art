@@ -370,11 +370,11 @@ static void VMRuntime_preloadDexCaches(JNIEnv* env ATTRIBUTE_UNUSED, jobject) {
  */
 static void VMRuntime_registerAppInfo(JNIEnv* env,
                                       jclass clazz ATTRIBUTE_UNUSED,
-                                      jstring package_name ATTRIBUTE_UNUSED,
+                                      jstring package_name,
                                       jstring cur_profile_file,
-                                      jstring ref_profile_file ATTRIBUTE_UNUSED,
+                                      jstring ref_profile_file,
                                       jobjectArray code_paths,
-                                      jint code_path_type ATTRIBUTE_UNUSED) {
+                                      jint code_path_type) {
   std::vector<std::string> code_paths_vec;
   int code_paths_length = env->GetArrayLength(code_paths);
   for (int i = 0; i < code_paths_length; i++) {
@@ -388,7 +388,20 @@ static void VMRuntime_registerAppInfo(JNIEnv* env,
   std::string cur_profile_file_str(raw_cur_profile_file);
   env->ReleaseStringUTFChars(cur_profile_file, raw_cur_profile_file);
 
-  Runtime::Current()->RegisterAppInfo(code_paths_vec, cur_profile_file_str);
+  const char* raw_ref_profile_file = env->GetStringUTFChars(ref_profile_file, nullptr);
+  std::string ref_profile_file_str(raw_ref_profile_file);
+  env->ReleaseStringUTFChars(ref_profile_file, raw_ref_profile_file);
+
+  const char* raw_package_name = env->GetStringUTFChars(package_name, nullptr);
+  std::string package_name_str(raw_package_name);
+  env->ReleaseStringUTFChars(package_name, raw_package_name);
+
+  Runtime::Current()->RegisterAppInfo(
+      package_name_str,
+      code_paths_vec,
+      cur_profile_file_str,
+      ref_profile_file_str,
+      static_cast<int32_t>(code_path_type));
 }
 
 static jboolean VMRuntime_isBootClassPathOnDisk(JNIEnv* env, jclass, jstring java_instruction_set) {

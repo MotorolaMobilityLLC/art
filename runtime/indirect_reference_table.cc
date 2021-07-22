@@ -28,11 +28,7 @@
 #include "scoped_thread_state_change-inl.h"
 #include "thread.h"
 
-#include "android-base/properties.h"
-
 #include <cstdlib>
-
-using namespace android::base;
 
 namespace art {
 
@@ -257,16 +253,6 @@ IndirectRef IndirectReferenceTable::Add(IRTSegmentState previous_state,
   CHECK(obj != nullptr);
   VerifyObject(obj);
   DCHECK(table_ != nullptr);
-
-  //Unisoc write top_index to property when top_index > 40000
-  if (kIsDebugBuild) {
-    if(top_index > 40000 && top_index%5000 == 0){
-      LOG(INFO) << "+++ Add: write top_index to property, top_index = " << top_index;
-      char buf[8];
-      snprintf(buf, sizeof(buf), "%zu", top_index);
-      android::base::SetProperty("debug.reference_count",buf);
-    }
-  }
 
   if (top_index == max_entries_) {
     if (resizable_ == ResizableCapacity::kNo) {

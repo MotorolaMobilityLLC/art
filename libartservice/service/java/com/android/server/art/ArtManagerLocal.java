@@ -18,34 +18,37 @@ package com.android.server.art;
 
 import static com.android.server.art.PrimaryDexUtils.DetailedPrimaryDexInfo;
 import static com.android.server.art.PrimaryDexUtils.PrimaryDexInfo;
+import static com.android.server.art.Utils.Abi;
 import static com.android.server.art.model.ArtFlags.DeleteFlags;
 import static com.android.server.art.model.ArtFlags.GetStatusFlags;
-import static com.android.server.art.model.OptimizationStatus.DexFileOptimizationStatus;
+import static com.android.server.art.model.OptimizationStatus.DexContainerFileOptimizationStatus;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.SystemApi;
+import android.annotation.SystemService;
 import android.content.Context;
 import android.os.Binder;
+import android.os.CancellationSignal;
 import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
-import android.util.Log;
 
 import com.android.internal.annotations.VisibleForTesting;
-import com.android.server.art.IArtd;
+import com.android.server.LocalManagerRegistry;
 import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.DeleteResult;
 import com.android.server.art.model.OptimizationStatus;
 import com.android.server.art.model.OptimizeParams;
 import com.android.server.art.model.OptimizeResult;
-import com.android.server.art.wrapper.AndroidPackageApi;
-import com.android.server.art.wrapper.PackageManagerLocal;
-import com.android.server.art.wrapper.PackageState;
-import com.android.server.pm.snapshot.PackageDataSnapshot;
+import com.android.server.pm.PackageManagerLocal;
+import com.android.server.pm.pkg.AndroidPackage;
+import com.android.server.pm.pkg.PackageState;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
 
 /**
  * This class provides a system API for functionality provided by the ART module.
@@ -112,25 +115,26 @@ public final class ArtManagerLocal {
      */
     @NonNull
     public DeleteResult deleteOptimizedArtifacts(
-            @NonNull PackageDataSnapshot snapshot, @NonNull String packageName) {
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull String packageName) {
         return deleteOptimizedArtifacts(snapshot, packageName, ArtFlags.defaultDeleteFlags());
     }
 
     /**
      * Same as above, but allows to specify flags.
      *
-     * @see #deleteOptimizedArtifacts(PackageDataSnapshot, String)
+     * @see #deleteOptimizedArtifacts(PackageManagerLocal.FilteredSnapshot, String)
      */
     @NonNull
-    public DeleteResult deleteOptimizedArtifacts(@NonNull PackageDataSnapshot snapshot,
-            @NonNull String packageName, @DeleteFlags int flags) {
+    public DeleteResult deleteOptimizedArtifacts(
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull String packageName,
+            @DeleteFlags int flags) {
         if ((flags & ArtFlags.FLAG_FOR_PRIMARY_DEX) == 0
                 && (flags & ArtFlags.FLAG_FOR_SECONDARY_DEX) == 0) {
             throw new IllegalArgumentException("Nothing to delete");
         }
 
-        PackageState pkgState = getPackageStateOrThrow(snapshot, packageName);
-        AndroidPackageApi pkg = getPackageOrThrow(pkgState);
+        PackageState pkgState = Utils.getPackageStateOrThrow(snapshot, packageName);
+        AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
 
         try {
             long freedBytes = 0;
@@ -141,10 +145,10 @@ public final class ArtManagerLocal {
                     if (!dexInfo.hasCode()) {
                         continue;
                     }
-                    for (String isa : Utils.getAllIsas(pkgState)) {
+                    for (Abi abi : Utils.getAllAbis(pkgState)) {
                         freedBytes +=
                                 mInjector.getArtd().deleteArtifacts(AidlUtils.buildArtifactsPath(
-                                        dexInfo.dexPath(), isa, isInDalvikCache));
+                                        dexInfo.dexPath(), abi.isa(), isInDalvikCache));
                     }
                 }
             }
@@ -171,28 +175,29 @@ public final class ArtManagerLocal {
      */
     @NonNull
     public OptimizationStatus getOptimizationStatus(
-            @NonNull PackageDataSnapshot snapshot, @NonNull String packageName) {
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull String packageName) {
         return getOptimizationStatus(snapshot, packageName, ArtFlags.defaultGetStatusFlags());
     }
 
     /**
      * Same as above, but allows to specify flags.
      *
-     * @see #getOptimizationStatus(PackageDataSnapshot, String)
+     * @see #getOptimizationStatus(PackageManagerLocal.FilteredSnapshot, String)
      */
     @NonNull
-    public OptimizationStatus getOptimizationStatus(@NonNull PackageDataSnapshot snapshot,
-            @NonNull String packageName, @GetStatusFlags int flags) {
+    public OptimizationStatus getOptimizationStatus(
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull String packageName,
+            @GetStatusFlags int flags) {
         if ((flags & ArtFlags.FLAG_FOR_PRIMARY_DEX) == 0
                 && (flags & ArtFlags.FLAG_FOR_SECONDARY_DEX) == 0) {
             throw new IllegalArgumentException("Nothing to check");
         }
 
-        PackageState pkgState = getPackageStateOrThrow(snapshot, packageName);
-        AndroidPackageApi pkg = getPackageOrThrow(pkgState);
+        PackageState pkgState = Utils.getPackageStateOrThrow(snapshot, packageName);
+        AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
 
         try {
-            List<DexFileOptimizationStatus> statuses = new ArrayList<>();
+            List<DexContainerFileOptimizationStatus> statuses = new ArrayList<>();
 
             if ((flags & ArtFlags.FLAG_FOR_PRIMARY_DEX) != 0) {
                 for (DetailedPrimaryDexInfo dexInfo :
@@ -200,17 +205,19 @@ public final class ArtManagerLocal {
                     if (!dexInfo.hasCode()) {
                         continue;
                     }
-                    for (String isa : Utils.getAllIsas(pkgState)) {
+                    for (Abi abi : Utils.getAllAbis(pkgState)) {
                         try {
                             GetOptimizationStatusResult result =
-                                    mInjector.getArtd().getOptimizationStatus(
-                                            dexInfo.dexPath(), isa, dexInfo.classLoaderContext());
-                            statuses.add(new DexFileOptimizationStatus(dexInfo.dexPath(), isa,
-                                    result.compilerFilter, result.compilationReason,
-                                    result.locationDebugString));
+                                    mInjector.getArtd().getOptimizationStatus(dexInfo.dexPath(),
+                                            abi.isa(), dexInfo.classLoaderContext());
+                            statuses.add(
+                                    DexContainerFileOptimizationStatus.create(dexInfo.dexPath(),
+                                            abi.isPrimaryAbi(), abi.name(), result.compilerFilter,
+                                            result.compilationReason, result.locationDebugString));
                         } catch (ServiceSpecificException e) {
-                            statuses.add(new DexFileOptimizationStatus(
-                                    dexInfo.dexPath(), isa, "error", "error", e.getMessage()));
+                            statuses.add(DexContainerFileOptimizationStatus.create(
+                                    dexInfo.dexPath(), abi.isPrimaryAbi(), abi.name(), "error",
+                                    "error", e.getMessage()));
                         }
                     }
                 }
@@ -222,47 +229,73 @@ public final class ArtManagerLocal {
                         "Getting optimization status of secondary dex'es is not implemented yet");
             }
 
-            return new OptimizationStatus(statuses);
+            return OptimizationStatus.create(statuses);
         } catch (RemoteException e) {
             throw new IllegalStateException("An error occurred when calling artd", e);
         }
     }
 
+    /**
+     * Optimizes a package. The time this operation takes ranges from a few milliseconds to several
+     * minutes, depending on the params and the code size of the package.
+     *
+     * @throws IllegalArgumentException if the package is not found or the params are illegal
+     * @throws IllegalStateException if an internal error occurs
+     */
     @NonNull
-    public OptimizeResult optimizePackage(@NonNull PackageDataSnapshot snapshot,
+    public OptimizeResult optimizePackage(@NonNull PackageManagerLocal.FilteredSnapshot snapshot,
             @NonNull String packageName, @NonNull OptimizeParams params) {
+        var cancellationSignal = new CancellationSignal();
+        return optimizePackage(snapshot, packageName, params, cancellationSignal);
+    }
+
+    /**
+     * Same as above, but supports cancellation.
+     *
+     * @see #optimizePackage(PackageManagerLocal.FilteredSnapshot, String, OptimizeParams)
+     */
+    @NonNull
+    public OptimizeResult optimizePackage(@NonNull PackageManagerLocal.FilteredSnapshot snapshot,
+            @NonNull String packageName, @NonNull OptimizeParams params,
+            @NonNull CancellationSignal cancellationSignal) {
         if ((params.getFlags() & ArtFlags.FLAG_FOR_PRIMARY_DEX) == 0
                 && (params.getFlags() & ArtFlags.FLAG_FOR_SECONDARY_DEX) == 0) {
             throw new IllegalArgumentException("Nothing to optimize");
         }
 
-        PackageState pkgState = getPackageStateOrThrow(snapshot, packageName);
-        AndroidPackageApi pkg = getPackageOrThrow(pkgState);
-
-        try {
-            return mInjector.getDexOptHelper().dexopt(snapshot, pkgState, pkg, params);
-        } catch (RemoteException e) {
-            throw new IllegalStateException("An error occurred when calling artd", e);
-        }
-    }
-
-    private PackageState getPackageStateOrThrow(
-            @NonNull PackageDataSnapshot snapshot, @NonNull String packageName) {
-        PackageState pkgState = mInjector.getPackageManagerLocal().getPackageState(
-                snapshot, Binder.getCallingUid(), packageName);
-        if (pkgState == null) {
-            throw new IllegalArgumentException("Package not found: " + packageName);
-        }
-        return pkgState;
-    }
-
-    private AndroidPackageApi getPackageOrThrow(@NonNull PackageState pkgState) {
-        AndroidPackageApi pkg = pkgState.getAndroidPackage();
-        if (pkg == null) {
+        if ((params.getFlags() & ArtFlags.FLAG_FOR_PRIMARY_DEX) == 0
+                && (params.getFlags() & ArtFlags.FLAG_SHOULD_INCLUDE_DEPENDENCIES) != 0) {
             throw new IllegalArgumentException(
-                    "Unable to get package " + pkgState.getPackageName());
+                    "FLAG_SHOULD_INCLUDE_DEPENDENCIES must not set if FLAG_FOR_PRIMARY_DEX is not "
+                    + "set.");
         }
-        return pkg;
+
+        return mInjector.getDexOptHelper().dexopt(
+                snapshot, List.of(packageName), params, cancellationSignal, Runnable::run);
+    }
+
+    /**
+     * Notifies ART Service that a list of dex container files have been loaded.
+     *
+     * ART Service uses this information to:
+     * <ul>
+     *   <li>Determine whether an app is used by another app
+     *   <li>Record which secondary dex container files to optimize and how to optimize them
+     * </ul>
+     *
+     * @param loadingPackageName the name of the package who performs the load. ART Service assumes
+     *         that this argument has been validated that it exists in the snapshot and matches the
+     *         calling UID
+     * @param classLoaderContextByDexContainerFile a map from dex container files' absolute paths to
+     *         the string representations of the class loader contexts used to load them
+     * @throws IllegalArgumentException if {@code classLoaderContextByDexContainerFile} contains
+     *         invalid entries
+     */
+    public void notifyDexContainersLoaded(@NonNull PackageManagerLocal.FilteredSnapshot snapshot,
+            @NonNull String loadingPackageName,
+            @NonNull Map<String, String> classLoaderContextByDexContainerFile) {
+        DexUseManager.getInstance().addDexUse(
+                snapshot, loadingPackageName, classLoaderContextByDexContainerFile);
     }
 
     /**
@@ -277,19 +310,7 @@ public final class ArtManagerLocal {
 
         Injector(@Nullable Context context) {
             mContext = context;
-
-            PackageManagerLocal packageManagerLocal = null;
-            try {
-                packageManagerLocal = PackageManagerLocal.getInstance();
-            } catch (Exception e) {
-                // This is not a serious error. The reflection-based approach can be broken in some
-                // cases. This is fine because ART services is under development and no one depends
-                // on it.
-                // TODO(b/177273468): Make this a serious error when we switch to using the real
-                // APIs.
-                Log.w(TAG, "Unable to get fake PackageManagerLocal", e);
-            }
-            mPackageManagerLocal = packageManagerLocal;
+            mPackageManagerLocal = LocalManagerRegistry.getManager(PackageManagerLocal.class);
         }
 
         @NonNull

@@ -46,16 +46,6 @@ interface IArtd {
             @utf8InCpp String dexFile);
 
     /**
-     * Copies the profile. Throws if `src` does not exist. Fills `dst.profilePath.id` on success.
-     *
-     * Does not operate on a DM file.
-     *
-     * Throws fatal and non-fatal errors.
-     */
-    void copyProfile(in com.android.server.art.ProfilePath src,
-            inout com.android.server.art.OutputProfile dst);
-
-    /**
      * Copies the profile and rewrites it for the given dex file. Returns true and fills
      * `dst.profilePath.id` if the operation succeeds and `src` exists and contains entries that
      * match the given dex file.
@@ -70,10 +60,10 @@ interface IArtd {
      *
      * Throws fatal and non-fatal errors.
      */
-    void commitTmpProfile(in com.android.server.art.ProfilePath.TmpRefProfilePath profile);
+    void commitTmpProfile(in com.android.server.art.ProfilePath.TmpProfilePath profile);
 
     /**
-     * Deletes the profile.
+     * Deletes the profile. Does nothing of the profile doesn't exist.
      *
      * Operates on the whole DM file if given one.
      *
@@ -92,12 +82,40 @@ interface IArtd {
             in com.android.server.art.ProfilePath profile);
 
     /**
+     * Merges profiles. Both `profiles` and `referenceProfile` are inputs, while the difference is
+     * that `referenceProfile` is also used as the reference to calculate the diff. `profiles` that
+     * don't exist are skipped, while `referenceProfile`, if provided, must exist. Returns true,
+     * writes the merge result to `outputProfile` and fills `outputProfile.profilePath.id` if a
+     * merge has been performed.
+     *
+     * Throws fatal and non-fatal errors.
+     */
+    boolean mergeProfiles(in List<com.android.server.art.ProfilePath> profiles,
+            in @nullable com.android.server.art.ProfilePath referenceProfile,
+            inout com.android.server.art.OutputProfile outputProfile, @utf8InCpp String dexFile);
+
+    /**
      * Returns the visibility of the artifacts.
      *
      * Throws fatal and non-fatal errors.
      */
     com.android.server.art.FileVisibility getArtifactsVisibility(
             in com.android.server.art.ArtifactsPath artifactsPath);
+
+    /**
+     * Returns the visibility of the dex file.
+     *
+     * Throws fatal and non-fatal errors.
+     */
+    com.android.server.art.FileVisibility getDexFileVisibility(@utf8InCpp String dexFile);
+
+    /**
+     * Returns the visibility of the DM file.
+     *
+     * Throws fatal and non-fatal errors.
+     */
+    com.android.server.art.FileVisibility getDmFileVisibility(
+            in com.android.server.art.DexMetadataPath dmFile);
 
     /**
      * Returns true if dexopt is needed. `dexoptTrigger` is a bit field that consists of values
@@ -107,7 +125,7 @@ interface IArtd {
      */
     com.android.server.art.GetDexoptNeededResult getDexoptNeeded(
             @utf8InCpp String dexFile, @utf8InCpp String instructionSet,
-            @utf8InCpp String classLoaderContext, @utf8InCpp String compilerFilter,
+            @nullable @utf8InCpp String classLoaderContext, @utf8InCpp String compilerFilter,
             int dexoptTrigger);
 
     /**
@@ -118,9 +136,16 @@ interface IArtd {
     com.android.server.art.DexoptResult dexopt(
             in com.android.server.art.OutputArtifacts outputArtifacts,
             @utf8InCpp String dexFile, @utf8InCpp String instructionSet,
-            @utf8InCpp String classLoaderContext, @utf8InCpp String compilerFilter,
+            @nullable @utf8InCpp String classLoaderContext, @utf8InCpp String compilerFilter,
             in @nullable com.android.server.art.ProfilePath profile,
             in @nullable com.android.server.art.VdexPath inputVdex,
+            in @nullable com.android.server.art.DexMetadataPath dmFile,
             com.android.server.art.PriorityClass priorityClass,
-            in com.android.server.art.DexoptOptions dexoptOptions);
+            in com.android.server.art.DexoptOptions dexoptOptions,
+            in com.android.server.art.IArtdCancellationSignal cancellationSignal);
+
+    /**
+     * Returns a cancellation signal which can be used to cancel {@code dexopt} calls.
+     */
+    com.android.server.art.IArtdCancellationSignal createCancellationSignal();
 }

@@ -29,6 +29,9 @@ art_cc_defaults {
     host_supported: true,
     srcs: [
         "dex/quick_compiler_callbacks.cc",
+        "dex/verification_results.cc",
+        "driver/compiled_method.cc",
+        "driver/compiled_method_storage.cc",
         "driver/compiler_driver.cc",
         "linker/code_info_table_deduper.cc",
         "linker/elf_writer.cc",
@@ -37,6 +40,7 @@ art_cc_defaults {
         "linker/multi_oat_relative_patcher.cc",
         "linker/oat_writer.cc",
         "linker/relative_patcher.cc",
+        "utils/swap_space.cc",
     ],
 
     codegen: {
@@ -106,6 +110,9 @@ art_cc_library_static {
         "libartpalette",
         "libprofile",
     ],
+    static_libs: [
+        "libelffile",
+    ],
     apex_available: [
         "com.android.art",
         "com.android.art.debug",
@@ -156,6 +163,9 @@ art_cc_library_static {
         "libartd",
         "libartpalette",
         "libprofiled",
+    ],
+    static_libs: [
+        "libelffiled",
     ],
     apex_available: [
         "com.android.art.debug",
@@ -240,6 +250,12 @@ cc_defaults {
         android_arm: {
             pgo: {
                 profile_file: "art/dex2oat_arm_arm64.profdata",
+            },
+        },
+        android_riscv64: {
+            pgo: {
+                enable_profile_use: false,
+                profile_file: "",
             },
         },
         android_x86_64: {
@@ -497,6 +513,7 @@ art_cc_defaults {
         "dex2oat_test.cc",
         "dex2oat_vdex_test.cc",
         "dex2oat_image_test.cc",
+        "driver/compiled_method_storage_test.cc",
         "driver/compiler_driver_test.cc",
         "linker/code_info_table_deduper_test.cc",
         "linker/elf_writer_test.cc",
@@ -506,6 +523,7 @@ art_cc_defaults {
         "linker/multi_oat_relative_patcher_test.cc",
         "linker/oat_writer_test.cc",
         "verifier_deps_test.cc",
+        "utils/swap_space_test.cc",
     ],
     target: {
         host: {
@@ -565,6 +583,7 @@ art_cc_test {
         "libartd-compiler",
         "libartd-dex2oat",
         "libartd-dex2oat-gtest",
+        "libelffiled",
         "libvixld",
     ],
 }
@@ -587,6 +606,7 @@ art_cc_test {
         "libart-compiler",
         "libart-dex2oat",
         "libart-dex2oat-gtest",
+        "libelffile",
         "libvixl",
     ],
     test_config: "art_standalone_dex2oat_tests.xml",

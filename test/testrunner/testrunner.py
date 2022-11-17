@@ -581,7 +581,9 @@ def run_tests(tests):
       temp_path = tempfile.mkdtemp(dir=env.ART_HOST_TEST_DIR)
       options_test = '--temp-path {} '.format(temp_path) + options_test
 
-      run_test_sh = env.ANDROID_BUILD_TOP + '/art/test/run-test'
+      # Run the run-test script using the prebuilt python.
+      python3_bin = env.ANDROID_BUILD_TOP + "/prebuilts/build-tools/path/linux-x86/python3"
+      run_test_sh = python3_bin + ' ' + env.ANDROID_BUILD_TOP + '/art/test/run-test'
       command = ' '.join((run_test_sh, options_test, ' '.join(extra_arguments[target]), test))
       return executor.submit(run_test, command, test, variant_set, test_name)
 
@@ -1108,7 +1110,9 @@ def parse_option():
   global csv_result
 
   parser = argparse.ArgumentParser(description="Runs all or a subset of the ART test suite.")
-  parser.add_argument('-t', '--test', action='append', dest='tests', help='name(s) of the test(s)')
+  parser.add_argument('tests', action='extend', nargs="*", help='name(s) of the test(s)')
+  parser.add_argument('-t', '--test', action='append', dest='tests', help='name(s) of the test(s)'
+      ' (deprecated: use positional arguments at the end without any option instead)')
   global_group = parser.add_argument_group('Global options',
                                            'Options that affect all tests being run')
   global_group.add_argument('-j', type=int, dest='n_thread', help="""Number of CPUs to use.

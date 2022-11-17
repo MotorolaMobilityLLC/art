@@ -232,8 +232,11 @@ class Thread {
 
   // Attaches the calling native thread to the runtime, returning the new native peer.
   // Used to implement JNI AttachCurrentThread and AttachCurrentThreadAsDaemon calls.
-  static Thread* Attach(const char* thread_name, bool as_daemon, jobject thread_group,
-                        bool create_peer);
+  static Thread* Attach(const char* thread_name,
+                        bool as_daemon,
+                        jobject thread_group,
+                        bool create_peer,
+                        bool should_run_callbacks);
   // Attaches the calling native thread to the runtime, returning the new native peer.
   static Thread* Attach(const char* thread_name, bool as_daemon, jobject thread_peer);
 
@@ -270,20 +273,28 @@ class Thread {
   // Dumps a one-line summary of thread state (used for operator<<).
   void ShortDump(std::ostream& os) const;
 
+  // Order of threads for ANRs (ANRs can be trimmed, so we print important ones first).
+  enum class DumpOrder : uint8_t {
+    kMain,     // Always print the main thread first (there might not be one).
+    kBlocked,  // Then print all threads that are blocked due to waiting on lock.
+    kLocked,   // Then print all threads that are holding some lock already.
+    kDefault,  // Print all other threads which might not be interesting for ANR.
+  };
+
   // Dumps the detailed thread state and the thread stack (used for SIGQUIT).
-  void Dump(std::ostream& os,
-            bool dump_native_stack = true,
-            bool force_dump_stack = false) const
+  DumpOrder Dump(std::ostream& os,
+                 bool dump_native_stack = true,
+                 bool force_dump_stack = false) const
       REQUIRES_SHARED(Locks::mutator_lock_);
-  void Dump(std::ostream& os,
-            unwindstack::AndroidLocalUnwinder& unwinder,
-            bool dump_native_stack = true,
-            bool force_dump_stack = false) const
+  DumpOrder Dump(std::ostream& os,
+                 unwindstack::AndroidLocalUnwinder& unwinder,
+                 bool dump_native_stack = true,
+                 bool force_dump_stack = false) const
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  void DumpJavaStack(std::ostream& os,
-                     bool check_suspended = true,
-                     bool dump_locks = true) const
+  DumpOrder DumpJavaStack(std::ostream& os,
+                          bool check_suspended = true,
+                          bool dump_locks = true) const
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Dumps the SIGQUIT per-thread header. 'thread' can be null for a non-attached thread, in which
@@ -1458,7 +1469,7 @@ class Thread {
  private:
   explicit Thread(bool daemon);
   ~Thread() REQUIRES(!Locks::mutator_lock_, !Locks::thread_suspend_count_lock_);
-  void Destroy();
+  void Destroy(bool should_run_callbacks);
 
   // Deletes and clears the tlsPtr_.jpeer field. Done in a way so that both it and opeer cannot be
   // observed to be set at the same time by instrumentation.
@@ -1469,7 +1480,8 @@ class Thread {
   template <typename PeerAction>
   static Thread* Attach(const char* thread_name,
                         bool as_daemon,
-                        PeerAction p);
+                        PeerAction p,
+                        bool should_run_callbacks);
 
   void CreatePeer(const char* name, bool as_daemon, jobject thread_group);
 
@@ -1524,14 +1536,14 @@ class Thread {
   void VerifyStackImpl() REQUIRES_SHARED(Locks::mutator_lock_);
 
   void DumpState(std::ostream& os) const REQUIRES_SHARED(Locks::mutator_lock_);
-  void DumpStack(std::ostream& os,
-                 bool dump_native_stack = true,
-                 bool force_dump_stack = false) const
+  DumpOrder DumpStack(std::ostream& os,
+                      bool dump_native_stack = true,
+                      bool force_dump_stack = false) const
       REQUIRES_SHARED(Locks::mutator_lock_);
-  void DumpStack(std::ostream& os,
-                 unwindstack::AndroidLocalUnwinder& unwinder,
-                 bool dump_native_stack = true,
-                 bool force_dump_stack = false) const
+  DumpOrder DumpStack(std::ostream& os,
+                      unwindstack::AndroidLocalUnwinder& unwinder,
+                      bool dump_native_stack = true,
+                      bool force_dump_stack = false) const
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Out-of-line conveniences for debugging in gdb.
@@ -2121,8 +2133,10 @@ class Thread {
   SafeMap<std::string, std::unique_ptr<TLSData>, std::less<>> custom_tls_
       GUARDED_BY(Locks::custom_tls_lock_);
 
-#ifndef __BIONIC__
-  __attribute__((tls_model("initial-exec")))
+#if !defined(__BIONIC__)
+#if !defined(ANDROID_HOST_MUSL)
+    __attribute__((tls_model("initial-exec")))
+#endif
   static thread_local Thread* self_tls_;
 #endif
 

@@ -37,10 +37,8 @@ def main():
           java_genrule {{
               name: "{name}-tmp",
               out: ["{name}.zip"],
-              srcs: ["*{shard}-*/**/*"],
-              defaults: ["art-run-test-data-defaults"],
-              cmd: "$(location run-test-build.py) --out $(out) --mode {mode} --shard {shard} " +
-                  "--bootclasspath $(location :art-run-test-bootclasspath)",
+              srcs: ["?{shard}-*/**/*", "??{shard}-*/**/*"],
+              defaults: ["art-run-test-{mode}-data-defaults"],
           }}
 
           // Install in the output directory to make it accessible for tests.
@@ -53,13 +51,45 @@ def main():
           }}
           """.format(name=name, mode=mode, shard=shard)))
 
-      name = "art-run-test-{mode}-data".format(mode=mode)
+      f.write(textwrap.dedent("""
+        genrule_defaults {{
+            name: "art-run-test-{mode}-data-defaults",
+            defaults: [
+                // Enable only in source builds, where com.android.art.testing is
+                // available.
+                "art_module_source_build_genrule_defaults",
+            ],
+            tool_files: [
+                "run_test_build.py",
+                ":art-run-test-bootclasspath",
+            ],
+            tools: [
+                "d8",
+                "hiddenapi",
+                "jasmin",
+                "smali",
+                "soong_zip",
+                "zipalign",
+            ],
+            cmd: "$(location run_test_build.py) --out $(out) --mode {mode} " +
+                 "--bootclasspath $(location :art-run-test-bootclasspath) " +
+                 "--d8 $(location d8) " +
+                 "--hiddenapi $(location hiddenapi) " +
+                 "--jasmin $(location jasmin) " +
+                 "--smali $(location smali) " +
+                 "--soong_zip $(location soong_zip) " +
+                 "--zipalign $(location zipalign) " +
+                 "$(in)",
+        }}
+        """).format(mode=mode))
+
+      name = "art-run-test-{mode}-data-merged".format(mode=mode)
       srcs = ("\n"+" "*8).join('":{}-tmp",'.format(n) for n in names)
       deps = ("\n"+" "*8).join('"{}",'.format(n) for n in names)
       f.write(textwrap.dedent("""
         java_genrule {{
             name: "{name}-tmp",
-            defaults: ["art-run-test-data-defaults"],
+            defaults: ["art_module_source_build_genrule_defaults"],
             out: ["{name}.zip"],
             srcs: [
                 {srcs}
@@ -78,6 +108,34 @@ def main():
             ],
             sub_dir: "art",
             filename: "{name}.zip",
+        }}
+        """).format(name=name, srcs=srcs, deps=deps))
+
+      name = "art-run-test-{mode}-data".format(mode=mode)
+      srcs = ("\n"+" "*8).join('":{}-tmp",'.format(n) for n in names)
+      deps = ("\n"+" "*8).join('"{}",'.format(n) for n in names)
+      f.write(textwrap.dedent("""
+        // Phony target used to build all shards
+        java_genrule {{
+            name: "{name}-tmp",
+            defaults: ["art-run-test-data-defaults"],
+            out: ["{name}.txt"],
+            srcs: [
+                {srcs}
+            ],
+            cmd: "echo $(in) > $(out)",
+        }}
+
+        // Phony target used to install all shards
+        prebuilt_etc_host {{
+            name: "{name}",
+            defaults: ["art_module_source_build_prebuilt_defaults"],
+            src: ":{name}-tmp",
+            required: [
+                {deps}
+            ],
+            sub_dir: "art",
+            filename: "{name}.txt",
         }}
         """).format(name=name, srcs=srcs, deps=deps))
 

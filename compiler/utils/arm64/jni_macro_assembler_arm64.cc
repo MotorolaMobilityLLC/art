@@ -24,7 +24,7 @@
 
 using namespace vixl::aarch64;  // NOLINT(build/namespaces)
 
-namespace art {
+namespace art HIDDEN {
 namespace arm64 {
 
 #ifdef ___
@@ -641,6 +641,12 @@ void Arm64JNIMacroAssembler::Move(ManagedRegister m_dst, ManagedRegister m_src, 
       ___ Fmov(reg_d(dst.AsDRegister()), reg_d(src.AsDRegister()));
     }
   }
+}
+
+void Arm64JNIMacroAssembler::Move(ManagedRegister m_dst, size_t value) {
+  Arm64ManagedRegister dst = m_dst.AsArm64();
+  DCHECK(dst.IsXRegister());
+  ___ Mov(reg_x(dst.AsXRegister()), value);
 }
 
 void Arm64JNIMacroAssembler::CopyRawPtrFromThread(FrameOffset fr_offs, ThreadOffset64 tr_offs) {

@@ -26,7 +26,6 @@
 #include "class_table.h"
 #include "code_generator_utils.h"
 #include "common_arm.h"
-#include "compiled_method.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "gc/accounting/card_table.h"
 #include "gc/space/image_space.h"
@@ -46,7 +45,7 @@
 #include "utils/assembler.h"
 #include "utils/stack_checks.h"
 
-namespace art {
+namespace art HIDDEN {
 namespace arm {
 
 namespace vixl32 = vixl::aarch32;
@@ -974,6 +973,10 @@ class MethodEntryExitHooksSlowPathARMVIXL : public SlowPathCodeARMVIXL {
         (instruction_->IsMethodEntryHook()) ? kQuickMethodEntryHook : kQuickMethodExitHook;
     __ Bind(GetEntryLabel());
     SaveLiveRegisters(codegen, locations);
+    if (instruction_->IsMethodExitHook()) {
+      // Load frame size to pass to the exit hooks
+      __ Mov(vixl::aarch32::Register(R2), arm_codegen->GetFrameSize());
+    }
     arm_codegen->InvokeRuntime(entry_point, instruction_, instruction_->GetDexPc(), this);
     RestoreLiveRegisters(codegen, locations);
     __ B(GetExitLabel());
@@ -2167,9 +2170,24 @@ void InstructionCodeGeneratorARMVIXL::GenerateMethodEntryExitHook(HInstruction* 
       new (codegen_->GetScopedAllocator()) MethodEntryExitHooksSlowPathARMVIXL(instruction);
   codegen_->AddSlowPath(slow_path);
 
-  int offset = instrumentation::Instrumentation::NeedsEntryExitHooksOffset().Int32Value();
+  if (instruction->IsMethodExitHook()) {
+    // Check if we are required to check if the caller needs a deoptimization. Strictly speaking it
+    // would be sufficient to check if CheckCallerForDeopt bit is set. Though it is faster to check
+    // if it is just non-zero. kCHA bit isn't used in debuggable runtimes as cha optimization is
+    // disabled in debuggable runtime. The other bit is used when this method itself requires a
+    // deoptimization due to redefinition. So it is safe to just check for non-zero value here.
+    GetAssembler()->LoadFromOffset(kLoadWord,
+                                   temp,
+                                   sp,
+                                   codegen_->GetStackOffsetOfShouldDeoptimizeFlag());
+    __ CompareAndBranchIfNonZero(temp, slow_path->GetEntryLabel());
+  }
+
+  MemberOffset  offset = instruction->IsMethodExitHook() ?
+      instrumentation::Instrumentation::HaveMethodExitListenersOffset() :
+      instrumentation::Instrumentation::HaveMethodEntryListenersOffset();
   uint32_t address = reinterpret_cast32<uint32_t>(Runtime::Current()->GetInstrumentation());
-  __ Mov(temp, address + offset);
+  __ Mov(temp, address + offset.Int32Value());
   __ Ldrb(temp, MemOperand(temp, 0));
   __ CompareAndBranchIfNonZero(temp, slow_path->GetEntryLabel());
   __ Bind(slow_path->GetExitLabel());

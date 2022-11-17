@@ -16,12 +16,14 @@
 
 #include "artd.h"
 
+#include <fcntl.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 
 #include <climits>
+#include <csignal>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -40,6 +42,7 @@
 
 #include "aidl/com/android/server/art/BnArtd.h"
 #include "aidl/com/android/server/art/DexoptTrigger.h"
+#include "aidl/com/android/server/art/IArtdCancellationSignal.h"
 #include "android-base/errors.h"
 #include "android-base/file.h"
 #include "android-base/logging.h"
@@ -47,6 +50,7 @@
 #include "android-base/scopeguard.h"
 #include "android-base/strings.h"
 #include "android/binder_auto_utils.h"
+#include "android/binder_interface_utils.h"
 #include "android/binder_manager.h"
 #include "android/binder_process.h"
 #include "base/compiler_filter.h"
@@ -70,6 +74,7 @@ namespace artd {
 namespace {
 
 using ::aidl::com::android::server::art::ArtifactsPath;
+using ::aidl::com::android::server::art::DexMetadataPath;
 using ::aidl::com::android::server::art::DexoptOptions;
 using ::aidl::com::android::server::art::DexoptResult;
 using ::aidl::com::android::server::art::DexoptTrigger;
@@ -77,6 +82,7 @@ using ::aidl::com::android::server::art::FileVisibility;
 using ::aidl::com::android::server::art::FsPermission;
 using ::aidl::com::android::server::art::GetDexoptNeededResult;
 using ::aidl::com::android::server::art::GetOptimizationStatusResult;
+using ::aidl::com::android::server::art::IArtdCancellationSignal;
 using ::aidl::com::android::server::art::OutputArtifacts;
 using ::aidl::com::android::server::art::OutputProfile;
 using ::aidl::com::android::server::art::PriorityClass;
@@ -97,9 +103,10 @@ using ::ndk::ScopedAStatus;
 using ::fmt::literals::operator""_format;  // NOLINT
 
 using ArtifactsLocation = GetDexoptNeededResult::ArtifactsLocation;
-using TmpRefProfilePath = ProfilePath::TmpRefProfilePath;
+using TmpProfilePath = ProfilePath::TmpProfilePath;
 
 constexpr const char* kServiceName = "artd";
+constexpr const char* kArtdCancellationSignalType = "ArtdCancellationSignal";
 
 // Timeout for short operations, such as merging profiles.
 constexpr int kShortTimeoutSec = 60;  // 1 minute.
@@ -222,7 +229,7 @@ Result<void> PrepareArtifactsDir(
     if (se_context.has_value()) {
       res = selinux_android_restorecon_pkgdir(path.c_str(),
                                               se_context->seInfo.c_str(),
-                                              se_context->packageUid,
+                                              se_context->uid,
                                               SELINUX_ANDROID_RESTORECON_RECURSE);
     } else {
       res = selinux_android_restorecon(path.c_str(), SELINUX_ANDROID_RESTORECON_RECURSE);
@@ -267,6 +274,39 @@ Result<FileVisibility> GetFileVisibility(const std::string& file) {
                  std::filesystem::perms::none ?
              FileVisibility::OTHER_READABLE :
              FileVisibility::NOT_OTHER_READABLE;
+}
+
+Result<ArtdCancellationSignal*> ToArtdCancellationSignal(IArtdCancellationSignal* input) {
+  if (input == nullptr) {
+    return Error() << "Cancellation signal must not be nullptr";
+  }
+  // We cannot use `dynamic_cast` because ART code is compiled with `-fno-rtti`, so we have to check
+  // the magic number.
+  int64_t type;
+  if (!input->getType(&type).isOk() ||
+      type != reinterpret_cast<intptr_t>(kArtdCancellationSignalType)) {
+    // The cancellation signal must be created by `Artd::createCancellationSignal`.
+    return Error() << "Invalid cancellation signal type";
+  }
+  return static_cast<ArtdCancellationSignal*>(input);
+}
+
+Result<void> CopyFile(const std::string& src_path, const NewFile& dst_file) {
+  std::string content;
+  if (!ReadFileToString(src_path, &content)) {
+    return Errorf("Failed to read file '{}': {}", src_path, strerror(errno));
+  }
+  if (!WriteStringToFd(content, dst_file.Fd())) {
+    return Errorf("Failed to write file '{}': {}", dst_file.TempPath(), strerror(errno));
+  }
+  if (fsync(dst_file.Fd()) != 0) {
+    return Errorf("Failed to flush file '{}': {}", dst_file.TempPath(), strerror(errno));
+  }
+  if (lseek(dst_file.Fd(), /*offset=*/0, SEEK_SET) != 0) {
+    return Errorf(
+        "Failed to reset the offset for file '{}': {}", dst_file.TempPath(), strerror(errno));
+  }
+  return {};
 }
 
 class FdLogger {
@@ -385,13 +425,15 @@ ndk::ScopedAStatus Artd::isProfileUsable(const ProfilePath& in_profile,
   args.Add("--apk-fd=%d", dex_file->Fd());
   fd_logger.Add(*dex_file);
 
-  LOG(DEBUG) << "Running profman: " << Join(args.Get(), /*separator=*/" ")
-             << "\nOpened FDs: " << fd_logger;
+  LOG(INFO) << "Running profman: " << Join(args.Get(), /*separator=*/" ")
+            << "\nOpened FDs: " << fd_logger;
 
   Result<int> result = ExecAndReturnCode(args.Get(), kShortTimeoutSec);
   if (!result.ok()) {
     return NonFatal("Failed to run profman: " + result.error().message());
   }
+
+  LOG(INFO) << "profman returned code {}"_format(result.value());
 
   if (result.value() != ProfmanResult::kSkipCompilationSmallDelta &&
       result.value() != ProfmanResult::kSkipCompilationEmptyProfiles) {
@@ -402,35 +444,12 @@ ndk::ScopedAStatus Artd::isProfileUsable(const ProfilePath& in_profile,
   return ScopedAStatus::ok();
 }
 
-ndk::ScopedAStatus Artd::copyProfile(const ProfilePath& in_src, OutputProfile* in_dst) {
-  std::string src_path = OR_RETURN_FATAL(BuildProfileOrDmPath(in_src));
-  if (in_src.getTag() == ProfilePath::dexMetadataPath) {
-    return Fatal("Does not support DM file, got '{}'"_format(src_path));
-  }
-  std::string dst_path = OR_RETURN_FATAL(BuildRefProfilePath(in_dst->profilePath.refProfilePath));
-
-  std::string content;
-  if (!ReadFileToString(src_path, &content)) {
-    return NonFatal("Failed to read file '{}': {}"_format(src_path, strerror(errno)));
-  }
-
-  std::unique_ptr<NewFile> dst =
-      OR_RETURN_NON_FATAL(NewFile::Create(dst_path, in_dst->fsPermission));
-  if (!WriteStringToFd(content, dst->Fd())) {
-    return NonFatal("Failed to write file '{}': {}"_format(dst_path, strerror(errno)));
-  }
-
-  OR_RETURN_NON_FATAL(dst->Keep());
-  in_dst->profilePath.id = dst->TempId();
-  return ScopedAStatus::ok();
-}
-
 ndk::ScopedAStatus Artd::copyAndRewriteProfile(const ProfilePath& in_src,
                                                OutputProfile* in_dst,
                                                const std::string& in_dexFile,
                                                bool* _aidl_return) {
   std::string src_path = OR_RETURN_FATAL(BuildProfileOrDmPath(in_src));
-  std::string dst_path = OR_RETURN_FATAL(BuildRefProfilePath(in_dst->profilePath.refProfilePath));
+  std::string dst_path = OR_RETURN_FATAL(BuildFinalProfilePath(in_dst->profilePath));
   OR_RETURN_FATAL(ValidateDexPath(in_dexFile));
 
   CmdlineBuilder args;
@@ -461,15 +480,17 @@ ndk::ScopedAStatus Artd::copyAndRewriteProfile(const ProfilePath& in_src,
   args.Add("--reference-profile-file-fd=%d", dst->Fd());
   fd_logger.Add(*dst);
 
-  LOG(DEBUG) << "Running profman: " << Join(args.Get(), /*separator=*/" ")
-             << "\nOpened FDs: " << fd_logger;
+  LOG(INFO) << "Running profman: " << Join(args.Get(), /*separator=*/" ")
+            << "\nOpened FDs: " << fd_logger;
 
   Result<int> result = ExecAndReturnCode(args.Get(), kShortTimeoutSec);
   if (!result.ok()) {
     return NonFatal("Failed to run profman: " + result.error().message());
   }
 
-  if (result.value() == ProfmanResult::kCopyAndUpdateNoUpdate) {
+  LOG(INFO) << "profman returned code {}"_format(result.value());
+
+  if (result.value() == ProfmanResult::kCopyAndUpdateNoMatch) {
     *_aidl_return = false;
     return ScopedAStatus::ok();
   }
@@ -484,9 +505,9 @@ ndk::ScopedAStatus Artd::copyAndRewriteProfile(const ProfilePath& in_src,
   return ScopedAStatus::ok();
 }
 
-ndk::ScopedAStatus Artd::commitTmpProfile(const TmpRefProfilePath& in_profile) {
-  std::string tmp_profile_path = OR_RETURN_FATAL(BuildTmpRefProfilePath(in_profile));
-  std::string ref_profile_path = OR_RETURN_FATAL(BuildRefProfilePath(in_profile.refProfilePath));
+ndk::ScopedAStatus Artd::commitTmpProfile(const TmpProfilePath& in_profile) {
+  std::string tmp_profile_path = OR_RETURN_FATAL(BuildTmpProfilePath(in_profile));
+  std::string ref_profile_path = OR_RETURN_FATAL(BuildFinalProfilePath(in_profile));
 
   std::error_code ec;
   std::filesystem::rename(tmp_profile_path, ref_profile_path, ec);
@@ -502,7 +523,7 @@ ndk::ScopedAStatus Artd::deleteProfile(const ProfilePath& in_profile) {
   std::string profile_path = OR_RETURN_FATAL(BuildProfileOrDmPath(in_profile));
 
   std::error_code ec;
-  if (!std::filesystem::remove(profile_path, ec)) {
+  if (!std::filesystem::remove(profile_path, ec) && ec.value() != ENOENT) {
     LOG(ERROR) << "Failed to remove '{}': {}"_format(profile_path, ec.message());
   }
 
@@ -523,9 +544,120 @@ ndk::ScopedAStatus Artd::getArtifactsVisibility(const ArtifactsPath& in_artifact
   return ScopedAStatus::ok();
 }
 
+ndk::ScopedAStatus Artd::getDexFileVisibility(const std::string& in_dexFile,
+                                              FileVisibility* _aidl_return) {
+  OR_RETURN_FATAL(ValidateDexPath(in_dexFile));
+  *_aidl_return = OR_RETURN_NON_FATAL(GetFileVisibility(in_dexFile));
+  return ScopedAStatus::ok();
+}
+
+ndk::ScopedAStatus Artd::getDmFileVisibility(const DexMetadataPath& in_dmFile,
+                                             FileVisibility* _aidl_return) {
+  std::string dm_path = OR_RETURN_FATAL(BuildDexMetadataPath(in_dmFile));
+  *_aidl_return = OR_RETURN_NON_FATAL(GetFileVisibility(dm_path));
+  return ScopedAStatus::ok();
+}
+
+ndk::ScopedAStatus Artd::mergeProfiles(const std::vector<ProfilePath>& in_profiles,
+                                       const std::optional<ProfilePath>& in_referenceProfile,
+                                       OutputProfile* in_outputProfile,
+                                       const std::string& in_dexFile,
+                                       bool* _aidl_return) {
+  std::vector<std::string> profile_paths;
+  for (const ProfilePath& profile : in_profiles) {
+    std::string profile_path = OR_RETURN_FATAL(BuildProfileOrDmPath(profile));
+    if (profile.getTag() == ProfilePath::dexMetadataPath) {
+      return Fatal("Does not support DM file, got '{}'"_format(profile_path));
+    }
+    profile_paths.push_back(std::move(profile_path));
+  }
+  std::string output_profile_path =
+      OR_RETURN_FATAL(BuildFinalProfilePath(in_outputProfile->profilePath));
+  OR_RETURN_FATAL(ValidateDexPath(in_dexFile));
+
+  CmdlineBuilder args;
+  FdLogger fd_logger;
+  args.Add(OR_RETURN_FATAL(GetArtExec()))
+      .Add("--drop-capabilities")
+      .Add("--")
+      .Add(OR_RETURN_FATAL(GetProfman()));
+
+  std::vector<std::unique_ptr<File>> profile_files;
+  for (const std::string& profile_path : profile_paths) {
+    Result<std::unique_ptr<File>> profile_file = OpenFileForReading(profile_path);
+    if (!profile_file.ok()) {
+      if (profile_file.error().code() == ENOENT) {
+        // Skip non-existing file.
+        continue;
+      }
+      return NonFatal(
+          "Failed to open profile '{}': {}"_format(profile_path, profile_file.error().message()));
+    }
+    args.Add("--profile-file-fd=%d", profile_file.value()->Fd());
+    fd_logger.Add(*profile_file.value());
+    profile_files.push_back(std::move(profile_file.value()));
+  }
+
+  if (profile_files.empty()) {
+    LOG(INFO) << "Merge skipped because there are no existing profiles";
+    *_aidl_return = false;
+    return ScopedAStatus::ok();
+  }
+
+  std::unique_ptr<NewFile> output_profile_file =
+      OR_RETURN_NON_FATAL(NewFile::Create(output_profile_path, in_outputProfile->fsPermission));
+
+  if (in_referenceProfile.has_value()) {
+    std::string reference_profile_path =
+        OR_RETURN_FATAL(BuildProfileOrDmPath(*in_referenceProfile));
+    if (in_referenceProfile->getTag() == ProfilePath::dexMetadataPath) {
+      return Fatal("Does not support DM file, got '{}'"_format(reference_profile_path));
+    }
+    OR_RETURN_NON_FATAL(CopyFile(reference_profile_path, *output_profile_file));
+  }
+
+  // profman is ok with this being an empty file when in_referenceProfile isn't set.
+  args.Add("--reference-profile-file-fd=%d", output_profile_file->Fd());
+  fd_logger.Add(*output_profile_file);
+
+  std::unique_ptr<File> dex_file = OR_RETURN_NON_FATAL(OpenFileForReading(in_dexFile));
+  args.Add("--apk-fd=%d", dex_file->Fd());
+  fd_logger.Add(*dex_file);
+
+  args.AddIfNonEmpty("--min-new-classes-percent-change=%s",
+                     props_->GetOrEmpty("dalvik.vm.bgdexopt.new-classes-percent"))
+      .AddIfNonEmpty("--min-new-methods-percent-change=%s",
+                     props_->GetOrEmpty("dalvik.vm.bgdexopt.new-methods-percent"));
+
+  LOG(INFO) << "Running profman: " << Join(args.Get(), /*separator=*/" ")
+            << "\nOpened FDs: " << fd_logger;
+
+  Result<int> result = ExecAndReturnCode(args.Get(), kShortTimeoutSec);
+  if (!result.ok()) {
+    return NonFatal("Failed to run profman: " + result.error().message());
+  }
+
+  LOG(INFO) << "profman returned code {}"_format(result.value());
+
+  if (result.value() == ProfmanResult::kSkipCompilationSmallDelta ||
+      result.value() == ProfmanResult::kSkipCompilationEmptyProfiles) {
+    *_aidl_return = false;
+    return ScopedAStatus::ok();
+  }
+
+  if (result.value() != ProfmanResult::kCompile) {
+    return NonFatal("profman returned an unexpected code: {}"_format(result.value()));
+  }
+
+  OR_RETURN_NON_FATAL(output_profile_file->Keep());
+  *_aidl_return = true;
+  in_outputProfile->profilePath.id = output_profile_file->TempId();
+  return ScopedAStatus::ok();
+}
+
 ndk::ScopedAStatus Artd::getDexoptNeeded(const std::string& in_dexFile,
                                          const std::string& in_instructionSet,
-                                         const std::string& in_classLoaderContext,
+                                         const std::optional<std::string>& in_classLoaderContext,
                                          const std::string& in_compilerFilter,
                                          int32_t in_dexoptTrigger,
                                          GetDexoptNeededResult* _aidl_return) {
@@ -536,9 +668,9 @@ ndk::ScopedAStatus Artd::getDexoptNeeded(const std::string& in_dexFile,
 
   std::unique_ptr<ClassLoaderContext> context;
   std::string error_msg;
-  auto oat_file_assistant = OatFileAssistant::Create(in_dexFile.c_str(),
-                                                     in_instructionSet.c_str(),
-                                                     in_classLoaderContext.c_str(),
+  auto oat_file_assistant = OatFileAssistant::Create(in_dexFile,
+                                                     in_instructionSet,
+                                                     in_classLoaderContext,
                                                      /*load_executable=*/false,
                                                      /*only_load_trusted_executable=*/true,
                                                      ofa_context.value(),
@@ -559,16 +691,19 @@ ndk::ScopedAStatus Artd::getDexoptNeeded(const std::string& in_dexFile,
   return ScopedAStatus::ok();
 }
 
-ndk::ScopedAStatus Artd::dexopt(const OutputArtifacts& in_outputArtifacts,
-                                const std::string& in_dexFile,
-                                const std::string& in_instructionSet,
-                                const std::string& in_classLoaderContext,
-                                const std::string& in_compilerFilter,
-                                const std::optional<ProfilePath>& in_profile,
-                                const std::optional<VdexPath>& in_inputVdex,
-                                PriorityClass in_priorityClass,
-                                const DexoptOptions& in_dexoptOptions,
-                                DexoptResult* _aidl_return) {
+ndk::ScopedAStatus Artd::dexopt(
+    const OutputArtifacts& in_outputArtifacts,
+    const std::string& in_dexFile,
+    const std::string& in_instructionSet,
+    const std::optional<std::string>& in_classLoaderContext,
+    const std::string& in_compilerFilter,
+    const std::optional<ProfilePath>& in_profile,
+    const std::optional<VdexPath>& in_inputVdex,
+    const std::optional<DexMetadataPath>& in_dmFile,
+    PriorityClass in_priorityClass,
+    const DexoptOptions& in_dexoptOptions,
+    const std::shared_ptr<IArtdCancellationSignal>& in_cancellationSignal,
+    DexoptResult* _aidl_return) {
   _aidl_return->cancelled = false;
 
   std::string oat_path = OR_RETURN_FATAL(BuildOatPath(in_outputArtifacts.artifactsPath));
@@ -579,11 +714,15 @@ ndk::ScopedAStatus Artd::dexopt(const OutputArtifacts& in_outputArtifacts,
       in_profile.has_value() ?
           std::make_optional(OR_RETURN_FATAL(BuildProfileOrDmPath(in_profile.value()))) :
           std::nullopt;
+  ArtdCancellationSignal* cancellation_signal =
+      OR_RETURN_FATAL(ToArtdCancellationSignal(in_cancellationSignal.get()));
 
-  std::unique_ptr<ClassLoaderContext> context =
-      ClassLoaderContext::Create(in_classLoaderContext.c_str());
-  if (context == nullptr) {
-    return Fatal("Class loader context '{}' is invalid"_format(in_classLoaderContext));
+  std::unique_ptr<ClassLoaderContext> context = nullptr;
+  if (in_classLoaderContext.has_value()) {
+    context = ClassLoaderContext::Create(in_classLoaderContext->c_str());
+    if (context == nullptr) {
+      return Fatal("Class loader context '{}' is invalid"_format(in_classLoaderContext.value()));
+    }
   }
 
   OR_RETURN_NON_FATAL(PrepareArtifactsDirs(in_outputArtifacts));
@@ -633,34 +772,38 @@ ndk::ScopedAStatus Artd::dexopt(const OutputArtifacts& in_outputArtifacts,
   args.Add("--zip-fd=%d", dex_file->Fd()).Add("--zip-location=%s", in_dexFile);
   fd_logger.Add(*dex_file);
 
-  std::vector<std::string> flattened_context = context->FlattenDexPaths();
-  std::string dex_dir = Dirname(in_dexFile.c_str());
   std::vector<std::unique_ptr<File>> context_files;
-  std::vector<int> context_fds;
-  for (const std::string& context_element : flattened_context) {
-    std::string context_path = std::filesystem::path(dex_dir).append(context_element);
-    OR_RETURN_FATAL(ValidateDexPath(context_path));
-    std::unique_ptr<File> context_file = OR_RETURN_NON_FATAL(OpenFileForReading(context_path));
-    context_fds.push_back(context_file->Fd());
-    fd_logger.Add(*context_file);
-    context_files.push_back(std::move(context_file));
+  if (context != nullptr) {
+    std::vector<std::string> flattened_context = context->FlattenDexPaths();
+    std::string dex_dir = Dirname(in_dexFile.c_str());
+    std::vector<int> context_fds;
+    for (const std::string& context_element : flattened_context) {
+      std::string context_path = std::filesystem::path(dex_dir).append(context_element);
+      OR_RETURN_FATAL(ValidateDexPath(context_path));
+      std::unique_ptr<File> context_file = OR_RETURN_NON_FATAL(OpenFileForReading(context_path));
+      context_fds.push_back(context_file->Fd());
+      fd_logger.Add(*context_file);
+      context_files.push_back(std::move(context_file));
+    }
+    args.AddIfNonEmpty("--class-loader-context-fds=%s", Join(context_fds, /*separator=*/':'))
+        .Add("--class-loader-context=%s", in_classLoaderContext.value())
+        .Add("--classpath-dir=%s", dex_dir);
   }
-  args.Add("--class-loader-context-fds=%s", Join(context_fds, /*separator=*/':'))
-      .Add("--class-loader-context=%s", in_classLoaderContext)
-      .Add("--classpath-dir=%s", dex_dir);
 
   std::unique_ptr<File> input_vdex_file = nullptr;
   if (in_inputVdex.has_value()) {
-    if (in_inputVdex->getTag() == VdexPath::dexMetadataPath) {
-      std::string input_vdex_path = OR_RETURN_FATAL(BuildDexMetadataPath(in_inputVdex.value()));
-      input_vdex_file = OR_RETURN_NON_FATAL(OpenFileForReading(input_vdex_path));
-      args.Add("--dm-fd=%d", input_vdex_file->Fd());
-    } else {
-      std::string input_vdex_path = OR_RETURN_FATAL(BuildVdexPath(in_inputVdex.value()));
-      input_vdex_file = OR_RETURN_NON_FATAL(OpenFileForReading(input_vdex_path));
-      args.Add("--input-vdex-fd=%d", input_vdex_file->Fd());
-    }
+    std::string input_vdex_path = OR_RETURN_FATAL(BuildVdexPath(in_inputVdex.value()));
+    input_vdex_file = OR_RETURN_NON_FATAL(OpenFileForReading(input_vdex_path));
+    args.Add("--input-vdex-fd=%d", input_vdex_file->Fd());
     fd_logger.Add(*input_vdex_file);
+  }
+
+  std::unique_ptr<File> dm_file = nullptr;
+  if (in_dmFile.has_value()) {
+    std::string dm_path = OR_RETURN_FATAL(BuildDexMetadataPath(in_dmFile.value()));
+    dm_file = OR_RETURN_NON_FATAL(OpenFileForReading(dm_path));
+    args.Add("--dm-fd=%d", dm_file->Fd());
+    fd_logger.Add(*dm_file);
   }
 
   std::unique_ptr<File> profile_file = nullptr;
@@ -677,20 +820,69 @@ ndk::ScopedAStatus Artd::dexopt(const OutputArtifacts& in_outputArtifacts,
   LOG(INFO) << "Running dex2oat: " << Join(args.Get(), /*separator=*/" ")
             << "\nOpened FDs: " << fd_logger;
 
+  ExecCallbacks callbacks{
+      .on_start =
+          [&](pid_t pid) {
+            std::lock_guard<std::mutex> lock(cancellation_signal->mu_);
+            cancellation_signal->pids_.insert(pid);
+            // Handle cancellation signals sent before the process starts.
+            if (cancellation_signal->is_cancelled_) {
+              int res = kill_(pid, SIGKILL);
+              DCHECK_EQ(res, 0);
+            }
+          },
+      .on_end =
+          [&](pid_t pid) {
+            std::lock_guard<std::mutex> lock(cancellation_signal->mu_);
+            // The pid should no longer receive kill signals sent by `cancellation_signal`.
+            cancellation_signal->pids_.erase(pid);
+          },
+  };
+
   ProcessStat stat;
-  Result<int> result = ExecAndReturnCode(args.Get(), kLongTimeoutSec, &stat);
+  Result<int> result = ExecAndReturnCode(args.Get(), kLongTimeoutSec, callbacks, &stat);
   _aidl_return->wallTimeMs = stat.wall_time_ms;
   _aidl_return->cpuTimeMs = stat.cpu_time_ms;
   if (!result.ok()) {
-    // TODO(b/244412198): Return cancelled=true if dexopt is cancelled upon request.
+    {
+      std::lock_guard<std::mutex> lock(cancellation_signal->mu_);
+      if (cancellation_signal->is_cancelled_) {
+        _aidl_return->cancelled = true;
+        return ScopedAStatus::ok();
+      }
+    }
     return NonFatal("Failed to run dex2oat: " + result.error().message());
   }
+
+  LOG(INFO) << "dex2oat returned code {}"_format(result.value());
+
   if (result.value() != 0) {
     return NonFatal("dex2oat returned an unexpected code: %d"_format(result.value()));
   }
 
   NewFile::CommitAllOrAbandon(files_to_commit, files_to_delete);
 
+  return ScopedAStatus::ok();
+}
+
+ScopedAStatus ArtdCancellationSignal::cancel() {
+  std::lock_guard<std::mutex> lock(mu_);
+  is_cancelled_ = true;
+  for (pid_t pid : pids_) {
+    int res = kill_(pid, SIGKILL);
+    DCHECK_EQ(res, 0);
+  }
+  return ScopedAStatus::ok();
+}
+
+ScopedAStatus ArtdCancellationSignal::getType(int64_t* _aidl_return) {
+  *_aidl_return = reinterpret_cast<intptr_t>(kArtdCancellationSignalType);
+  return ScopedAStatus::ok();
+}
+
+ScopedAStatus Artd::createCancellationSignal(
+    std::shared_ptr<IArtdCancellationSignal>* _aidl_return) {
+  *_aidl_return = ndk::SharedRefBase::make<ArtdCancellationSignal>(kill_);
   return ScopedAStatus::ok();
 }
 
@@ -870,10 +1062,11 @@ void Artd::AddPerfConfigFlags(PriorityClass priority_class, /*out*/ CmdlineBuild
 
 android::base::Result<int> Artd::ExecAndReturnCode(const std::vector<std::string>& args,
                                                    int timeout_sec,
+                                                   const ExecCallbacks& callbacks,
                                                    ProcessStat* stat) const {
   std::string error_msg;
   ExecResult result =
-      exec_utils_->ExecAndReturnResult(args, timeout_sec, ExecCallbacks(), stat, &error_msg);
+      exec_utils_->ExecAndReturnResult(args, timeout_sec, callbacks, stat, &error_msg);
   if (result.status != ExecResult::kExited) {
     return Error() << error_msg;
   }

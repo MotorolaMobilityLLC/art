@@ -35,7 +35,6 @@
 #include "base/unix_file/fd_file.h"
 #include "class_linker-inl.h"
 #include "class_root-inl.h"
-#include "compiled_method.h"
 #include "dex/dex_file-inl.h"
 #include "dex/dex_file_types.h"
 #include "driver/compiler_options.h"
@@ -155,11 +154,19 @@ static ArrayRef<const uint8_t> MaybeCompressData(ArrayRef<const uint8_t> source,
                  << PrettyDuration(NanoTime() - compress_start_time);
   if (kIsDebugBuild) {
     dchecked_vector<uint8_t> decompressed(source.size());
-    const size_t decompressed_size = LZ4_decompress_safe(
+    size_t decompressed_size;
+    std::string error_msg;
+    bool ok = LZ4_decompress_safe_checked(
         reinterpret_cast<char*>(storage->data()),
         reinterpret_cast<char*>(decompressed.data()),
         storage->size(),
-        decompressed.size());
+        decompressed.size(),
+        &decompressed_size,
+        &error_msg);
+    if (!ok) {
+      LOG(FATAL) << error_msg;
+      UNREACHABLE();
+    }
     CHECK_EQ(decompressed_size, decompressed.size());
     CHECK_EQ(memcmp(source.data(), decompressed.data(), source.size()), 0) << image_storage_mode;
   }
@@ -266,7 +273,7 @@ static void ClearDexFileCookies() REQUIRES_SHARED(Locks::mutator_lock_) {
     DCHECK(obj != nullptr);
     Class* klass = obj->GetClass();
     if (klass == WellKnownClasses::ToClass(WellKnownClasses::dalvik_system_DexFile)) {
-      ArtField* field = jni::DecodeArtField(WellKnownClasses::dalvik_system_DexFile_cookie);
+      ArtField* field = WellKnownClasses::dalvik_system_DexFile_cookie;
       // Null out the cookie to enable determinism. b/34090128
       field->SetObject</*kTransactionActive*/false>(obj, nullptr);
     }
@@ -2222,7 +2229,7 @@ void ImageWriter::LayoutHelper::VerifyImageBinSlotsAssigned() {
           // Note: The app class loader is used only for checking against the runtime
           // class loader, the dex file cookie is cleared and therefore we do not need
           // to run the finalizer even if we implement app image objects collection.
-          ArtField* field = jni::DecodeArtField(WellKnownClasses::dalvik_system_DexFile_cookie);
+          ArtField* field = WellKnownClasses::dalvik_system_DexFile_cookie;
           CHECK(field->GetObject<kWithoutReadBarrier>(ref) == nullptr);
           return;
         }

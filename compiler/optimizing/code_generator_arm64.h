@@ -18,6 +18,7 @@
 #define ART_COMPILER_OPTIMIZING_CODE_GENERATOR_ARM64_H_
 
 #include "base/bit_field.h"
+#include "base/macros.h"
 #include "class_root.h"
 #include "code_generator.h"
 #include "common_arm64.h"
@@ -36,7 +37,7 @@
 #include "aarch64/macro-assembler-aarch64.h"
 #pragma GCC diagnostic pop
 
-namespace art {
+namespace art HIDDEN {
 
 namespace linker {
 class Arm64RelativePatcherTest;
@@ -114,9 +115,7 @@ inline Location FixedTempLocation() {
 const vixl::aarch64::CPURegList callee_saved_core_registers(
     vixl::aarch64::CPURegister::kRegister,
     vixl::aarch64::kXRegSize,
-    ((gUseReadBarrier && kUseBakerReadBarrier)
-         ? vixl::aarch64::x21.GetCode()
-         : vixl::aarch64::x20.GetCode()),
+    (kReserveMarkingRegister ? vixl::aarch64::x21.GetCode() : vixl::aarch64::x20.GetCode()),
      vixl::aarch64::x30.GetCode());
 const vixl::aarch64::CPURegList callee_saved_fp_registers(vixl::aarch64::CPURegister::kVRegister,
                                                           vixl::aarch64::kDRegSize,

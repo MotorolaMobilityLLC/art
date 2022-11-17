@@ -42,7 +42,7 @@
 #include "ssa_builder.h"
 #include "well_known_classes.h"
 
-namespace art {
+namespace art HIDDEN {
 
 namespace {
 
@@ -981,11 +981,11 @@ static ArtMethod* ResolveMethod(uint16_t method_idx,
     *imt_or_vtable_index = resolved_method->GetVtableIndex();
   } else if (*invoke_type == kInterface) {
     // For HInvokeInterface we need the IMT index.
-    *imt_or_vtable_index = ImTable::GetImtIndex(resolved_method);
+    *imt_or_vtable_index = resolved_method->GetImtIndex();
+    DCHECK_EQ(*imt_or_vtable_index, ImTable::GetImtIndex(resolved_method));
   }
 
-  *is_string_constructor =
-      resolved_method->IsConstructor() && resolved_method->GetDeclaringClass()->IsStringClass();
+  *is_string_constructor = resolved_method->IsStringConstructor();
 
   return resolved_method;
 }

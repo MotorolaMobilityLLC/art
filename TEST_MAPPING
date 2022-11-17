@@ -311,9 +311,6 @@
       "name": "art-run-test-145-alloc-tracking-stress[com.google.android.art.apex]"
     },
     {
-      "name": "art-run-test-151-OpenFileLimit[com.google.android.art.apex]"
-    },
-    {
       "name": "art-run-test-152-dead-large-object[com.google.android.art.apex]"
     },
     {
@@ -413,9 +410,6 @@
       "name": "art-run-test-2231-checker-heap-poisoning[com.google.android.art.apex]"
     },
     {
-      "name": "art-run-test-2232-write-metrics-to-log[com.google.android.art.apex]"
-    },
-    {
       "name": "art-run-test-2233-checker-remove-loop-suspend-check[com.google.android.art.apex]"
     },
     {
@@ -423,6 +417,15 @@
     },
     {
       "name": "art-run-test-2236-JdkUnsafeGetLong-regression[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2241-checker-inline-try-catch[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2242-checker-lse-acquire-release-operations[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2243-checker-not-inline-into-throw[com.google.android.art.apex]"
     },
     {
       "name": "art-run-test-300-package-override[com.google.android.art.apex]"
@@ -1298,10 +1301,10 @@
       "name": "art_standalone_oatdump_tests[com.google.android.art.apex]"
     },
     {
-      "name": "art_standalone_profman_tests[com.google.android.art.apex]"
+      "name": "art_standalone_odrefresh_tests[com.google.android.art.apex]"
     },
     {
-      "name": "art_standalone_runtime_compiler_tests[com.google.android.art.apex]"
+      "name": "art_standalone_profman_tests[com.google.android.art.apex]"
     },
     {
       "name": "art_standalone_runtime_tests[com.google.android.art.apex]"
@@ -1642,9 +1645,6 @@
       "name": "art-run-test-145-alloc-tracking-stress"
     },
     {
-      "name": "art-run-test-151-OpenFileLimit"
-    },
-    {
       "name": "art-run-test-152-dead-large-object"
     },
     {
@@ -1744,9 +1744,6 @@
       "name": "art-run-test-2231-checker-heap-poisoning"
     },
     {
-      "name": "art-run-test-2232-write-metrics-to-log"
-    },
-    {
       "name": "art-run-test-2233-checker-remove-loop-suspend-check"
     },
     {
@@ -1754,6 +1751,15 @@
     },
     {
       "name": "art-run-test-2236-JdkUnsafeGetLong-regression"
+    },
+    {
+      "name": "art-run-test-2241-checker-inline-try-catch"
+    },
+    {
+      "name": "art-run-test-2242-checker-lse-acquire-release-operations"
+    },
+    {
+      "name": "art-run-test-2243-checker-not-inline-into-throw"
     },
     {
       "name": "art-run-test-300-package-override"
@@ -2635,9 +2641,6 @@
       "name": "art_standalone_profman_tests"
     },
     {
-      "name": "art_standalone_runtime_compiler_tests"
-    },
-    {
       "name": "art_standalone_runtime_tests"
     },
     {
@@ -2970,9 +2973,6 @@
       "name": "art-run-test-145-alloc-tracking-stress"
     },
     {
-      "name": "art-run-test-151-OpenFileLimit"
-    },
-    {
       "name": "art-run-test-152-dead-large-object"
     },
     {
@@ -3072,9 +3072,6 @@
       "name": "art-run-test-2231-checker-heap-poisoning"
     },
     {
-      "name": "art-run-test-2232-write-metrics-to-log"
-    },
-    {
       "name": "art-run-test-2233-checker-remove-loop-suspend-check"
     },
     {
@@ -3082,6 +3079,15 @@
     },
     {
       "name": "art-run-test-2236-JdkUnsafeGetLong-regression"
+    },
+    {
+      "name": "art-run-test-2241-checker-inline-try-catch"
+    },
+    {
+      "name": "art-run-test-2242-checker-lse-acquire-release-operations"
+    },
+    {
+      "name": "art-run-test-2243-checker-not-inline-into-throw"
     },
     {
       "name": "art-run-test-300-package-override"
@@ -3918,6 +3924,12 @@
       "name": "art_standalone_cmdline_tests"
     },
     {
+      "name": "art_standalone_compiler_tests"
+    },
+    {
+      "name": "art_standalone_dex2oat_tests"
+    },
+    {
       "name": "art_standalone_dexdump_tests"
     },
     {
@@ -3955,9 +3967,6 @@
     },
     {
       "name": "art_standalone_profman_tests"
-    },
-    {
-      "name": "art_standalone_runtime_compiler_tests"
     },
     {
       "name": "art_standalone_runtime_tests"

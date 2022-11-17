@@ -29,7 +29,7 @@ namespace vixl32 = vixl::aarch32;
 using vixl::ExactAssemblyScope;
 using vixl::CodeBufferCheckScope;
 
-namespace art {
+namespace art HIDDEN {
 namespace arm {
 
 #ifdef ___
@@ -876,6 +876,11 @@ void ArmVIXLJNIMacroAssembler::Move(ManagedRegister mdst,
       }
     }
   }
+}
+
+void ArmVIXLJNIMacroAssembler::Move(ManagedRegister mdst, size_t value) {
+  ArmManagedRegister dst = mdst.AsArm();
+  ___ Mov(AsVIXLRegister(dst), static_cast<uint32_t>(value));
 }
 
 void ArmVIXLJNIMacroAssembler::Copy(FrameOffset dest, FrameOffset src, size_t size) {

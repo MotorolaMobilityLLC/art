@@ -62,11 +62,6 @@ using UniqueDeoptShadowFramePtr = std::unique_ptr<ShadowFrame, DeoptShadowFrameD
 
 class UnstartedRuntimeTest : public CommonRuntimeTest {
  protected:
-  void SetUp() override {
-    CommonRuntimeTest::SetUp();
-    InitializeIntrinsics();
-  }
-
   // Re-expose all UnstartedRuntime implementations so we don't need to declare a million
   // test friends.
 
@@ -1123,6 +1118,8 @@ class UnstartedClassForNameTest : public UnstartedRuntimeTest {
       CHECK(name_string != nullptr);
 
       if (in_transaction) {
+        StackHandleScope<1> hs(self);
+        HandleWrapperObjPtr<mirror::String> h(hs.NewHandleWrapper(&name_string));
         EnterTransactionMode();
       }
       CHECK(!self->IsExceptionPending());

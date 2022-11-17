@@ -49,6 +49,7 @@ template<class T> class Handle;
 class ImtConflictTable;
 enum InvokeType : uint32_t;
 union JValue;
+template<typename T> class LengthPrefixedArray;
 class OatQuickMethodHeader;
 class ProfilingInfo;
 class ScopedObjectAccessAlreadyRunnable;
@@ -66,6 +67,20 @@ template <typename MirrorType> class ObjectArray;
 class PointerArray;
 class String;
 }  // namespace mirror
+
+namespace detail {
+template <char Type> struct ShortyTraits;
+template <> struct ShortyTraits<'V'>;
+template <> struct ShortyTraits<'Z'>;
+template <> struct ShortyTraits<'B'>;
+template <> struct ShortyTraits<'C'>;
+template <> struct ShortyTraits<'S'>;
+template <> struct ShortyTraits<'I'>;
+template <> struct ShortyTraits<'J'>;
+template <> struct ShortyTraits<'F'>;
+template <> struct ShortyTraits<'D'>;
+template <> struct ShortyTraits<'L'>;
+}  // namespace detail
 
 class ArtMethod final {
  public:
@@ -85,6 +100,23 @@ class ArtMethod final {
 
   static ArtMethod* FromReflectedMethod(const ScopedObjectAccessAlreadyRunnable& soa,
                                         jobject jlr_method)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Visit the declaring class in 'method' if it is within [start_boundary, end_boundary).
+  template<typename RootVisitorType>
+  static void VisitRoots(RootVisitorType& visitor,
+                         uint8_t* start_boundary,
+                         uint8_t* end_boundary,
+                         ArtMethod* method)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Visit declaring classes of all the art-methods in 'array' that reside
+  // in [start_boundary, end_boundary).
+  template<PointerSize kPointerSize, typename RootVisitorType>
+  static void VisitArrayRoots(RootVisitorType& visitor,
+                              uint8_t* start_boundary,
+                              uint8_t* end_boundary,
+                              LengthPrefixedArray<ArtMethod>* array)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   template <ReadBarrierOption kReadBarrierOption = kWithReadBarrier>
@@ -552,6 +584,11 @@ class ArtMethod final {
     AddAccessFlags(kAccNterpInvokeFastPathFlag);
   }
 
+  // Returns whether the method is a string constructor. The method must not
+  // be a class initializer. (Class initializers are called from a different
+  // context where we do not need to check for string constructors.)
+  bool IsStringConstructor() REQUIRES_SHARED(Locks::mutator_lock_);
+
   // Returns true if this method could be overridden by a default method.
   bool IsOverridableByDefaultMethod() REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -624,6 +661,18 @@ class ArtMethod final {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   void Invoke(Thread* self, uint32_t* args, uint32_t args_size, JValue* result, const char* shorty)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  template <char ReturnType, char... ArgType>
+  typename detail::ShortyTraits<ReturnType>::Type
+  InvokeStatic(Thread* self, typename detail::ShortyTraits<ArgType>::Type... args)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  template <char ReturnType, char... ArgType>
+  typename detail::ShortyTraits<ReturnType>::Type
+  InvokeInstance(Thread* self,
+                 ObjPtr<mirror::Object> receiver,
+                 typename detail::ShortyTraits<ArgType>::Type... args)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   const void* GetEntryPointFromQuickCompiledCode() const {

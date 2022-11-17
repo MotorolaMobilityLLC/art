@@ -29,6 +29,7 @@ void InstructionSetAbort(InstructionSet isa) {
     case InstructionSet::kArm:
     case InstructionSet::kThumb2:
     case InstructionSet::kArm64:
+    case InstructionSet::kRiscv64:
     case InstructionSet::kX86:
     case InstructionSet::kX86_64:
     case InstructionSet::kNone:
@@ -46,6 +47,8 @@ const char* GetInstructionSetString(InstructionSet isa) {
       return "arm";
     case InstructionSet::kArm64:
       return "arm64";
+    case InstructionSet::kRiscv64:
+      return "riscv64";
     case InstructionSet::kX86:
       return "x86";
     case InstructionSet::kX86_64:
@@ -64,6 +67,8 @@ InstructionSet GetInstructionSetFromString(const char* isa_str) {
     return InstructionSet::kArm;
   } else if (strcmp("arm64", isa_str) == 0) {
     return InstructionSet::kArm64;
+  } else if (strcmp("riscv64", isa_str) == 0) {
+    return InstructionSet::kRiscv64;
   } else if (strcmp("x86", isa_str) == 0) {
     return InstructionSet::kX86;
   } else if (strcmp("x86_64", isa_str) == 0) {
@@ -71,26 +76,6 @@ InstructionSet GetInstructionSetFromString(const char* isa_str) {
   }
 
   return InstructionSet::kNone;
-}
-
-size_t GetInstructionSetAlignment(InstructionSet isa) {
-  switch (isa) {
-    case InstructionSet::kArm:
-      // Fall-through.
-    case InstructionSet::kThumb2:
-      return kArmAlignment;
-    case InstructionSet::kArm64:
-      return kArm64Alignment;
-    case InstructionSet::kX86:
-      // Fall-through.
-    case InstructionSet::kX86_64:
-      return kX86Alignment;
-    case InstructionSet::kNone:
-      LOG(FATAL) << "ISA kNone does not have alignment.";
-      UNREACHABLE();
-  }
-  LOG(FATAL) << "Unknown ISA " << isa;
-  UNREACHABLE();
 }
 
 std::vector<InstructionSet> GetSupportedInstructionSets(std::string* error_msg) {
@@ -113,6 +98,8 @@ std::vector<InstructionSet> GetSupportedInstructionSets(std::string* error_msg) 
         *error_msg = android::base::StringPrintf("Unknown Zygote kinds '%s'", zygote_kinds.c_str());
         return {};
       }
+    case InstructionSet::kRiscv64:
+      return {InstructionSet::kRiscv64};
     case InstructionSet::kX86:
     case InstructionSet::kX86_64:
       if (zygote_kinds == "zygote64_32" || zygote_kinds == "zygote32_64") {

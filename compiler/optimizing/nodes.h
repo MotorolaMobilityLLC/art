@@ -29,6 +29,7 @@
 #include "base/array_ref.h"
 #include "base/intrusive_forward_list.h"
 #include "base/iteration_range.h"
+#include "base/macros.h"
 #include "base/mutex.h"
 #include "base/quasi_atomic.h"
 #include "base/stl_util.h"
@@ -51,7 +52,7 @@
 #include "mirror/method_type.h"
 #include "offsets.h"
 
-namespace art {
+namespace art HIDDEN {
 
 class ArenaStack;
 class CodeGenerator;
@@ -137,6 +138,7 @@ enum GraphAnalysisResult {
   kAnalysisInvalidBytecode,
   kAnalysisFailThrowCatchLoop,
   kAnalysisFailAmbiguousArrayOp,
+  kAnalysisFailInliningIrreducibleLoop,
   kAnalysisFailIrreducibleLoopAndStringInit,
   kAnalysisFailPhiEquivalentInOsr,
   kAnalysisSuccess,
@@ -486,9 +488,11 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
   // Update the loop and try membership of `block`, which was spawned from `reference`.
   // In case `reference` is a back edge, `replace_if_back_edge` notifies whether `block`
   // should be the new back edge.
+  // `has_more_specific_try_catch_info` will be set to true when inlining a try catch.
   void UpdateLoopAndTryInformationOfNewBlock(HBasicBlock* block,
                                              HBasicBlock* reference,
-                                             bool replace_if_back_edge);
+                                             bool replace_if_back_edge,
+                                             bool has_more_specific_try_catch_info = false);
 
   // Need to add a couple of blocks to test if the loop body is entered and
   // put deoptimization instructions, etc.
@@ -8453,7 +8457,7 @@ class HIntermediateAddress final : public HExpression<2> {
 #include "nodes_x86.h"
 #endif
 
-namespace art {
+namespace art HIDDEN {
 
 class OptimizingCompilerStats;
 

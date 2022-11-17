@@ -19,6 +19,7 @@ package com.android.server.art;
 import static com.android.server.art.model.ArtFlags.PriorityClassApi;
 
 import android.annotation.NonNull;
+import android.annotation.SystemApi;
 import android.os.SystemProperties;
 import android.text.TextUtils;
 
@@ -26,11 +27,14 @@ import com.android.server.art.model.ArtFlags;
 
 import dalvik.system.DexFile;
 
+import java.util.Set;
+
 /**
  * Maps a compilation reason to a compiler filter and a priority class.
  *
  * @hide
  */
+@SystemApi(client = SystemApi.Client.SYSTEM_SERVER)
 public class ReasonMapping {
     private ReasonMapping() {}
 
@@ -54,6 +58,11 @@ public class ReasonMapping {
     public static final String REASON_INSTALL_BULK_DOWNGRADED = "install-bulk-downgraded";
     public static final String REASON_INSTALL_BULK_SECONDARY_DOWNGRADED =
             "install-bulk-secondary-downgraded";
+
+    /** @hide */
+    public static final Set<String> REASONS_FOR_INSTALL = Set.of(REASON_INSTALL,
+            REASON_INSTALL_FAST, REASON_INSTALL_BULK, REASON_INSTALL_BULK_SECONDARY,
+            REASON_INSTALL_BULK_DOWNGRADED, REASON_INSTALL_BULK_SECONDARY_DOWNGRADED);
 
     /**
      * Loads the compiler filter from the system property for the given reason and checks for

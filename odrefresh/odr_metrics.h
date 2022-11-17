@@ -55,7 +55,8 @@ class OdrMetrics final {
     kNoSpace = 2,
     kIoError = 3,
     kDex2OatError = 4,
-    kTimeLimitExceeded = 5,
+    // Value 5 was kTimeLimitExceeded, but has been removed in favour of
+    // reporting the exit code for Dex2Oat (set to ExecResult::kTimedOut)
     kStagingFailed = 6,
     kInstallFailed = 7,
     // Failed to access the dalvik-cache directory due to lack of permission.
@@ -126,6 +127,8 @@ class OdrMetrics final {
   static void WriteToFile(const std::string& path, const OdrMetrics* metrics);
 
   void SetCompilationTime(int32_t millis);
+  static OdrMetricsRecord::Dex2OatExecResult
+  ConvertExecResult(const std::optional<ExecResult>& result);
 
   const std::string cache_directory_;
   const std::string metrics_file_;

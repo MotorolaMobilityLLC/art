@@ -211,7 +211,7 @@ public class DexUseManagerTest {
 
     private void verifyPrimaryDexMultipleEntries(boolean saveAndLoad) throws Exception {
         // These should be ignored.
-        mDexUseManager.addDexUse(mSnapshot, "android", Map.of(BASE_APK, "CLC"));
+        mDexUseManager.addDexUse(mSnapshot, Utils.PLATFORM_PACKAGE_NAME, Map.of(BASE_APK, "CLC"));
         mDexUseManager.addDexUse(mSnapshot, OWNING_PKG_NAME,
                 Map.of("/data/app/" + OWNING_PKG_NAME + "/non-existing.apk", "CLC"));
 
@@ -230,6 +230,7 @@ public class DexUseManagerTest {
 
         if (saveAndLoad) {
             File tempFile = File.createTempFile("dex-use", ".pb");
+            tempFile.deleteOnExit();
             mDexUseManager.save(tempFile.getPath());
             mDexUseManager.clear();
             mDexUseManager.load(tempFile.getPath());
@@ -333,7 +334,8 @@ public class DexUseManagerTest {
 
     private void verifySecondaryDexMultipleEntries(boolean saveAndLoad) throws Exception {
         // These should be ignored.
-        mDexUseManager.addDexUse(mSnapshot, "android", Map.of(mCeDir + "/foo.apk", "CLC"));
+        mDexUseManager.addDexUse(
+                mSnapshot, Utils.PLATFORM_PACKAGE_NAME, Map.of(mCeDir + "/foo.apk", "CLC"));
         mDexUseManager.addDexUse(
                 mSnapshot, OWNING_PKG_NAME, Map.of("/some/non-existing.apk", "CLC"));
 
@@ -362,6 +364,7 @@ public class DexUseManagerTest {
 
         if (saveAndLoad) {
             File tempFile = File.createTempFile("dex-use", ".pb");
+            tempFile.deleteOnExit();
             mDexUseManager.save(tempFile.getPath());
             mDexUseManager.clear();
             mDexUseManager.load(tempFile.getPath());

@@ -20,6 +20,7 @@
 #include "base/locks.h"
 #include "jni.h"
 #include "obj_ptr.h"
+#include "read_barrier_option.h"
 
 namespace art {
 
@@ -29,6 +30,34 @@ class ArtMethod;
 namespace mirror {
 class Class;
 }  // namespace mirror
+
+namespace detail {
+
+template <typename MemberType, MemberType** kMember>
+struct ClassFromMember {
+  template <ReadBarrierOption kReadBarrierOption = kWithReadBarrier>
+  static ObjPtr<mirror::Class> Get() REQUIRES_SHARED(Locks::mutator_lock_);
+
+  mirror::Class* operator->() const REQUIRES_SHARED(Locks::mutator_lock_);
+};
+
+template <typename MemberType, MemberType** kMember>
+bool operator==(const ClassFromMember<MemberType, kMember> lhs, ObjPtr<mirror::Class> rhs)
+    REQUIRES_SHARED(Locks::mutator_lock_);
+
+template <typename MemberType, MemberType** kMember>
+bool operator==(ObjPtr<mirror::Class> lhs, const ClassFromMember<MemberType, kMember> rhs)
+    REQUIRES_SHARED(Locks::mutator_lock_);
+
+template <typename MemberType, MemberType** kMember>
+bool operator!=(const ClassFromMember<MemberType, kMember> lhs, ObjPtr<mirror::Class> rhs)
+    REQUIRES_SHARED(Locks::mutator_lock_);
+
+template <typename MemberType, MemberType** kMember>
+bool operator!=(ObjPtr<mirror::Class> lhs, const ClassFromMember<MemberType, kMember> rhs)
+    REQUIRES_SHARED(Locks::mutator_lock_);
+
+}  // namespace detail
 
 // Various classes used in JNI. We cache them so we don't have to keep looking them up.
 
@@ -54,6 +83,12 @@ struct WellKnownClasses {
  private:
   static void InitFieldsAndMethodsOnly(JNIEnv* env);
 
+  template <ArtMethod** kMethod>
+  using ClassFromMethod = detail::ClassFromMember<ArtMethod, kMethod>;
+
+  template <ArtField** kField>
+  using ClassFromField = detail::ClassFromMember<ArtField, kField>;
+
  public:
   static jclass dalvik_annotation_optimization_CriticalNative;
   static jclass dalvik_annotation_optimization_FastNative;
@@ -62,9 +97,6 @@ struct WellKnownClasses {
   static jclass dalvik_system_BaseDexClassLoader;
   static jclass dalvik_system_DelegateLastClassLoader;
   static jclass dalvik_system_DexClassLoader;
-  static jclass dalvik_system_DexFile;
-  static jclass dalvik_system_DexPathList;
-  static jclass dalvik_system_DexPathList__Element;
   static jclass dalvik_system_EmulatedStackFrame;
   static jclass dalvik_system_InMemoryDexClassLoader;
   static jclass dalvik_system_PathClassLoader;
@@ -87,9 +119,6 @@ struct WellKnownClasses {
   static jclass java_lang_String;
   static jclass java_lang_StringFactory;
   static jclass java_lang_System;
-  static jclass java_lang_Thread;
-  static jclass java_lang_ThreadGroup;
-  static jclass java_lang_Throwable;
   static jclass java_lang_Void;
   static jclass libcore_reflect_AnnotationMember__array;
 
@@ -108,10 +137,10 @@ struct WellKnownClasses {
   static ArtMethod* java_lang_Float_floatToRawIntBits;
   static ArtMethod* java_lang_Float_valueOf;
   static ArtMethod* java_lang_Integer_valueOf;
-  static jmethodID java_lang_invoke_MethodHandle_asType;
-  static jmethodID java_lang_invoke_MethodHandle_invokeExact;
-  static jmethodID java_lang_invoke_MethodHandles_lookup;
-  static jmethodID java_lang_invoke_MethodHandles_Lookup_findConstructor;
+  static ArtMethod* java_lang_invoke_MethodHandle_asType;
+  static ArtMethod* java_lang_invoke_MethodHandle_invokeExact;
+  static ArtMethod* java_lang_invoke_MethodHandles_lookup;
+  static ArtMethod* java_lang_invoke_MethodHandles_Lookup_findConstructor;
   static ArtMethod* java_lang_Long_valueOf;
   static jmethodID java_lang_ref_FinalizerReference_add;
   static jmethodID java_lang_ref_ReferenceQueue_add;
@@ -122,11 +151,11 @@ struct WellKnownClasses {
   static jmethodID java_lang_Runtime_nativeLoad;
   static ArtMethod* java_lang_Short_valueOf;
   static jmethodID java_lang_String_charAt;
-  static jmethodID java_lang_Thread_dispatchUncaughtException;
-  static jmethodID java_lang_Thread_init;
-  static jmethodID java_lang_Thread_run;
-  static jmethodID java_lang_ThreadGroup_add;
-  static jmethodID java_lang_ThreadGroup_removeThread;
+  static ArtMethod* java_lang_Thread_dispatchUncaughtException;
+  static ArtMethod* java_lang_Thread_init;
+  static ArtMethod* java_lang_Thread_run;
+  static ArtMethod* java_lang_ThreadGroup_add;
+  static ArtMethod* java_lang_ThreadGroup_threadTerminated;
   static ArtMethod* java_nio_Buffer_isDirect;
   static ArtMethod* java_nio_DirectByteBuffer_init;
   static ArtMethod* java_util_function_Consumer_accept;
@@ -180,6 +209,18 @@ struct WellKnownClasses {
   static ArtField* org_apache_harmony_dalvik_ddmc_Chunk_length;
   static ArtField* org_apache_harmony_dalvik_ddmc_Chunk_offset;
   static ArtField* org_apache_harmony_dalvik_ddmc_Chunk_type;
+
+  static constexpr ClassFromField<&dalvik_system_DexFile_cookie> dalvik_system_DexFile;
+  static constexpr ClassFromField<&dalvik_system_DexPathList_dexElements> dalvik_system_DexPathList;
+  static constexpr ClassFromField<&dalvik_system_DexPathList__Element_dexFile>
+      dalvik_system_DexPathList__Element;
+  static constexpr ClassFromField<&java_lang_Thread_daemon> java_lang_Thread;
+  static constexpr ClassFromField<&java_lang_ThreadGroup_groups> java_lang_ThreadGroup;
+  static constexpr ClassFromField<&java_lang_Throwable_cause> java_lang_Throwable;
+  static constexpr ClassFromField<&java_nio_Buffer_address> java_nio_Buffer;
+  static constexpr ClassFromField<&java_util_Collections_EMPTY_LIST> java_util_Collections;
+  static constexpr ClassFromField<&libcore_util_EmptyArray_STACK_TRACE_ELEMENT>
+      libcore_util_EmptyArray;
 };
 
 }  // namespace art

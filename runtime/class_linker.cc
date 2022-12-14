@@ -536,10 +536,9 @@ static void VlogClassInitializationFailure(Handle<mirror::Class> klass)
 static void WrapExceptionInInitializer(Handle<mirror::Class> klass)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   Thread* self = Thread::Current();
-  JNIEnv* env = self->GetJniEnv();
 
-  ScopedLocalRef<jthrowable> cause(env, env->ExceptionOccurred());
-  CHECK(cause.get() != nullptr);
+  ObjPtr<mirror::Throwable> cause = self->GetException();
+  CHECK(cause != nullptr);
 
   // Boot classpath classes should not fail initialization. This is a consistency debug check.
   // This cannot in general be guaranteed, but in all likelihood leads to breakage down the line.
@@ -554,12 +553,8 @@ static void WrapExceptionInInitializer(Handle<mirror::Class> klass)
                                             << self->GetException()->Dump();
   }
 
-  env->ExceptionClear();
-  bool is_error = env->IsInstanceOf(cause.get(), WellKnownClasses::java_lang_Error);
-  env->Throw(cause.get());
-
   // We only wrap non-Error exceptions; an Error can just be used as-is.
-  if (!is_error) {
+  if (!cause->IsError()) {
     self->ThrowNewWrappedException("Ljava/lang/ExceptionInInitializerError;", nullptr);
   }
   VlogClassInitializationFailure(klass);
@@ -1108,8 +1103,17 @@ void ClassLinker::RunEarlyRootClinits(Thread* self) {
   Handle<mirror::ObjectArray<mirror::Class>> class_roots = hs.NewHandle(GetClassRoots());
   EnsureRootInitialized(this, self, GetClassRoot<mirror::Class>(class_roots.Get()));
   EnsureRootInitialized(this, self, GetClassRoot<mirror::String>(class_roots.Get()));
-  // Field class is needed for register_java_net_InetAddress in libcore, b/28153851.
+  // `Field` class is needed for register_java_net_InetAddress in libcore, b/28153851.
   EnsureRootInitialized(this, self, GetClassRoot<mirror::Field>(class_roots.Get()));
+
+  WellKnownClasses::Init(self->GetJniEnv());
+
+  // `FinalizerReference` class is needed for initialization of `java.net.InetAddress`.
+  // (Indirectly by constructing a `ObjectStreamField` which uses a `StringBuilder`
+  // and, when resizing, initializes the `System` class for `System.arraycopy()`
+  // and `System.<clinit> creates a finalizable object.)
+  EnsureRootInitialized(
+      this, self, WellKnownClasses::java_lang_ref_FinalizerReference_add->GetDeclaringClass());
 }
 
 void ClassLinker::RunRootClinits(Thread* self) {
@@ -1123,14 +1127,6 @@ void ClassLinker::RunRootClinits(Thread* self) {
   // classes are always in the boot image, so this code is primarily intended
   // for running without boot image but may be needed for boot image if the
   // AOT-initialization fails due to introduction of new code to `<clinit>`.
-  jclass classes_to_initialize[] = {
-      // Initialize `StackOverflowError`.
-      WellKnownClasses::java_lang_StackOverflowError,
-  };
-  auto* vm = down_cast<JNIEnvExt*>(self->GetJniEnv())->GetVm();
-  for (jclass c : classes_to_initialize) {
-    EnsureRootInitialized(this, self, ObjPtr<mirror::Class>::DownCast(vm->DecodeGlobal(c)));
-  }
   ArtMethod* static_methods_of_classes_to_initialize[] = {
       // Initialize primitive boxing classes (avoid check at runtime).
       WellKnownClasses::java_lang_Boolean_valueOf,
@@ -1141,9 +1137,28 @@ void ClassLinker::RunRootClinits(Thread* self) {
       WellKnownClasses::java_lang_Integer_valueOf,
       WellKnownClasses::java_lang_Long_valueOf,
       WellKnownClasses::java_lang_Short_valueOf,
+      // Initialize `StackOverflowError`.
+      WellKnownClasses::java_lang_StackOverflowError_init,
+      // Ensure class loader classes are initialized (avoid check at runtime).
+      // Superclass `ClassLoader` is a class root and already initialized above.
+      // Superclass `BaseDexClassLoader` is initialized implicitly.
+      WellKnownClasses::dalvik_system_DelegateLastClassLoader_init,
+      WellKnownClasses::dalvik_system_DexClassLoader_init,
+      WellKnownClasses::dalvik_system_InMemoryDexClassLoader_init,
+      WellKnownClasses::dalvik_system_PathClassLoader_init,
+      WellKnownClasses::java_lang_BootClassLoader_init,
+      // Ensure `Daemons` class is initialized (avoid check at runtime).
+      WellKnownClasses::java_lang_Daemons_start,
       // Ensure `Thread` and `ThreadGroup` classes are initialized (avoid check at runtime).
       WellKnownClasses::java_lang_Thread_init,
       WellKnownClasses::java_lang_ThreadGroup_add,
+      // Ensure reference classes are initialized (avoid check at runtime).
+      // The `FinalizerReference` class was initialized in `RunEarlyRootClinits()`.
+      WellKnownClasses::java_lang_ref_ReferenceQueue_add,
+      // Ensure `InvocationTargetException` class is initialized (avoid check at runtime).
+      WellKnownClasses::java_lang_reflect_InvocationTargetException_init,
+      // Ensure `Parameter` class is initialized (avoid check at runtime).
+      WellKnownClasses::java_lang_reflect_Parameter_init,
       // Ensure `MethodHandles` class is initialized (avoid check at runtime).
       WellKnownClasses::java_lang_invoke_MethodHandles_lookup,
       // Ensure `DirectByteBuffer` class is initialized (avoid check at runtime).
@@ -1159,6 +1174,10 @@ void ClassLinker::RunRootClinits(Thread* self) {
     EnsureRootInitialized(this, self, method->GetDeclaringClass());
   }
   ArtField* static_fields_of_classes_to_initialize[] = {
+      // Ensure classes used by class loaders are initialized (avoid check at runtime).
+      WellKnownClasses::dalvik_system_DexFile_cookie,
+      WellKnownClasses::dalvik_system_DexPathList_dexElements,
+      WellKnownClasses::dalvik_system_DexPathList__Element_dexFile,
       // Ensure `VMRuntime` is initialized (avoid check at runtime).
       WellKnownClasses::dalvik_system_VMRuntime_nonSdkApiUsageConsumer,
       // Initialize empty arrays needed by `StackOverflowError`.
@@ -1168,6 +1187,11 @@ void ClassLinker::RunRootClinits(Thread* self) {
   for (ArtField* field : static_fields_of_classes_to_initialize) {
     EnsureRootInitialized(this, self, field->GetDeclaringClass());
   }
+
+  // This invariant is important since otherwise we will have the entire proxy invoke system
+  // confused.
+  DCHECK_NE(WellKnownClasses::java_lang_reflect_Proxy_init->GetEntryPointFromQuickCompiledCode(),
+            GetQuickInstrumentationEntryPoint());
 }
 
 ALWAYS_INLINE
@@ -1410,8 +1434,7 @@ void ClassLinker::AddExtraBootDexFiles(
 
 bool ClassLinker::IsBootClassLoader(ObjPtr<mirror::ClassLoader> class_loader) {
   return class_loader == nullptr ||
-       WellKnownClasses::ToClass(WellKnownClasses::java_lang_BootClassLoader) ==
-           class_loader->GetClass();
+         WellKnownClasses::java_lang_BootClassLoader == class_loader->GetClass();
 }
 
 class CHAOnDeleteUpdateClassVisitor {
@@ -3054,29 +3077,23 @@ ObjPtr<mirror::Class> ClassLinker::FindClass(Thread* self,
                                  "%s",
                                  class_name_string.c_str());
       } else {
-        ScopedLocalRef<jobject> class_loader_object(
-            soa.Env(), soa.AddLocalReference<jobject>(class_loader.Get()));
-        ScopedLocalRef<jobject> result(soa.Env(), nullptr);
-        {
-          ScopedThreadStateChange tsc(self, ThreadState::kNative);
-          ScopedLocalRef<jobject> class_name_object(
-              soa.Env(), soa.Env()->NewStringUTF(class_name_string.c_str()));
-          if (class_name_object.get() == nullptr) {
-            DCHECK(self->IsExceptionPending());  // OOME.
-            return nullptr;
-          }
-          CHECK(class_loader_object.get() != nullptr);
-          result.reset(soa.Env()->CallObjectMethod(class_loader_object.get(),
-                                                   WellKnownClasses::java_lang_ClassLoader_loadClass,
-                                                   class_name_object.get()));
+        StackHandleScope<1u> hs(self);
+        Handle<mirror::String> class_name_object = hs.NewHandle(
+            mirror::String::AllocFromModifiedUtf8(self, class_name_string.c_str()));
+        if (class_name_object == nullptr) {
+          DCHECK(self->IsExceptionPending());  // OOME.
+          return nullptr;
         }
-        if (result.get() == nullptr && !self->IsExceptionPending()) {
+        DCHECK(class_loader != nullptr);
+        result_ptr = ObjPtr<mirror::Class>::DownCast(
+            WellKnownClasses::java_lang_ClassLoader_loadClass->InvokeVirtual<'L', 'L'>(
+                self, class_loader.Get(), class_name_object.Get()));
+        if (result_ptr == nullptr && !self->IsExceptionPending()) {
           // broken loader - throw NPE to be compatible with Dalvik
           ThrowNullPointerException(StringPrintf("ClassLoader.loadClass returned null for %s",
                                                  class_name_string.c_str()).c_str());
           return nullptr;
         }
-        result_ptr = soa.Decode<mirror::Class>(result.get());
         // Check the name of the returned class.
         descriptor_equals = (result_ptr != nullptr) && result_ptr->DescriptorEquals(descriptor);
       }
@@ -3190,6 +3207,7 @@ ObjPtr<mirror::Class> ClassLinker::DefineClass(Thread* self,
   ScopedDefiningClass sdc(self);
   StackHandleScope<3> hs(self);
   metrics::AutoTimer timer{GetMetrics()->ClassLoadingTotalTime()};
+  metrics::AutoTimer timeDelta{GetMetrics()->ClassLoadingTotalTimeDelta()};
   auto klass = hs.NewHandle<mirror::Class>(nullptr);
 
   // Load the class from the dex file.
@@ -3498,7 +3516,7 @@ static void LinkCode(ClassLinker* class_linker,
   }
 
   // Method shouldn't have already been linked.
-  DCHECK(method->GetEntryPointFromQuickCompiledCode() == nullptr);
+  DCHECK_EQ(method->GetEntryPointFromQuickCompiledCode(), nullptr);
   DCHECK(!method->GetDeclaringClass()->IsVisiblyInitialized());  // Actually ClassStatus::Idx.
 
   if (!method->IsInvokable()) {
@@ -5099,8 +5117,7 @@ void ClassLinker::CreateProxyConstructor(Handle<mirror::Class> klass, ArtMethod*
 
   // Find the <init>(InvocationHandler)V method. The exact method offset varies depending
   // on which front-end compiler was used to build the libcore DEX files.
-  ArtMethod* proxy_constructor =
-      jni::DecodeArtMethod(WellKnownClasses::java_lang_reflect_Proxy_init);
+  ArtMethod* proxy_constructor = WellKnownClasses::java_lang_reflect_Proxy_init;
   DCHECK(proxy_constructor != nullptr)
       << "Could not find <init> method in java.lang.reflect.Proxy";
 
@@ -10088,6 +10105,9 @@ ObjPtr<mirror::ClassLoader> ClassLinker::CreateWellKnownClassLoader(
     Handle<mirror::ClassLoader> parent_loader,
     Handle<mirror::ObjectArray<mirror::ClassLoader>> shared_libraries,
     Handle<mirror::ObjectArray<mirror::ClassLoader>> shared_libraries_after) {
+  CHECK(loader_class.Get() == WellKnownClasses::dalvik_system_PathClassLoader ||
+        loader_class.Get() == WellKnownClasses::dalvik_system_DelegateLastClassLoader ||
+        loader_class.Get() == WellKnownClasses::dalvik_system_InMemoryDexClassLoader);
 
   StackHandleScope<5> hs(self);
 
@@ -10190,9 +10210,8 @@ ObjPtr<mirror::ClassLoader> ClassLinker::CreateWellKnownClassLoader(
   ArtField* const parent_field = WellKnownClasses::java_lang_ClassLoader_parent;
   DCHECK(parent_field != nullptr);
   if (parent_loader.Get() == nullptr) {
-    ScopedObjectAccessUnchecked soa(self);
-    ObjPtr<mirror::Object> boot_loader(WellKnownClasses::ToClass(
-        WellKnownClasses::java_lang_BootClassLoader)->AllocObject(self));
+    ObjPtr<mirror::Object> boot_loader(
+        WellKnownClasses::java_lang_BootClassLoader->AllocObject(self));
     parent_field->SetObject<false>(h_class_loader.Get(), boot_loader);
   } else {
     parent_field->SetObject<false>(h_class_loader.Get(), parent_loader.Get());
@@ -10211,55 +10230,16 @@ ObjPtr<mirror::ClassLoader> ClassLinker::CreateWellKnownClassLoader(
   return h_class_loader.Get();
 }
 
-jobject ClassLinker::CreateWellKnownClassLoader(Thread* self,
-                                                const std::vector<const DexFile*>& dex_files,
-                                                jclass loader_class,
-                                                jobject parent_loader,
-                                                jobject shared_libraries,
-                                                jobject shared_libraries_after) {
-  CHECK(self->GetJniEnv()->IsSameObject(loader_class,
-                                        WellKnownClasses::dalvik_system_PathClassLoader) ||
-        self->GetJniEnv()->IsSameObject(loader_class,
-                                        WellKnownClasses::dalvik_system_DelegateLastClassLoader) ||
-        self->GetJniEnv()->IsSameObject(loader_class,
-                                        WellKnownClasses::dalvik_system_InMemoryDexClassLoader));
-
-  // SOAAlreadyRunnable is protected, and we need something to add a global reference.
-  // We could move the jobject to the callers, but all call-sites do this...
-  ScopedObjectAccessUnchecked soa(self);
-
-  // For now, create a libcore-level DexFile for each ART DexFile. This "explodes" multidex.
-  StackHandleScope<5> hs(self);
-
-  Handle<mirror::Class> h_loader_class =
-      hs.NewHandle<mirror::Class>(soa.Decode<mirror::Class>(loader_class));
-  Handle<mirror::ClassLoader> h_parent =
-      hs.NewHandle<mirror::ClassLoader>(soa.Decode<mirror::ClassLoader>(parent_loader));
-  Handle<mirror::ObjectArray<mirror::ClassLoader>> h_shared_libraries =
-      hs.NewHandle(soa.Decode<mirror::ObjectArray<mirror::ClassLoader>>(shared_libraries));
-  Handle<mirror::ObjectArray<mirror::ClassLoader>> h_shared_libraries_after =
-        hs.NewHandle(soa.Decode<mirror::ObjectArray<mirror::ClassLoader>>(shared_libraries_after));
-
-  ObjPtr<mirror::ClassLoader> loader = CreateWellKnownClassLoader(
-      self,
-      dex_files,
-      h_loader_class,
-      h_parent,
-      h_shared_libraries,
-      h_shared_libraries_after);
-
-  // Make it a global ref and return.
-  ScopedLocalRef<jobject> local_ref(
-      soa.Env(), soa.Env()->AddLocalReference<jobject>(loader));
-  return soa.Env()->NewGlobalRef(local_ref.get());
-}
-
 jobject ClassLinker::CreatePathClassLoader(Thread* self,
                                            const std::vector<const DexFile*>& dex_files) {
-  return CreateWellKnownClassLoader(self,
-                                    dex_files,
-                                    WellKnownClasses::dalvik_system_PathClassLoader,
-                                    nullptr);
+  StackHandleScope<3u> hs(self);
+  Handle<mirror::Class> d_s_pcl =
+      hs.NewHandle(WellKnownClasses::dalvik_system_PathClassLoader.Get());
+  auto null_parent = hs.NewHandle<mirror::ClassLoader>(nullptr);
+  auto null_libs = hs.NewHandle<mirror::ObjectArray<mirror::ClassLoader>>(nullptr);
+  ObjPtr<mirror::ClassLoader> class_loader =
+      CreateWellKnownClassLoader(self, dex_files, d_s_pcl, null_parent, null_libs, null_libs);
+  return Runtime::Current()->GetJavaVM()->AddGlobalRef(self, class_loader);
 }
 
 void ClassLinker::DropFindArrayClassCache() {

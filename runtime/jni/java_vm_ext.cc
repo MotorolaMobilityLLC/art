@@ -52,7 +52,7 @@
 #include "thread-inl.h"
 #include "thread_list.h"
 #include "ti/agent.h"
-#include "well_known_classes.h"
+#include "well_known_classes-inl.h"
 
 namespace art {
 
@@ -504,10 +504,10 @@ JavaVMExt::JavaVMExt(Runtime* runtime, const RuntimeArgumentMap& runtime_options
       tracing_enabled_(runtime_options.Exists(RuntimeArgumentMap::JniTrace)
                        || VLOG_IS_ON(third_party_jni)),
       trace_(runtime_options.GetOrDefault(RuntimeArgumentMap::JniTrace)),
-      globals_(kGlobal, IndirectReferenceTable::ResizableCapacity::kNo),
+      globals_(kGlobal),
       libraries_(new Libraries),
       unchecked_functions_(&gJniInvokeInterface),
-      weak_globals_(kWeakGlobal, IndirectReferenceTable::ResizableCapacity::kNo),
+      weak_globals_(kWeakGlobal),
       allow_accessing_weak_globals_(true),
       weak_globals_add_condition_("weak globals add condition",
                                   (CHECK(Locks::jni_weak_globals_lock_ != nullptr),
@@ -695,7 +695,7 @@ jobject JavaVMExt::AddGlobalRef(Thread* self, ObjPtr<mirror::Object> obj) {
   std::string error_msg;
   {
     WriterMutexLock mu(self, *Locks::jni_globals_lock_);
-    ref = globals_.Add(kIRTFirstSegment, obj, &error_msg);
+    ref = globals_.Add(obj, &error_msg);
     MaybeTraceGlobals();
   }
   if (UNLIKELY(ref == nullptr)) {
@@ -731,7 +731,7 @@ jweak JavaVMExt::AddWeakGlobalRef(Thread* self, ObjPtr<mirror::Object> obj) {
     WaitForWeakGlobalsAccess(self);
   }
   std::string error_msg;
-  IndirectRef ref = weak_globals_.Add(kIRTFirstSegment, obj, &error_msg);
+  IndirectRef ref = weak_globals_.Add(obj, &error_msg);
   MaybeTraceWeakGlobals();
   if (UNLIKELY(ref == nullptr)) {
     LOG(FATAL) << error_msg;
@@ -746,7 +746,7 @@ void JavaVMExt::DeleteGlobalRef(Thread* self, jobject obj) {
   }
   {
     WriterMutexLock mu(self, *Locks::jni_globals_lock_);
-    if (!globals_.Remove(kIRTFirstSegment, obj)) {
+    if (!globals_.Remove(obj)) {
       LOG(WARNING) << "JNI WARNING: DeleteGlobalRef(" << obj << ") "
                    << "failed to find entry";
     }
@@ -760,7 +760,7 @@ void JavaVMExt::DeleteWeakGlobalRef(Thread* self, jweak obj) {
     return;
   }
   MutexLock mu(self, *Locks::jni_weak_globals_lock_);
-  if (!weak_globals_.Remove(kIRTFirstSegment, obj)) {
+  if (!weak_globals_.Remove(obj)) {
     LOG(WARNING) << "JNI WARNING: DeleteWeakGlobalRef(" << obj << ") "
                  << "failed to find entry";
   }
@@ -1185,12 +1185,14 @@ jstring JavaVMExt::GetLibrarySearchPath(JNIEnv* env, jobject class_loader) {
   if (class_loader == nullptr) {
     return nullptr;
   }
-  if (!env->IsInstanceOf(class_loader, WellKnownClasses::dalvik_system_BaseDexClassLoader)) {
+  ScopedObjectAccess soa(env);
+  ObjPtr<mirror::Object> mirror_class_loader = soa.Decode<mirror::Object>(class_loader);
+  if (!mirror_class_loader->InstanceOf(WellKnownClasses::dalvik_system_BaseDexClassLoader.Get())) {
     return nullptr;
   }
-  return reinterpret_cast<jstring>(env->CallObjectMethod(
-      class_loader,
-      WellKnownClasses::dalvik_system_BaseDexClassLoader_getLdLibraryPath));
+  return soa.AddLocalReference<jstring>(
+      WellKnownClasses::dalvik_system_BaseDexClassLoader_getLdLibraryPath->InvokeVirtual<'L'>(
+          soa.Self(), mirror_class_loader));
 }
 
 // JNI Invocation interface.

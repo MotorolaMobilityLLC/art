@@ -480,6 +480,9 @@ class HGraphVisualizerPrinter : public HGraphDelegateVisitor {
         << array_set->GetValueCanBeNull() << std::noboolalpha;
     StartAttributeStream("needs_type_check") << std::boolalpha
         << array_set->NeedsTypeCheck() << std::noboolalpha;
+    StartAttributeStream("can_trigger_gc")
+        << std::boolalpha << array_set->GetSideEffects().Includes(SideEffects::CanTriggerGC())
+        << std::noboolalpha;
   }
 
   void VisitCompare(HCompare* compare) override {
@@ -904,13 +907,14 @@ class HGraphVisualizerPrinter : public HGraphDelegateVisitor {
 
     if (block->IsCatchBlock()) {
       PrintProperty("flags", "catch_block");
+    } else if (block->IsTryBlock()) {
+      std::stringstream flags_properties;
+      flags_properties << "try_start "
+                       << namer_.GetName(block->GetTryCatchInformation()->GetTryEntry().GetBlock());
+      PrintProperty("flags", flags_properties.str().c_str());
     } else if (!IsDebugDump()) {
       // Don't print useless information to logcat
       PrintEmptyProperty("flags");
-    }
-
-    if (block->IsTryBlock()) {
-      PrintProperty("try_start", block->GetTryCatchInformation()->GetTryEntry().GetBlock());
     }
 
     if (block->GetDominator() != nullptr) {

@@ -53,6 +53,7 @@ art_cc_library {
         // TODO(b/172480617): Alternatively, clean up when we no longer need to
         // support both prebuilts and sources present simultaneously.
         "//prebuilts/module_sdk/art/current/host-exports",
+        "//prebuilts/module_sdk/art/go/current/host-exports",
     ],
     header_libs: [
         "libbase_headers",

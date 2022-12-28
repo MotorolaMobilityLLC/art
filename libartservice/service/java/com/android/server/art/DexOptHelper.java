@@ -161,12 +161,26 @@ public class DexOptHelper {
             var result =
                     new OptimizeResult(params.getCompilerFilter(), params.getReason(), results);
 
-            for (Callback<OptimizePackageDoneCallback> doneCallback :
+            for (Callback<OptimizePackageDoneCallback, Boolean> doneCallback :
                     mInjector.getConfig().getOptimizePackageDoneCallbacks()) {
-                // TODO(b/257027956): Consider filtering the packages before calling the callback.
-                CompletableFuture.runAsync(() -> {
-                    doneCallback.get().onOptimizePackageDone(result);
-                }, doneCallback.executor());
+                boolean onlyIncludeUpdates = doneCallback.extra();
+                if (onlyIncludeUpdates) {
+                    List<PackageOptimizeResult> filteredResults =
+                            results.stream()
+                                    .filter(PackageOptimizeResult::hasUpdatedArtifacts)
+                                    .collect(Collectors.toList());
+                    if (!filteredResults.isEmpty()) {
+                        var resultForCallback = new OptimizeResult(
+                                params.getCompilerFilter(), params.getReason(), filteredResults);
+                        CompletableFuture.runAsync(() -> {
+                            doneCallback.get().onOptimizePackageDone(resultForCallback);
+                        }, doneCallback.executor());
+                    }
+                } else {
+                    CompletableFuture.runAsync(() -> {
+                        doneCallback.get().onOptimizePackageDone(result);
+                    }, doneCallback.executor());
+                }
             }
 
             return result;
@@ -296,6 +310,10 @@ public class DexOptHelper {
         Injector(@NonNull Context context, @NonNull Config config) {
             mContext = context;
             mConfig = config;
+
+            // Call the getters for various dependencies, to ensure correct initialization order.
+            getAppHibernationManager();
+            getPowerManager();
         }
 
         @NonNull

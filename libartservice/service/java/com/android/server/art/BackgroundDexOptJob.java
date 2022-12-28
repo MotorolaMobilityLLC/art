@@ -125,17 +125,23 @@ public class BackgroundDexOptJob {
                         .setPeriodic(JOB_INTERVAL_MS)
                         .setRequiresDeviceIdle(true)
                         .setRequiresCharging(true)
-                        .setRequiresBatteryNotLow(true)
-                        .setRequiresStorageNotLow(true);
+                        .setRequiresBatteryNotLow(true);
 
-        Callback<ScheduleBackgroundDexoptJobCallback> callback =
+        Callback<ScheduleBackgroundDexoptJobCallback, Void> callback =
                 mInjector.getConfig().getScheduleBackgroundDexoptJobCallback();
         if (callback != null) {
             Utils.executeAndWait(
                     callback.executor(), () -> { callback.get().onOverrideJobInfo(builder); });
         }
 
-        return mInjector.getJobScheduler().schedule(builder.build()) == JobScheduler.RESULT_SUCCESS
+        JobInfo info = builder.build();
+        if (info.isRequireStorageNotLow()) {
+            // See the javadoc of
+            // `ArtManagerLocal.ScheduleBackgroundDexoptJobCallback.onOverrideJobInfo` for details.
+            throw new IllegalStateException("'setRequiresStorageNotLow' must not be set");
+        }
+
+        return mInjector.getJobScheduler().schedule(info) == JobScheduler.RESULT_SUCCESS
                 ? ArtFlags.SCHEDULE_SUCCESS
                 : ArtFlags.SCHEDULE_JOB_SCHEDULER_FAILURE;
     }
@@ -190,7 +196,6 @@ public class BackgroundDexOptJob {
     private CompletedResult run(@NonNull CancellationSignal cancellationSignal) {
         // TODO(b/254013427): Cleanup dex use info.
         // TODO(b/254013425): Cleanup unused secondary dex file artifacts.
-        // TODO(b/255565888): Downgrade inactive apps.
         long startTimeMs = SystemClock.uptimeMillis();
         OptimizeResult dexoptResult;
         try (var snapshot = mInjector.getPackageManagerLocal().withFilteredSnapshot()) {
@@ -227,9 +232,20 @@ public class BackgroundDexOptJob {
             } else {
                 return ArtStatsLog.BACKGROUND_DEXOPT_JOB_ENDED__STATUS__STATUS_ABORT_BY_API;
             }
-        } else {
-            return ArtStatsLog.BACKGROUND_DEXOPT_JOB_ENDED__STATUS__STATUS_JOB_FINISHED;
         }
+
+        boolean isSkippedDueToStorageLow =
+                result.dexoptResult()
+                        .getPackageOptimizeResults()
+                        .stream()
+                        .flatMap(packageResult
+                                -> packageResult.getDexContainerFileOptimizeResults().stream())
+                        .anyMatch(fileResult -> fileResult.isSkippedDueToStorageLow());
+        if (isSkippedDueToStorageLow) {
+            return ArtStatsLog.BACKGROUND_DEXOPT_JOB_ENDED__STATUS__STATUS_ABORT_NO_SPACE_LEFT;
+        }
+
+        return ArtStatsLog.BACKGROUND_DEXOPT_JOB_ENDED__STATUS__STATUS_JOB_FINISHED;
     }
 
     static abstract class Result {}
@@ -262,6 +278,10 @@ public class BackgroundDexOptJob {
             mContext = context;
             mArtManagerLocal = artManagerLocal;
             mConfig = config;
+
+            // Call the getters for various dependencies, to ensure correct initialization order.
+            getPackageManagerLocal();
+            getJobScheduler();
         }
 
         @NonNull

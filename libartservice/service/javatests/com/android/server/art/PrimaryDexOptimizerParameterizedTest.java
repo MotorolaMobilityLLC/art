@@ -36,6 +36,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import android.content.pm.ApplicationInfo;
 import android.os.Process;
 import android.os.ServiceSpecificException;
 import android.os.SystemProperties;
@@ -100,19 +101,8 @@ public class PrimaryDexOptimizerParameterizedTest extends PrimaryDexOptimizerTes
 
         params = new Params();
         params.mIsSystem = true;
-        params.mIsUsesNonSdkApi = true;
+        params.mHiddenApiEnforcementPolicy = ApplicationInfo.HIDDEN_API_ENFORCEMENT_DISABLED;
         params.mExpectedIsInDalvikCache = true;
-        params.mExpectedIsHiddenApiPolicyEnabled = false;
-        list.add(params);
-
-        params = new Params();
-        params.mIsUpdatedSystemApp = true;
-        params.mIsUsesNonSdkApi = true;
-        params.mExpectedIsHiddenApiPolicyEnabled = false;
-        list.add(params);
-
-        params = new Params();
-        params.mIsSignedWithPlatformKey = true;
         params.mExpectedIsHiddenApiPolicyEnabled = false;
         list.add(params);
 
@@ -166,6 +156,11 @@ public class PrimaryDexOptimizerParameterizedTest extends PrimaryDexOptimizerTes
         params.mExpectedDexoptTrigger = DexoptTrigger.COMPILER_FILTER_IS_WORSE;
         list.add(params);
 
+        params = new Params();
+        // This should not change the result.
+        params.mSkipIfStorageLow = true;
+        list.add(params);
+
         return list;
     }
 
@@ -182,8 +177,9 @@ public class PrimaryDexOptimizerParameterizedTest extends PrimaryDexOptimizerTes
         lenient().when(mPkg.isVmSafeMode()).thenReturn(mParams.mIsVmSafeMode);
         lenient().when(mPkg.isDebuggable()).thenReturn(mParams.mIsDebuggable);
         lenient().when(mPkg.getTargetSdkVersion()).thenReturn(123);
-        lenient().when(mPkg.isSignedWithPlatformKey()).thenReturn(mParams.mIsSignedWithPlatformKey);
-        lenient().when(mPkg.isUsesNonSdkApi()).thenReturn(mParams.mIsUsesNonSdkApi);
+        lenient()
+                .when(mPkgState.getHiddenApiEnforcementPolicy())
+                .thenReturn(mParams.mHiddenApiEnforcementPolicy);
         lenient().when(mPkg.isUseEmbeddedDex()).thenReturn(mParams.mIsUseEmbeddedDex);
         lenient().when(mPkgState.isSystem()).thenReturn(mParams.mIsSystem);
         lenient().when(mPkgState.isUpdatedSystemApp()).thenReturn(mParams.mIsUpdatedSystemApp);
@@ -195,6 +191,8 @@ public class PrimaryDexOptimizerParameterizedTest extends PrimaryDexOptimizerTes
                         .setFlags(mParams.mForce ? ArtFlags.FLAG_FORCE : 0, ArtFlags.FLAG_FORCE)
                         .setFlags(mParams.mShouldDowngrade ? ArtFlags.FLAG_SHOULD_DOWNGRADE : 0,
                                 ArtFlags.FLAG_SHOULD_DOWNGRADE)
+                        .setFlags(mParams.mSkipIfStorageLow ? ArtFlags.FLAG_SKIP_IF_STORAGE_LOW : 0,
+                                ArtFlags.FLAG_SKIP_IF_STORAGE_LOW)
                         .build();
 
         mPrimaryDexOptimizer = new PrimaryDexOptimizer(
@@ -276,30 +274,33 @@ public class PrimaryDexOptimizerParameterizedTest extends PrimaryDexOptimizerTes
                                 true /* isPrimaryAbi */, "arm64-v8a",
                                 mParams.mExpectedCompilerFilter, OptimizeResult.OPTIMIZE_PERFORMED,
                                 100 /* dex2oatWallTimeMillis */, 400 /* dex2oatCpuTimeMillis */,
-                                30000 /* sizeBytes */, 32000 /* sizeBeforeBytes */),
+                                30000 /* sizeBytes */, 32000 /* sizeBeforeBytes */,
+                                false /* isSkippedDueToStorageLow */),
                         new DexContainerFileOptimizeResult("/data/app/foo/base.apk",
                                 false /* isPrimaryAbi */, "armeabi-v7a",
                                 mParams.mExpectedCompilerFilter, OptimizeResult.OPTIMIZE_FAILED,
                                 0 /* dex2oatWallTimeMillis */, 0 /* dex2oatCpuTimeMillis */,
-                                0 /* sizeBytes */, 0 /* sizeBeforeBytes */),
+                                0 /* sizeBytes */, 0 /* sizeBeforeBytes */,
+                                false /* isSkippedDueToStorageLow */),
                         new DexContainerFileOptimizeResult("/data/app/foo/split_0.apk",
                                 true /* isPrimaryAbi */, "arm64-v8a",
                                 mParams.mExpectedCompilerFilter, OptimizeResult.OPTIMIZE_SKIPPED,
                                 0 /* dex2oatWallTimeMillis */, 0 /* dex2oatCpuTimeMillis */,
-                                0 /* sizeBytes */, 0 /* sizeBeforeBytes */),
+                                0 /* sizeBytes */, 0 /* sizeBeforeBytes */,
+                                false /* isSkippedDueToStorageLow */),
                         new DexContainerFileOptimizeResult("/data/app/foo/split_0.apk",
                                 false /* isPrimaryAbi */, "armeabi-v7a",
                                 mParams.mExpectedCompilerFilter, OptimizeResult.OPTIMIZE_PERFORMED,
                                 200 /* dex2oatWallTimeMillis */, 200 /* dex2oatCpuTimeMillis */,
-                                10000 /* sizeBytes */, 0 /* sizeBeforeBytes */));
+                                10000 /* sizeBytes */, 0 /* sizeBeforeBytes */,
+                                false /* isSkippedDueToStorageLow */));
     }
 
     private static class Params {
         // Package information.
         public boolean mIsSystem = false;
         public boolean mIsUpdatedSystemApp = false;
-        public boolean mIsSignedWithPlatformKey = false;
-        public boolean mIsUsesNonSdkApi = false;
+        public int mHiddenApiEnforcementPolicy = ApplicationInfo.HIDDEN_API_ENFORCEMENT_ENABLED;
         public boolean mIsVmSafeMode = false;
         public boolean mIsDebuggable = false;
         public boolean mIsSystemUi = false;
@@ -309,6 +310,7 @@ public class PrimaryDexOptimizerParameterizedTest extends PrimaryDexOptimizerTes
         public String mRequestedCompilerFilter = "verify";
         public boolean mForce = false;
         public boolean mShouldDowngrade = false;
+        public boolean mSkipIfStorageLow = false;
 
         // System properties.
         public boolean mAlwaysDebuggable = false;
@@ -322,17 +324,17 @@ public class PrimaryDexOptimizerParameterizedTest extends PrimaryDexOptimizerTes
         public boolean mExpectedIsHiddenApiPolicyEnabled = true;
 
         public String toString() {
-            return String.format("isSystem=%b,isUpdatedSystemApp=%b,isSignedWithPlatformKey=%b,"
-                            + "isUsesNonSdkApi=%b,isVmSafeMode=%b,isDebuggable=%b,isSystemUi=%b,"
-                            + "isUseEmbeddedDex=%b,requestedCompilerFilter=%s,force=%b,"
-                            + "shouldDowngrade=%b,alwaysDebuggable=%b => targetCompilerFilter=%s,"
+            return String.format("isSystem=%b,isUpdatedSystemApp=%b,mHiddenApiEnforcementPolicy=%d"
+                            + ",isVmSafeMode=%b,isDebuggable=%b,isSystemUi=%b,isUseEmbeddedDex=%b,"
+                            + "requestedCompilerFilter=%s,force=%b,shouldDowngrade=%b,"
+                            + "mSkipIfStorageLow=%b,alwaysDebuggable=%b => targetCompilerFilter=%s,"
                             + "expectedDexoptTrigger=%d,expectedIsInDalvikCache=%b,"
                             + "expectedIsDebuggable=%b,expectedIsHiddenApiPolicyEnabled=%b",
-                    mIsSystem, mIsUpdatedSystemApp, mIsSignedWithPlatformKey, mIsUsesNonSdkApi,
-                    mIsVmSafeMode, mIsDebuggable, mIsSystemUi, mIsUseEmbeddedDex,
-                    mRequestedCompilerFilter, mForce, mShouldDowngrade, mAlwaysDebuggable,
-                    mExpectedCompilerFilter, mExpectedDexoptTrigger, mExpectedIsInDalvikCache,
-                    mExpectedIsDebuggable, mExpectedIsHiddenApiPolicyEnabled);
+                    mIsSystem, mIsUpdatedSystemApp, mHiddenApiEnforcementPolicy, mIsVmSafeMode,
+                    mIsDebuggable, mIsSystemUi, mIsUseEmbeddedDex, mRequestedCompilerFilter, mForce,
+                    mShouldDowngrade, mSkipIfStorageLow, mAlwaysDebuggable, mExpectedCompilerFilter,
+                    mExpectedDexoptTrigger, mExpectedIsInDalvikCache, mExpectedIsDebuggable,
+                    mExpectedIsHiddenApiPolicyEnabled);
         }
     }
 }

@@ -106,7 +106,12 @@ public class OptimizeResult {
                 .orElse(OPTIMIZE_SKIPPED);
     }
 
-    /** Describes the result of a package. */
+    /**
+     * Describes the result of a package.
+     *
+     * @hide
+     */
+    @SystemApi(client = SystemApi.Client.SYSTEM_SERVER)
     @Immutable
     public static class PackageOptimizeResult {
         private final @NonNull String mPackageName;
@@ -115,13 +120,13 @@ public class OptimizeResult {
         private final boolean mIsCanceled;
 
         /** @hide */
-    public PackageOptimizeResult(@NonNull String packageName,
-            @NonNull List<DexContainerFileOptimizeResult> dexContainerFileOptimizeResults,
-            boolean isCanceled) {
-        mPackageName = packageName;
-        mDexContainerFileOptimizeResults = dexContainerFileOptimizeResults;
-        mIsCanceled = isCanceled;
-    }
+        public PackageOptimizeResult(@NonNull String packageName,
+                @NonNull List<DexContainerFileOptimizeResult> dexContainerFileOptimizeResults,
+                boolean isCanceled) {
+            mPackageName = packageName;
+            mDexContainerFileOptimizeResults = dexContainerFileOptimizeResults;
+            mIsCanceled = isCanceled;
+        }
 
         /** The package name. */
         public @NonNull String getPackageName() {
@@ -145,9 +150,20 @@ public class OptimizeResult {
                                          .max()
                                          .orElse(OPTIMIZE_SKIPPED);
         }
+
+        /** True if the package has any artifacts updated by this operation. */
+        public boolean hasUpdatedArtifacts() {
+            return mDexContainerFileOptimizeResults.stream().anyMatch(
+                    result -> result.getStatus() == OPTIMIZE_PERFORMED);
+        }
     }
 
-    /** Describes the result of optimizing a dex container file. */
+    /**
+     * Describes the result of optimizing a dex container file.
+     *
+     * @hide
+     */
+    @SystemApi(client = SystemApi.Client.SYSTEM_SERVER)
     @Immutable
     public static class DexContainerFileOptimizeResult {
         private final @NonNull String mDexContainerFile;
@@ -159,12 +175,13 @@ public class OptimizeResult {
         private final long mDex2oatCpuTimeMillis;
         private final long mSizeBytes;
         private final long mSizeBeforeBytes;
+        private final boolean mIsSkippedDueToStorageLow;
 
         /** @hide */
         public DexContainerFileOptimizeResult(@NonNull String dexContainerFile,
                 boolean isPrimaryAbi, @NonNull String abi, @NonNull String compilerFilter,
                 @OptimizeStatus int status, long dex2oatWallTimeMillis, long dex2oatCpuTimeMillis,
-                long sizeBytes, long sizeBeforeBytes) {
+                long sizeBytes, long sizeBeforeBytes, boolean isSkippedDueToStorageLow) {
             mDexContainerFile = dexContainerFile;
             mIsPrimaryAbi = isPrimaryAbi;
             mAbi = abi;
@@ -174,6 +191,7 @@ public class OptimizeResult {
             mDex2oatCpuTimeMillis = dex2oatCpuTimeMillis;
             mSizeBytes = sizeBytes;
             mSizeBeforeBytes = sizeBeforeBytes;
+            mIsSkippedDueToStorageLow = isSkippedDueToStorageLow;
         }
 
         /** The absolute path to the dex container file. */
@@ -243,6 +261,11 @@ public class OptimizeResult {
          */
         public long getSizeBeforeBytes() {
             return mSizeBeforeBytes;
+        }
+
+        /** @hide */
+        public boolean isSkippedDueToStorageLow() {
+            return mIsSkippedDueToStorageLow;
         }
     }
 }

@@ -433,7 +433,7 @@ public class ArtManagerLocalTest {
     public void testOptimizePackagesRecentlyInstalled() throws Exception {
         // The package is recently installed but hasn't been used.
         PackageUserState userState = mPkgState.getStateForUser(UserHandle.of(1));
-        when(userState.getFirstInstallTime()).thenReturn(RECENT_TIME_MS);
+        when(userState.getFirstInstallTimeMillis()).thenReturn(RECENT_TIME_MS);
         when(mDexUseManager.getPackageLastUsedAtMs(PKG_NAME)).thenReturn(0l);
         when(mStorageManager.getAllocatableBytes(any())).thenReturn(999l);
 
@@ -460,7 +460,7 @@ public class ArtManagerLocalTest {
     public void testOptimizePackagesInactive() throws Exception {
         // PKG_NAME is neither recently installed nor recently used.
         PackageUserState userState = mPkgState.getStateForUser(UserHandle.of(1));
-        when(userState.getFirstInstallTime()).thenReturn(NOT_RECENT_TIME_MS);
+        when(userState.getFirstInstallTimeMillis()).thenReturn(NOT_RECENT_TIME_MS);
         when(mDexUseManager.getPackageLastUsedAtMs(PKG_NAME)).thenReturn(NOT_RECENT_TIME_MS);
         when(mStorageManager.getAllocatableBytes(any())).thenReturn(999l);
 
@@ -511,7 +511,7 @@ public class ArtManagerLocalTest {
     public void testOptimizePackagesOverride() throws Exception {
         // PKG_NAME is neither recently installed nor recently used.
         PackageUserState userState = mPkgState.getStateForUser(UserHandle.of(1));
-        when(userState.getFirstInstallTime()).thenReturn(NOT_RECENT_TIME_MS);
+        when(userState.getFirstInstallTimeMillis()).thenReturn(NOT_RECENT_TIME_MS);
         when(mDexUseManager.getPackageLastUsedAtMs(PKG_NAME)).thenReturn(NOT_RECENT_TIME_MS);
         when(mStorageManager.getAllocatableBytes(any())).thenReturn(999l);
 
@@ -519,10 +519,11 @@ public class ArtManagerLocalTest {
         var result = mock(OptimizeResult.class);
         var cancellationSignal = new CancellationSignal();
 
-        mArtManagerLocal.setOptimizePackagesCallback(
-                ForkJoinPool.commonPool(), (snapshot, reason, defaultPackages, builder) -> {
+        mArtManagerLocal.setOptimizePackagesCallback(ForkJoinPool.commonPool(),
+                (snapshot, reason, defaultPackages, builder, passedSignal) -> {
                     assertThat(reason).isEqualTo("bg-dexopt");
                     assertThat(defaultPackages).containsExactly(PKG_NAME_SYS_UI);
+                    assertThat(passedSignal).isSameInstanceAs(cancellationSignal);
                     builder.setPackages(List.of(PKG_NAME)).setOptimizeParams(params);
                 });
 
@@ -547,8 +548,8 @@ public class ArtManagerLocalTest {
         var result = mock(OptimizeResult.class);
         var cancellationSignal = new CancellationSignal();
 
-        mArtManagerLocal.setOptimizePackagesCallback(
-                ForkJoinPool.commonPool(), (snapshot, reason, defaultPackages, builder) -> {
+        mArtManagerLocal.setOptimizePackagesCallback(ForkJoinPool.commonPool(),
+                (snapshot, reason, defaultPackages, builder, passedSignal) -> {
                     builder.setPackages(List.of(PKG_NAME)).setOptimizeParams(params);
                 });
         mArtManagerLocal.clearOptimizePackagesCallback();
@@ -568,8 +569,8 @@ public class ArtManagerLocalTest {
         var params = new OptimizeParams.Builder("first-boot").build();
         var cancellationSignal = new CancellationSignal();
 
-        mArtManagerLocal.setOptimizePackagesCallback(
-                ForkJoinPool.commonPool(), (snapshot, reason, defaultPackages, builder) -> {
+        mArtManagerLocal.setOptimizePackagesCallback(ForkJoinPool.commonPool(),
+                (snapshot, reason, defaultPackages, builder, passedSignal) -> {
                     builder.setOptimizeParams(params);
                 });
 
@@ -772,7 +773,7 @@ public class ArtManagerLocalTest {
         PackageUserState pkgUserState = mock(PackageUserState.class);
         lenient().when(pkgUserState.isInstalled()).thenReturn(true);
         // All packages are by default pre-installed.
-        lenient().when(pkgUserState.getFirstInstallTime()).thenReturn(0l);
+        lenient().when(pkgUserState.getFirstInstallTimeMillis()).thenReturn(0l);
         return pkgUserState;
     }
 

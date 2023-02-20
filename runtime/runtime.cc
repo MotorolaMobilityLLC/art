@@ -449,17 +449,19 @@ Runtime::~Runtime() {
     callbacks_->NextRuntimePhase(RuntimePhaseCallback::RuntimePhase::kDeath);
   }
 
-  if (attach_shutdown_thread) {
-    DetachCurrentThread(/* should_run_callbacks= */ false);
-    self = nullptr;
-  }
-
+  // Delete thread pools before detaching the current thread in case tasks
+  // getting deleted need to have access to Thread::Current.
   heap_->DeleteThreadPool();
   if (oat_file_manager_ != nullptr) {
     oat_file_manager_->DeleteThreadPool();
   }
   DeleteThreadPool();
   CHECK(thread_pool_ == nullptr);
+
+  if (attach_shutdown_thread) {
+    DetachCurrentThread(/* should_run_callbacks= */ false);
+    self = nullptr;
+  }
 
   // Make sure our internal threads are dead before we start tearing down things they're using.
   GetRuntimeCallbacks()->StopDebugger();
@@ -1766,34 +1768,36 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
       break;
   }
 
-  if (HandlesSignalsInCompiledCode()) {
+  if (!no_sig_chain_) {
     fault_manager.Init();
 
-    // These need to be in a specific order.  The null point check handler must be
-    // after the suspend check and stack overflow check handlers.
-    //
-    // Note: the instances attach themselves to the fault manager and are handled by it. The
-    //       manager will delete the instance on Shutdown().
-    if (implicit_suspend_checks_) {
-      new SuspensionHandler(&fault_manager);
-    }
+    if (HandlesSignalsInCompiledCode()) {
+      // These need to be in a specific order.  The null point check handler must be
+      // after the suspend check and stack overflow check handlers.
+      //
+      // Note: the instances attach themselves to the fault manager and are handled by it. The
+      //       manager will delete the instance on Shutdown().
+      if (implicit_suspend_checks_) {
+        new SuspensionHandler(&fault_manager);
+      }
 
-    if (implicit_so_checks_) {
-      new StackOverflowHandler(&fault_manager);
-    }
+      if (implicit_so_checks_) {
+        new StackOverflowHandler(&fault_manager);
+      }
 
-    if (implicit_null_checks_) {
-      new NullPointerHandler(&fault_manager);
-    }
+      if (implicit_null_checks_) {
+        new NullPointerHandler(&fault_manager);
+      }
 
-    if (kEnableJavaStackTraceHandler) {
-      new JavaStackTraceHandler(&fault_manager);
-    }
+      if (kEnableJavaStackTraceHandler) {
+        new JavaStackTraceHandler(&fault_manager);
+      }
 
-    if (interpreter::CanRuntimeUseNterp()) {
-      // Nterp code can use signal handling just like the compiled managed code.
-      OatQuickMethodHeader* nterp_header = OatQuickMethodHeader::NterpMethodHeader;
-      fault_manager.AddGeneratedCodeRange(nterp_header->GetCode(), nterp_header->GetCodeSize());
+      if (interpreter::CanRuntimeUseNterp()) {
+        // Nterp code can use signal handling just like the compiled managed code.
+        OatQuickMethodHeader* nterp_header = OatQuickMethodHeader::NterpMethodHeader;
+        fault_manager.AddGeneratedCodeRange(nterp_header->GetCode(), nterp_header->GetCodeSize());
+      }
     }
   }
 

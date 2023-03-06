@@ -43,6 +43,10 @@ cc_library {
     shared_libs: [
         "libbase",
     ],
+    whole_static_libs: [
+        // TODO(b/270049598): Investigate the cost of libc++fs compared to its utility.
+        "libc++fs",
+    ],
     export_shared_lib_headers: ["libbase"],
 }
 
@@ -61,6 +65,11 @@ art_cc_defaults {
     static_libs: [
         "libgmock",
     ],
+    target: {
+        android: {
+            static_libs: ["libmodules-utils-build"],
+        },
+    },
 }
 
 // Version of ART gtest `art_libarttools_tests` bundled with the ART APEX on target.
@@ -83,34 +92,21 @@ art_cc_test {
     ],
 }
 
-// A defaults that contains libprocessgroup and all its dependencies.
-cc_defaults {
-    name: "art_libprocessgroup_defaults",
-    shared_libs: [
-        "libbase",
-        "libcgrouprc",
-    ],
-    static_libs: [
-        "libjsoncpp",
-        "libprocessgroup",
-    ],
-}
-
 cc_binary {
     name: "art_exec",
     defaults: [
         "art_defaults",
-        "art_libprocessgroup_defaults",
     ],
     srcs: [
         "tools/art_exec.cc",
     ],
     shared_libs: [
         "libartbase",
+        "libartpalette",
+        "libarttools", // Contains "libc++fs".
         "libbase",
     ],
     static_libs: [
-        "libc++fs",
         "libcap",
     ],
     apex_available: [

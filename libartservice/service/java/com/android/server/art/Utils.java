@@ -16,16 +16,22 @@
 
 package com.android.server.art;
 
+import android.R;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.annotation.SuppressLint;
+import android.app.role.RoleManager;
 import android.apphibernation.AppHibernationManager;
-import android.os.ServiceManager;
+import android.content.Context;
+import android.os.SystemClock;
 import android.os.SystemProperties;
+import android.os.Trace;
 import android.os.UserManager;
 import android.text.TextUtils;
 import android.util.Log;
 import android.util.SparseArray;
 
+import com.android.modules.utils.pm.PackageStateModulesUtils;
 import com.android.server.art.model.DexoptParams;
 import com.android.server.pm.PackageManagerLocal;
 import com.android.server.pm.pkg.AndroidPackage;
@@ -54,6 +60,9 @@ import java.util.stream.Collectors;
 public final class Utils {
     public static final String TAG = "ArtServiceUtils";
     public static final String PLATFORM_PACKAGE_NAME = "android";
+
+    /** A copy of {@link android.os.Trace.TRACE_TAG_DALVIK}. */
+    private static final long TRACE_TAG_DALVIK = 1L << 14;
 
     private Utils() {}
 
@@ -246,33 +255,27 @@ public final class Utils {
      * @param appHibernationManager the {@link AppHibernationManager} instance for checking
      *         hibernation status, or null to skip the check
      */
+    @SuppressLint("NewApi")
     public static boolean canDexoptPackage(
             @NonNull PackageState pkgState, @Nullable AppHibernationManager appHibernationManager) {
-        // An APEX has a uid of -1.
-        // TODO(b/256637152): Consider using `isApex` instead.
-        if (pkgState.getAppId() <= 0) {
-            return false;
-        }
-
-        // "android" is a special package that represents the platform, not an app.
-        if (pkgState.getPackageName().equals(Utils.PLATFORM_PACKAGE_NAME)) {
-            return false;
-        }
-
-        AndroidPackage pkg = pkgState.getAndroidPackage();
-        if (pkg == null || !pkg.getSplits().get(0).isHasCode()) {
+        if (!PackageStateModulesUtils.isDexoptable(pkgState)) {
             return false;
         }
 
         // We do not dexopt unused packages.
         // If `appHibernationManager` is null, the caller's intention is to skip the check.
         if (appHibernationManager != null
-                && appHibernationManager.isHibernatingGlobally(pkgState.getPackageName())
-                && appHibernationManager.isOatArtifactDeletionEnabled()) {
+                && shouldSkipDexoptDueToHibernation(pkgState, appHibernationManager)) {
             return false;
         }
 
         return true;
+    }
+
+    public static boolean shouldSkipDexoptDueToHibernation(
+            @NonNull PackageState pkgState, @NonNull AppHibernationManager appHibernationManager) {
+        return appHibernationManager.isHibernatingGlobally(pkgState.getPackageName())
+                && appHibernationManager.isOatArtifactDeletionEnabled();
     }
 
     public static long getPackageLastActiveTime(@NonNull PackageState pkgState,
@@ -283,8 +286,7 @@ public final class Utils {
                 userManager.getUserHandles(true /* excludeDying */)
                         .stream()
                         .map(handle -> pkgState.getStateForUser(handle))
-                        .map(com.android.server.art.wrapper.PackageUserState::new)
-                        .map(userState -> userState.getFirstInstallTime())
+                        .map(userState -> userState.getFirstInstallTimeMillis())
                         .max(Long::compare)
                         .orElse(0l);
         return Math.max(lastUsedAtMs, lastFirstInstallTimeMs);
@@ -304,6 +306,15 @@ public final class Utils {
         }
     }
 
+    public static boolean isSystemUiPackage(@NonNull Context context, @NonNull String packageName) {
+        return packageName.equals(context.getString(R.string.config_systemUi));
+    }
+
+    public static boolean isLauncherPackage(@NonNull Context context, @NonNull String packageName) {
+        RoleManager roleManager = context.getSystemService(RoleManager.class);
+        return roleManager.getRoleHolders(RoleManager.ROLE_HOME).contains(packageName);
+    }
+
     @AutoValue
     public abstract static class Abi {
         static @NonNull Abi create(
@@ -318,5 +329,38 @@ public final class Utils {
         abstract @NonNull String isa();
 
         abstract boolean isPrimaryAbi();
+    }
+
+    public static class Tracing implements AutoCloseable {
+        public Tracing(@NonNull String methodName) {
+            Trace.traceBegin(TRACE_TAG_DALVIK, methodName);
+        }
+
+        @Override
+        public void close() {
+            Trace.traceEnd(TRACE_TAG_DALVIK);
+        }
+    }
+
+    public static class TracingWithTimingLogging extends Tracing {
+        @NonNull private final String mTag;
+        @NonNull private final String mMethodName;
+        @NonNull private final long mStartTimeMs;
+
+        public TracingWithTimingLogging(@NonNull String tag, @NonNull String methodName) {
+            super(methodName);
+            mTag = tag;
+            mMethodName = methodName;
+            mStartTimeMs = SystemClock.elapsedRealtime();
+            Log.d(tag, methodName);
+        }
+
+        @Override
+        public void close() {
+            Log.d(mTag,
+                    mMethodName + " took to complete: "
+                            + (SystemClock.elapsedRealtime() - mStartTimeMs) + "ms");
+            super.close();
+        }
     }
 }

@@ -37,7 +37,6 @@ import com.android.server.art.model.Config;
 import com.android.server.art.model.DexoptParams;
 import com.android.server.art.model.DexoptResult;
 import com.android.server.art.model.OperationProgress;
-import com.android.server.art.wrapper.PackageStateWrapper;
 import com.android.server.pm.PackageManagerLocal;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.PackageState;
@@ -77,8 +76,16 @@ public class DexoptHelper {
 
     @NonNull private final Injector mInjector;
 
-    public DexoptHelper(@NonNull Context context, @NonNull Config config) {
-        this(new Injector(context, config));
+    /**
+     * Constructs a new instance.
+     *
+     * The {@link AppHibernationManager} reference may be null for boot time compilation runs, when
+     * the app hibernation manager hasn't yet been initialized. It should not be null otherwise. See
+     * comment in {@link ArtManagerLocal.dexoptPackages} for more details.
+     */
+    public DexoptHelper(@NonNull Context context, @NonNull Config config,
+            @Nullable AppHibernationManager appHibernationManager) {
+        this(new Injector(context, config, appHibernationManager));
     }
 
     @VisibleForTesting
@@ -136,9 +143,26 @@ public class DexoptHelper {
             wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS);
 
             List<CompletableFuture<PackageDexoptResult>> futures = new ArrayList<>();
-            for (PackageState pkgState : pkgStates) {
-                futures.add(CompletableFuture.supplyAsync(
-                        () -> dexoptPackage(pkgState, params, cancellationSignal), dexoptExecutor));
+
+            // Child threads will set their own listeners on the cancellation signal, so we must
+            // create a separate cancellation signal for each of them so that the listeners don't
+            // overwrite each other.
+            List<CancellationSignal> childCancellationSignals =
+                    pkgStates.stream()
+                            .map(pkgState -> new CancellationSignal())
+                            .collect(Collectors.toList());
+            cancellationSignal.setOnCancelListener(() -> {
+                for (CancellationSignal childCancellationSignal : childCancellationSignals) {
+                    childCancellationSignal.cancel();
+                }
+            });
+
+            for (int i = 0; i < pkgStates.size(); i++) {
+                PackageState pkgState = pkgStates.get(i);
+                CancellationSignal childCancellationSignal = childCancellationSignals.get(i);
+                futures.add(CompletableFuture.supplyAsync(() -> {
+                    return dexoptPackage(pkgState, params, childCancellationSignal);
+                }, dexoptExecutor));
             }
 
             if (progressCallback != null) {
@@ -189,6 +213,8 @@ public class DexoptHelper {
                 wakeLock.release();
             }
             Binder.restoreCallingIdentity(identityToken);
+            // Make sure nothing leaks even if the caller holds `cancellationSignal` forever.
+            cancellationSignal.setOnCancelListener(null);
         }
     }
 
@@ -215,7 +241,7 @@ public class DexoptHelper {
             PrimaryDexUtils.getDexInfoBySplitName(pkg, params.getSplitName());
         }
 
-        try {
+        try (var tracing = new Utils.Tracing("dexopt")) {
             if ((params.getFlags() & ArtFlags.FLAG_FOR_PRIMARY_DEX) != 0) {
                 if (cancellationSignal.isCanceled()) {
                     return createResult.get();
@@ -260,7 +286,8 @@ public class DexoptHelper {
         Consumer<SharedLibrary> maybeEnqueue = library -> {
             // The package name is not null if the library is an APK.
             // TODO(jiakaiz): Support JAR libraries.
-            if (library.getPackageName() != null && !visitedLibraries.contains(library.getName())) {
+            if (library.getPackageName() != null && !library.isNative()
+                    && !visitedLibraries.contains(library.getName())) {
                 visitedLibraries.add(library.getName());
                 queue.add(library);
             }
@@ -271,8 +298,7 @@ public class DexoptHelper {
             Utils.getPackageOrThrow(pkgState);
             pkgStates.put(packageName, pkgState);
             if (includeDependencies && canDexoptPackage(pkgState)) {
-                for (SharedLibrary library :
-                        PackageStateWrapper.getSharedLibraryDependencies(pkgState)) {
+                for (SharedLibrary library : pkgState.getSharedLibraryDependencies()) {
                     maybeEnqueue.accept(library);
                 }
             }
@@ -309,10 +335,13 @@ public class DexoptHelper {
     public static class Injector {
         @NonNull private final Context mContext;
         @NonNull private final Config mConfig;
+        @Nullable private final AppHibernationManager mAppHibernationManager;
 
-        Injector(@NonNull Context context, @NonNull Config config) {
+        Injector(@NonNull Context context, @NonNull Config config,
+                @Nullable AppHibernationManager appHibernationManager) {
             mContext = context;
             mConfig = config;
+            mAppHibernationManager = appHibernationManager;
 
             // Call the getters for the dependencies that aren't optional, to ensure correct
             // initialization order.
@@ -333,16 +362,9 @@ public class DexoptHelper {
             return new SecondaryDexopter(mContext, pkgState, pkg, params, cancellationSignal);
         }
 
-        /**
-         * Returns the registered AppHibernationManager instance.
-         *
-         * It may be null because ArtManagerLocal needs to be available early to compile packages at
-         * boot with {@link onBoot}, before the hibernation manager has been initialized. It should
-         * not be null for other dexopt calls.
-         */
         @Nullable
         public AppHibernationManager getAppHibernationManager() {
-            return mContext.getSystemService(AppHibernationManager.class);
+            return mAppHibernationManager;
         }
 
         @NonNull

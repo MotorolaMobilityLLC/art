@@ -74,6 +74,7 @@ class Dex2oatTest : public Dex2oatEnvironmentTest {
                                     bool use_fd = false) {
     std::unique_ptr<File> oat_file;
     std::vector<std::string> args;
+    args.reserve(dex_locations.size() + extra_args.size() + 6);
     // Add dex file args.
     for (const std::string& dex_location : dex_locations) {
       args.push_back("--dex-file=" + dex_location);
@@ -618,9 +619,9 @@ class Dex2oatLayoutTest : public Dex2oatTest {
     const char* location = dex_location.c_str();
     std::string error_msg;
     std::vector<std::unique_ptr<const DexFile>> dex_files;
-    const ArtDexFileLoader dex_file_loader;
+    ArtDexFileLoader dex_file_loader(location);
     ASSERT_TRUE(dex_file_loader.Open(
-        location, location, /*verify=*/true, /*verify_checksum=*/true, &error_msg, &dex_files));
+        /*verify=*/true, /*verify_checksum=*/true, &error_msg, &dex_files));
     EXPECT_EQ(dex_files.size(), 1U);
     std::unique_ptr<const DexFile>& dex_file = dex_files[0];
 
@@ -810,9 +811,9 @@ class Dex2oatLayoutTest : public Dex2oatTest {
 
     const char* location = dex_location.c_str();
     std::vector<std::unique_ptr<const DexFile>> dex_files;
-    const ArtDexFileLoader dex_file_loader;
+    ArtDexFileLoader dex_file_loader(location);
     ASSERT_TRUE(dex_file_loader.Open(
-        location, location, /*verify=*/ true, /*verify_checksum=*/ true, &error_msg, &dex_files));
+        /*verify=*/true, /*verify_checksum=*/true, &error_msg, &dex_files));
     EXPECT_EQ(dex_files.size(), 1U);
     std::unique_ptr<const DexFile>& old_dex_file = dex_files[0];
 

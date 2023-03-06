@@ -380,6 +380,52 @@ class ImageSpace::PatchObjectVisitor final {
       const {}
   void VisitRoot(mirror::CompressedReference<mirror::Object>* root ATTRIBUTE_UNUSED) const {}
 
+  template <typename T> void VisitNativeDexCacheArray(mirror::NativeArray<T>* array)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    if (array == nullptr) {
+      return;
+    }
+    uint32_t size = reinterpret_cast<uint32_t*>(array)[-1];
+    for (uint32_t i = 0; i < size; ++i) {
+      PatchNativePointer(array->GetPtrEntryPtrSize(i, kPointerSize));
+    }
+  }
+
+  template <typename T> void VisitGcRootDexCacheArray(mirror::GcRootArray<T>* array)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    if (array == nullptr) {
+      return;
+    }
+    uint32_t size = reinterpret_cast<uint32_t*>(array)[-1];
+    for (uint32_t i = 0; i < size; ++i) {
+      PatchGcRoot(&array->GetGcRoot(i));
+    }
+  }
+
+  void VisitDexCacheArrays(ObjPtr<mirror::DexCache> dex_cache)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    mirror::NativeArray<ArtMethod>* old_resolved_methods = dex_cache->GetResolvedMethodsArray();
+    if (old_resolved_methods != nullptr) {
+      mirror::NativeArray<ArtMethod>* resolved_methods = native_visitor_(old_resolved_methods);
+      dex_cache->SetResolvedMethodsArray(resolved_methods);
+      VisitNativeDexCacheArray(resolved_methods);
+    }
+
+    mirror::NativeArray<ArtField>* old_resolved_fields = dex_cache->GetResolvedFieldsArray();
+    if (old_resolved_fields != nullptr) {
+      mirror::NativeArray<ArtField>* resolved_fields = native_visitor_(old_resolved_fields);
+      dex_cache->SetResolvedFieldsArray(resolved_fields);
+      VisitNativeDexCacheArray(resolved_fields);
+    }
+
+    mirror::GcRootArray<mirror::String>* old_strings = dex_cache->GetStringsArray();
+    if (old_strings != nullptr) {
+      mirror::GcRootArray<mirror::String>* strings = native_visitor_(old_strings);
+      dex_cache->SetStringsArray(strings);
+      VisitGcRootDexCacheArray(strings);
+    }
+  }
+
   template <bool kMayBeNull = true, typename T>
   ALWAYS_INLINE void PatchGcRoot(/*inout*/GcRoot<T>* root) const
       REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -1308,6 +1354,15 @@ class ImageSpace::Loader {
       image_header->RelocateImageReferences(app_image_objects.Delta());
       image_header->RelocateBootImageReferences(boot_image.Delta());
       CHECK_EQ(image_header->GetImageBegin(), target_base);
+
+      // Fix up dex cache arrays.
+      ObjPtr<mirror::ObjectArray<mirror::DexCache>> dex_caches =
+          image_header->GetImageRoot<kWithoutReadBarrier>(ImageHeader::kDexCaches)
+              ->AsObjectArray<mirror::DexCache, kVerifyNone>();
+      for (int32_t i = 0, count = dex_caches->GetLength(); i < count; ++i) {
+        ObjPtr<mirror::DexCache> dex_cache = dex_caches->Get<kVerifyNone, kWithoutReadBarrier>(i);
+        patch_object_visitor.VisitDexCacheArrays(dex_cache);
+      }
     }
     {
       // Only touches objects in the app image, no need for mutator lock.
@@ -3323,26 +3378,19 @@ void ImageSpace::Dump(std::ostream& os) const {
       << ",name=\"" << GetName() << "\"]";
 }
 
-bool ImageSpace::ValidateApexVersions(const OatFile& oat_file,
+bool ImageSpace::ValidateApexVersions(const OatHeader& oat_header,
                                       const std::string& apex_versions,
+                                      const std::string& file_location,
                                       std::string* error_msg) {
   // For a boot image, the key value store only exists in the first OAT file. Skip other OAT files.
-  if (oat_file.GetOatHeader().GetKeyValueStoreSize() == 0) {
+  if (oat_header.GetKeyValueStoreSize() == 0) {
     return true;
   }
 
-  // The OAT files in the ART APEX is built on host, so they don't have the right APEX versions. It
-  // is safe to assume that they are always up-to-date because they are shipped along with the
-  // runtime and the dex files.
-  if (kIsTargetAndroid && android::base::StartsWith(oat_file.GetLocation(), GetArtRoot())) {
-    return true;
-  }
-
-  const char* oat_apex_versions =
-      oat_file.GetOatHeader().GetStoreValueByKey(OatHeader::kApexVersionsKey);
+  const char* oat_apex_versions = oat_header.GetStoreValueByKey(OatHeader::kApexVersionsKey);
   if (oat_apex_versions == nullptr) {
     *error_msg = StringPrintf("ValidateApexVersions failed to get APEX versions from oat file '%s'",
-                              oat_file.GetLocation().c_str());
+                              file_location.c_str());
     return false;
   }
   // For a boot image, it can be generated from a subset of the bootclasspath.
@@ -3352,7 +3400,7 @@ bool ImageSpace::ValidateApexVersions(const OatFile& oat_file,
     *error_msg = StringPrintf(
         "ValidateApexVersions found APEX versions mismatch between oat file '%s' and the runtime "
         "(Oat file: '%s', Runtime: '%s')",
-        oat_file.GetLocation().c_str(),
+        file_location.c_str(),
         oat_apex_versions,
         apex_versions.c_str());
     return false;
@@ -3374,7 +3422,10 @@ bool ImageSpace::ValidateOatFile(const OatFile& oat_file,
                                  ArrayRef<const std::string> dex_filenames,
                                  ArrayRef<const int> dex_fds,
                                  const std::string& apex_versions) {
-  if (!ValidateApexVersions(oat_file, apex_versions, error_msg)) {
+  if (!ValidateApexVersions(oat_file.GetOatHeader(),
+                            apex_versions,
+                            oat_file.GetLocation(),
+                            error_msg)) {
     return false;
   }
 
@@ -3387,7 +3438,6 @@ bool ImageSpace::ValidateOatFile(const OatFile& oat_file,
     return false;
   }
 
-  const ArtDexFileLoader dex_file_loader;
   size_t dex_file_index = 0;
   for (const OatDexFile* oat_dex_file : oat_file.GetOatDexFiles()) {
     // Skip multidex locations - These will be checked when we visit their
@@ -3404,7 +3454,7 @@ bool ImageSpace::ValidateOatFile(const OatFile& oat_file,
 
     std::vector<uint32_t> checksums;
     std::vector<std::string> dex_locations_ignored;
-    if (!dex_file_loader.GetMultiDexChecksums(
+    if (!ArtDexFileLoader::GetMultiDexChecksums(
             dex_file_location.c_str(), &checksums, &dex_locations_ignored, error_msg, dex_fd)) {
       *error_msg = StringPrintf("ValidateOatFile failed to get checksums of dex file '%s' "
                                 "referenced by oat file %s: %s",

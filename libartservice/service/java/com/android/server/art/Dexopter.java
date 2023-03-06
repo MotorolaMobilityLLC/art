@@ -26,6 +26,7 @@ import static com.android.server.art.model.DexoptResult.DexContainerFileDexoptRe
 import android.R;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.app.role.RoleManager;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.os.CancellationSignal;
@@ -44,6 +45,7 @@ import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.DetailedDexInfo;
 import com.android.server.art.model.DexoptParams;
 import com.android.server.art.model.DexoptResult;
+import com.android.server.pm.PackageManagerLocal;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.PackageState;
 
@@ -54,11 +56,14 @@ import com.google.auto.value.AutoValue;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /** @hide */
 public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
     private static final String TAG = "Dexopter";
+    private static final List<String> ART_PACKAGE_NAMES =
+            List.of("com.google.android.art", "com.android.art", "com.google.android.go.art");
 
     @NonNull protected final Injector mInjector;
     @NonNull protected final PackageState mPkgState;
@@ -279,6 +284,10 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
             }
         }
 
+        if (mInjector.isLauncherPackage(mPkgState.getPackageName())) {
+            return "speed-profile";
+        }
+
         // We force vmSafeMode on debuggable apps as well:
         //  - the runtime ignores their compiled code
         //  - they generally have lots of methods that could make the compiler used run out of
@@ -360,6 +369,9 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         dexoptOptions.generateAppImage =
                 isProfileGuidedFilter && isAppImageAllowed(dexInfo) && isAppImageEnabled();
         dexoptOptions.hiddenApiPolicyEnabled = isHiddenApiPolicyEnabled();
+        dexoptOptions.comments = String.format(
+                "app-version-name:%s,app-version-code:%d,art-version:%d", mPkg.getVersionName(),
+                mPkg.getLongVersionCode(), mInjector.getArtVersion());
         return dexoptOptions;
     }
 
@@ -398,7 +410,8 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         if ((options.flags() & ArtFlags.FLAG_FORCE) != 0) {
             return DexoptTrigger.COMPILER_FILTER_IS_BETTER | DexoptTrigger.COMPILER_FILTER_IS_SAME
                     | DexoptTrigger.COMPILER_FILTER_IS_WORSE
-                    | DexoptTrigger.PRIMARY_BOOT_IMAGE_BECOMES_USABLE;
+                    | DexoptTrigger.PRIMARY_BOOT_IMAGE_BECOMES_USABLE
+                    | DexoptTrigger.NEED_EXTRACTION;
         }
 
         if ((options.flags() & ArtFlags.FLAG_SHOULD_DOWNGRADE) != 0) {
@@ -406,7 +419,7 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         }
 
         int dexoptTrigger = DexoptTrigger.COMPILER_FILTER_IS_BETTER
-                | DexoptTrigger.PRIMARY_BOOT_IMAGE_BECOMES_USABLE;
+                | DexoptTrigger.PRIMARY_BOOT_IMAGE_BECOMES_USABLE | DexoptTrigger.NEED_EXTRACTION;
         if (options.profileMerged()) {
             dexoptTrigger |= DexoptTrigger.COMPILER_FILTER_IS_SAME;
         }
@@ -655,7 +668,11 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         }
 
         public boolean isSystemUiPackage(@NonNull String packageName) {
-            return packageName.equals(mContext.getString(R.string.config_systemUi));
+            return Utils.isSystemUiPackage(mContext, packageName);
+        }
+
+        public boolean isLauncherPackage(@NonNull String packageName) {
+            return Utils.isLauncherPackage(mContext, packageName);
         }
 
         @NonNull
@@ -677,6 +694,26 @@ public abstract class Dexopter<DexInfoType extends DetailedDexInfo> {
         @NonNull
         public StorageManager getStorageManager() {
             return Objects.requireNonNull(mContext.getSystemService(StorageManager.class));
+        }
+
+        @NonNull
+        private PackageManagerLocal getPackageManagerLocal() {
+            return Objects.requireNonNull(
+                    LocalManagerRegistry.getManager(PackageManagerLocal.class));
+        }
+
+        public long getArtVersion() {
+            try (var snapshot = getPackageManagerLocal().withUnfilteredSnapshot()) {
+                Map<String, PackageState> packageStates = snapshot.getPackageStates();
+                for (String artPackageName : ART_PACKAGE_NAMES) {
+                    PackageState pkgState = packageStates.get(artPackageName);
+                    if (pkgState != null) {
+                        AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
+                        return pkg.getLongVersionCode();
+                    }
+                }
+            }
+            return -1;
         }
     }
 }

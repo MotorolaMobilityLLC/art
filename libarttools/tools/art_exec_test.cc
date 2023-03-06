@@ -42,14 +42,18 @@
 #include "gtest/gtest.h"
 #include "system/thread_defs.h"
 
+#ifdef ART_TARGET_ANDROID
+#include "android-modules-utils/sdk_level.h"
+#endif
+
 namespace art {
 namespace {
 
 using ::android::base::make_scope_guard;
 using ::android::base::ScopeGuard;
 using ::android::base::Split;
-using ::testing::AllOf;
 using ::testing::Contains;
+using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::Not;
 
@@ -145,6 +149,13 @@ TEST_F(ArtExecTest, Command) {
 }
 
 TEST_F(ArtExecTest, SetTaskProfiles) {
+// The condition is always true because ArtExecTest is run on device only.
+#ifdef ART_TARGET_ANDROID
+  if (!android::modules::sdklevel::IsAtLeastU()) {
+    GTEST_SKIP() << "This test depends on a libartpalette API that is only available on U+";
+  }
+#endif
+
   std::string filename = "/data/local/tmp/art-exec-test-XXXXXX";
   ScratchFile scratch_file(new File(mkstemp(filename.data()), filename, /*check_usage=*/false));
   ASSERT_GE(scratch_file.GetFd(), 0);
@@ -211,17 +222,19 @@ TEST_F(ArtExecTest, CloseFds) {
                                 "--",
                                 GetBin("sh"),
                                 "-c",
-                                "ls /proc/self/fd > " + filename};
+                                "("
+                                "readlink /proc/self/fd/{} || echo;"
+                                "readlink /proc/self/fd/{} || echo;"
+                                "readlink /proc/self/fd/{} || echo;"
+                                ") > {}"_format(file1->Fd(), file2->Fd(), file3->Fd(), filename)};
 
   ScopedExecAndWait(args);
 
   std::string open_fds;
   ASSERT_TRUE(android::base::ReadFileToString(filename, &open_fds));
 
-  EXPECT_THAT(Split(open_fds, "\n"),
-              AllOf(Not(Contains(std::to_string(file1->Fd()))),
-                    Contains(std::to_string(file2->Fd())),
-                    Contains(std::to_string(file3->Fd()))));
+  // `file1` should be closed, while the other two should be open. There's a blank line at the end.
+  EXPECT_THAT(Split(open_fds, "\n"), ElementsAre(Not("/dev/zero"), "/dev/zero", "/dev/zero", ""));
 }
 
 TEST_F(ArtExecTest, Env) {

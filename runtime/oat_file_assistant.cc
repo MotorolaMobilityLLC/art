@@ -297,7 +297,8 @@ OatFileAssistant::DexOptTrigger OatFileAssistant::GetDexOptTrigger(
   }
 
   // This is the usual case. The caller's intention is to see if a better oat file can be generated.
-  DexOptTrigger dexopt_trigger{.targetFilterIsBetter = true, .primaryBootImageBecomesUsable = true};
+  DexOptTrigger dexopt_trigger{
+      .targetFilterIsBetter = true, .primaryBootImageBecomesUsable = true, .needExtraction = true};
   if (profile_changed && CompilerFilter::DependsOnProfile(target_compiler_filter)) {
     // Since the profile has been changed, we should re-compile even if the compilation does not
     // make the compiler filter better.
@@ -535,7 +536,10 @@ OatFileAssistant::OatStatus OatFileAssistant::GivenOatFileStatus(const OatFile& 
       return kOatBootImageOutOfDate;
     }
     if (!gc::space::ImageSpace::ValidateApexVersions(
-            file, GetOatFileAssistantContext()->GetApexVersions(), &error_msg)) {
+            file.GetOatHeader(),
+            GetOatFileAssistantContext()->GetApexVersions(),
+            file.GetLocation(),
+            &error_msg)) {
       VLOG(oat) << error_msg;
       return kOatBootImageOutOfDate;
     }
@@ -543,19 +547,13 @@ OatFileAssistant::OatStatus OatFileAssistant::GivenOatFileStatus(const OatFile& 
     VLOG(oat) << "Image checksum test skipped for compiler filter " << current_compiler_filter;
   }
 
+  // The constraint is only enforced if the zip has uncompressed dex code.
   if (only_load_trusted_executable_ &&
-      !LocationIsTrusted(file.GetLocation(),
-                         !GetRuntimeOptions().deny_art_apex_data_files) &&
-      file.ContainsDexCode()) {
-    // zip_file_only_contains_uncompressed_dex_ is only set during fetching the dex checksums.
-    GetRequiredDexChecksums(&error_msg);
-    // The constraint is only enforced if the zip has uncompressed dex code.
-    if (zip_file_only_contains_uncompressed_dex_) {
-      LOG(ERROR) << "Not loading "
-                 << dex_location_
-                 << ": oat file has dex code, but APK has uncompressed dex code";
-      return kOatDexOutOfDate;
-    }
+      !LocationIsTrusted(file.GetLocation(), !GetRuntimeOptions().deny_art_apex_data_files) &&
+      file.ContainsDexCode() && ZipFileOnlyContainsUncompressedDex()) {
+    LOG(ERROR) << "Not loading " << dex_location_
+               << ": oat file has dex code, but APK has uncompressed dex code";
+    return kOatDexOutOfDate;
   }
 
   if (!ClassLoaderContextIsOkay(file)) {
@@ -728,14 +726,13 @@ const std::vector<uint32_t>* OatFileAssistant::GetRequiredDexChecksums(std::stri
   if (!required_dex_checksums_attempted_) {
     required_dex_checksums_attempted_ = true;
     std::vector<uint32_t> checksums;
-    const ArtDexFileLoader dex_file_loader;
     std::vector<std::string> dex_locations_ignored;
-    if (dex_file_loader.GetMultiDexChecksums(dex_location_.c_str(),
-                                             &checksums,
-                                             &dex_locations_ignored,
-                                             &cached_required_dex_checksums_error_,
-                                             zip_fd_,
-                                             &zip_file_only_contains_uncompressed_dex_)) {
+    if (ArtDexFileLoader::GetMultiDexChecksums(dex_location_.c_str(),
+                                               &checksums,
+                                               &dex_locations_ignored,
+                                               &cached_required_dex_checksums_error_,
+                                               zip_fd_,
+                                               &zip_file_only_contains_uncompressed_dex_)) {
       if (checksums.empty()) {
         // The only valid case here is for APKs without dex files.
         VLOG(oat) << "No dex file found in " << dex_location_;
@@ -1084,6 +1081,7 @@ const OatFile* OatFileAssistant::OatFileInfo::GetFile() {
       file_.reset(OatFile::OpenFromVdex(zip_fd_,
                                         std::move(vdex),
                                         oat_file_assistant_->dex_location_,
+                                        oat_file_assistant_->context_,
                                         &error_msg));
     }
   } else if (android::base::EndsWith(filename_, kDmExtension)) {
@@ -1096,6 +1094,7 @@ const OatFile* OatFileAssistant::OatFileInfo::GetFile() {
         file_.reset(OatFile::OpenFromVdex(zip_fd_,
                                           std::move(vdex),
                                           oat_file_assistant_->dex_location_,
+                                          oat_file_assistant_->context_,
                                           &error_msg));
       }
     }
@@ -1169,6 +1168,11 @@ bool OatFileAssistant::OatFileInfo::ShouldRecompileForFilter(CompilerFilter::Fil
       DCHECK(!file->GetOatHeader().RequiresImage());
       return true;
     }
+  }
+
+  if (dexopt_trigger.needExtraction && !file->ContainsDexCode() &&
+      !oat_file_assistant_->ZipFileOnlyContainsUncompressedDex()) {
+    return true;
   }
 
   return false;
@@ -1323,6 +1327,15 @@ void OatFileAssistant::GetOptimizationStatus(
   }
   LOG(FATAL) << "Unreachable";
   UNREACHABLE();
+}
+
+bool OatFileAssistant::ZipFileOnlyContainsUncompressedDex() {
+  // zip_file_only_contains_uncompressed_dex_ is only set during fetching the dex checksums.
+  std::string error_msg;
+  if (GetRequiredDexChecksums(&error_msg) == nullptr) {
+    LOG(ERROR) << error_msg;
+  }
+  return zip_file_only_contains_uncompressed_dex_;
 }
 
 }  // namespace art

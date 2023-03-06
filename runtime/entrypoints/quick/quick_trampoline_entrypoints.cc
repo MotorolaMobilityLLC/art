@@ -141,6 +141,51 @@ class QuickArgumentVisitor {
   static size_t GprIndexToGprOffset(uint32_t gpr_index) {
     return gpr_index * GetBytesPerGprSpillLocation(kRuntimeISA);
   }
+#elif defined(__riscv)
+  // The callee save frame is pointed to by SP.
+  // | argN            |  |
+  // | ...             |  |
+  // | reg. arg spills |  |  Caller's frame
+  // | Method*         | ---
+  // | RA              |
+  // | S11/X27         |  callee-saved 11
+  // | S10/X26         |  callee-saved 10
+  // | S9/X25          |  callee-saved 9
+  // | S9/X24          |  callee-saved 8
+  // | S7/X23          |  callee-saved 7
+  // | S6/X22          |  callee-saved 6
+  // | S5/X21          |  callee-saved 5
+  // | S4/X20          |  callee-saved 4
+  // | S3/X19          |  callee-saved 3
+  // | S2/X18          |  callee-saved 2
+  // | A7/X17          |  arg 7
+  // | A6/X16          |  arg 6
+  // | A5/X15          |  arg 5
+  // | A4/X14          |  arg 4
+  // | A3/X13          |  arg 3
+  // | A2/X12          |  arg 2
+  // | A1/X11          |  arg 1 (A0 is the method => skipped)
+  // | S0/X8/FP        |  callee-saved 0 (S1 is TR => skipped)
+  // | FA7             |  float arg 8
+  // | FA6             |  float arg 7
+  // | FA5             |  float arg 6
+  // | FA4             |  float arg 5
+  // | FA3             |  float arg 4
+  // | FA2             |  float arg 3
+  // | FA1             |  float arg 2
+  // | FA0             |  float arg 1
+  // | A0/Method*      | <- sp
+  static constexpr bool kSplitPairAcrossRegisterAndStack = false;
+  static constexpr bool kAlignPairRegister = false;
+  static constexpr bool kQuickSoftFloatAbi = false;
+  static constexpr bool kQuickDoubleRegAlignedFloatBackFilled = false;
+  static constexpr bool kQuickSkipOddFpRegisters = false;
+  static constexpr size_t kNumQuickGprArgs = 7;
+  static constexpr size_t kNumQuickFprArgs = 8;
+  static constexpr bool kGprFprLockstep = false;
+  static size_t GprIndexToGprOffset(uint32_t gpr_index) {
+    return (gpr_index + 1) * GetBytesPerGprSpillLocation(kRuntimeISA);  // skip S0/X8/FP
+  }
 #elif defined(__i386__)
   // The callee save frame is pointed to by SP.
   // | argN        |  |
@@ -704,9 +749,6 @@ extern "C" uint64_t artQuickToInterpreterBridge(ArtMethod* method, Thread* self,
 
   // Check if caller needs to be deoptimized for instrumentation reasons.
   instrumentation::Instrumentation* instr = Runtime::Current()->GetInstrumentation();
-  // If caller_pc is the instrumentation exit stub, the stub will check to see if deoptimization
-  // should be done and it knows the real return pc. NB If the upcall is null we don't need to do
-  // anything. This can happen during shutdown or early startup.
   if (UNLIKELY(instr->ShouldDeoptimizeCaller(self, sp))) {
     ArtMethod* caller = QuickArgumentVisitor::GetOuterMethod(sp);
     uintptr_t caller_pc = QuickArgumentVisitor::GetCallingPc(sp);
@@ -1324,10 +1366,10 @@ template<class T> class BuildNativeCallFrameStateMachine {
   static constexpr size_t kRegistersNeededForLong = 2;
   static constexpr size_t kRegistersNeededForDouble = 2;
   static constexpr bool kMultiRegistersAligned = true;
-  static constexpr bool kMultiFPRegistersWidened = false;
   static constexpr bool kMultiGPRegistersWidened = false;
   static constexpr bool kAlignLongOnStack = true;
   static constexpr bool kAlignDoubleOnStack = true;
+  static constexpr bool kNaNBoxing = false;
 #elif defined(__aarch64__)
   static constexpr bool kNativeSoftFloatAbi = false;  // This is a hard float ABI.
   static constexpr size_t kNumNativeGprArgs = 8;  // 8 arguments passed in GPRs.
@@ -1336,10 +1378,22 @@ template<class T> class BuildNativeCallFrameStateMachine {
   static constexpr size_t kRegistersNeededForLong = 1;
   static constexpr size_t kRegistersNeededForDouble = 1;
   static constexpr bool kMultiRegistersAligned = false;
-  static constexpr bool kMultiFPRegistersWidened = false;
   static constexpr bool kMultiGPRegistersWidened = false;
   static constexpr bool kAlignLongOnStack = false;
   static constexpr bool kAlignDoubleOnStack = false;
+  static constexpr bool kNaNBoxing = false;
+#elif defined(__riscv)
+  static constexpr bool kNativeSoftFloatAbi = false;
+  static constexpr size_t kNumNativeGprArgs = 8;
+  static constexpr size_t kNumNativeFprArgs = 8;
+
+  static constexpr size_t kRegistersNeededForLong = 1;
+  static constexpr size_t kRegistersNeededForDouble = 1;
+  static constexpr bool kMultiRegistersAligned = false;
+  static constexpr bool kMultiGPRegistersWidened = true;
+  static constexpr bool kAlignLongOnStack = false;
+  static constexpr bool kAlignDoubleOnStack = false;
+  static constexpr bool kNaNBoxing = true;
 #elif defined(__i386__)
   static constexpr bool kNativeSoftFloatAbi = false;  // Not using int registers for fp
   static constexpr size_t kNumNativeGprArgs = 0;  // 0 arguments passed in GPRs.
@@ -1348,10 +1402,10 @@ template<class T> class BuildNativeCallFrameStateMachine {
   static constexpr size_t kRegistersNeededForLong = 2;
   static constexpr size_t kRegistersNeededForDouble = 2;
   static constexpr bool kMultiRegistersAligned = false;  // x86 not using regs, anyways
-  static constexpr bool kMultiFPRegistersWidened = false;
   static constexpr bool kMultiGPRegistersWidened = false;
   static constexpr bool kAlignLongOnStack = false;
   static constexpr bool kAlignDoubleOnStack = false;
+  static constexpr bool kNaNBoxing = false;
 #elif defined(__x86_64__)
   static constexpr bool kNativeSoftFloatAbi = false;  // This is a hard float ABI.
   static constexpr size_t kNumNativeGprArgs = 6;  // 6 arguments passed in GPRs.
@@ -1360,10 +1414,10 @@ template<class T> class BuildNativeCallFrameStateMachine {
   static constexpr size_t kRegistersNeededForLong = 1;
   static constexpr size_t kRegistersNeededForDouble = 1;
   static constexpr bool kMultiRegistersAligned = false;
-  static constexpr bool kMultiFPRegistersWidened = false;
   static constexpr bool kMultiGPRegistersWidened = false;
   static constexpr bool kAlignLongOnStack = false;
   static constexpr bool kAlignDoubleOnStack = false;
+  static constexpr bool kNaNBoxing = false;
 #else
 #error "Unsupported architecture"
 #endif
@@ -1479,8 +1533,10 @@ template<class T> class BuildNativeCallFrameStateMachine {
       if (HaveFloatFpr()) {
         fpr_index_--;
         if (kRegistersNeededForDouble == 1) {
-          if (kMultiFPRegistersWidened) {
-            PushFpr8(bit_cast<uint64_t, double>(val));
+          if (kNaNBoxing) {
+            // NaN boxing: no widening, just use the bits, but reset upper bits to 1s.
+            // See e.g. RISC-V manual, D extension, section "NaN Boxing of Narrower Values".
+            PushFpr8(0xFFFFFFFF00000000lu | static_cast<uint64_t>(bit_cast<uint32_t, float>(val)));
           } else {
             // No widening, just use the bits.
             PushFpr8(static_cast<uint64_t>(bit_cast<uint32_t, float>(val)));
@@ -1490,14 +1546,7 @@ template<class T> class BuildNativeCallFrameStateMachine {
         }
       } else {
         stack_entries_++;
-        if (kRegistersNeededForDouble == 1 && kMultiFPRegistersWidened) {
-          // Need to widen before storing: Note the "double" in the template instantiation.
-          // Note: We need to jump through those hoops to make the compiler happy.
-          DCHECK_EQ(sizeof(uintptr_t), sizeof(uint64_t));
-          PushStack(static_cast<uintptr_t>(bit_cast<uint64_t, double>(val)));
-        } else {
-          PushStack(static_cast<uintptr_t>(bit_cast<uint32_t, float>(val)));
-        }
+        PushStack(static_cast<uintptr_t>(bit_cast<uint32_t, float>(val)));
         fpr_index_ = 0;
       }
     }
@@ -2529,14 +2578,6 @@ extern "C" void artMethodExitHook(Thread* self,
                                   uint64_t* fpr_result,
                                   uint32_t frame_size)
   REQUIRES_SHARED(Locks::mutator_lock_) {
-  // For GenericJniTrampolines we call artMethodExitHook even for non debuggable runtimes though we
-  // still install instrumentation stubs. So just return early here so we don't call method exit
-  // twice. In all other cases (JITed JNI stubs / JITed code) we only call this for debuggable
-  // runtimes.
-  if (!Runtime::Current()->IsJavaDebuggable()) {
-    return;
-  }
-
   DCHECK_EQ(reinterpret_cast<uintptr_t>(self), reinterpret_cast<uintptr_t>(Thread::Current()));
   // Instrumentation exit stub must not be entered with a pending exception.
   CHECK(!self->IsExceptionPending())
@@ -2580,7 +2621,11 @@ extern "C" void artMethodExitHook(Thread* self,
     UNREACHABLE();
   }
 
-  bool deoptimize = instr->ShouldDeoptimizeCaller(self, sp, frame_size);
+  // We should deoptimize here if the caller requires a deoptimization or if the current method
+  // needs a deoptimization. We may need deoptimization for the current method if method exit
+  // hooks requested this frame to be popped. IsForcedInterpreterNeededForUpcall checks for that.
+  const bool deoptimize = instr->ShouldDeoptimizeCaller(self, sp, frame_size) ||
+                          Dbg::IsForcedInterpreterNeededForUpcall(self, method);
   if (deoptimize) {
     JValue ret_val = instr->GetReturnValue(method, &is_ref, gpr_result, fpr_result);
     DeoptimizationMethodType deopt_method_type = instr->GetDeoptimizationMethodType(method);

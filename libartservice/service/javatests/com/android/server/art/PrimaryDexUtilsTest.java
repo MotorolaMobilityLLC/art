@@ -26,8 +26,6 @@ import static org.mockito.Mockito.mock;
 
 import androidx.test.filters.SmallTest;
 
-import com.android.server.art.testing.StaticMockitoRule;
-import com.android.server.art.wrapper.PackageStateWrapper;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.AndroidPackageSplit;
 import com.android.server.pm.pkg.PackageState;
@@ -38,7 +36,6 @@ import dalvik.system.DexClassLoader;
 import dalvik.system.PathClassLoader;
 
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.junit.MockitoJUnitRunner;
@@ -49,8 +46,6 @@ import java.util.List;
 @SmallTest
 @RunWith(MockitoJUnitRunner.StrictStubs.class)
 public class PrimaryDexUtilsTest {
-    @Rule public StaticMockitoRule mockitoRule = new StaticMockitoRule(PackageStateWrapper.class);
-
     @Before
     public void setUp() {}
 
@@ -202,30 +197,39 @@ public class PrimaryDexUtilsTest {
         // Library 2, 4 depends on library 1.
         List<SharedLibrary> usesLibraryInfos = new ArrayList<>();
 
+        // The native library should not be added to the CLC.
+        SharedLibrary libraryNative = mock(SharedLibrary.class);
+        lenient().when(libraryNative.getAllCodePaths()).thenReturn(List.of("library_native.so"));
+        lenient().when(libraryNative.getDependencies()).thenReturn(null);
+        lenient().when(libraryNative.isNative()).thenReturn(true);
+        usesLibraryInfos.add(libraryNative);
+
         SharedLibrary library1 = mock(SharedLibrary.class);
         lenient()
                 .when(library1.getAllCodePaths())
                 .thenReturn(List.of("library_1_dex_1.jar", "library_1_dex_2.jar"));
         lenient().when(library1.getDependencies()).thenReturn(null);
+        lenient().when(library1.isNative()).thenReturn(false);
 
         SharedLibrary library2 = mock(SharedLibrary.class);
         lenient().when(library2.getAllCodePaths()).thenReturn(List.of("library_2.jar"));
-        lenient().when(library2.getDependencies()).thenReturn(List.of(library1));
+        lenient().when(library2.getDependencies()).thenReturn(List.of(library1, libraryNative));
+        lenient().when(library2.isNative()).thenReturn(false);
         usesLibraryInfos.add(library2);
 
         SharedLibrary library3 = mock(SharedLibrary.class);
         lenient().when(library3.getAllCodePaths()).thenReturn(List.of("library_3.jar"));
         lenient().when(library3.getDependencies()).thenReturn(null);
+        lenient().when(library3.isNative()).thenReturn(false);
         usesLibraryInfos.add(library3);
 
         SharedLibrary library4 = mock(SharedLibrary.class);
         lenient().when(library4.getAllCodePaths()).thenReturn(List.of("library_4.jar"));
         lenient().when(library4.getDependencies()).thenReturn(List.of(library1));
+        lenient().when(library4.isNative()).thenReturn(false);
         usesLibraryInfos.add(library4);
 
-        lenient()
-                .when(PackageStateWrapper.getSharedLibraryDependencies(pkgState))
-                .thenReturn(usesLibraryInfos);
+        lenient().when(pkgState.getSharedLibraryDependencies()).thenReturn(usesLibraryInfos);
 
         return pkgState;
     }

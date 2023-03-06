@@ -42,14 +42,15 @@ import android.os.CancellationSignal;
 import android.os.PowerManager;
 
 import androidx.test.filters.SmallTest;
+import androidx.test.runner.AndroidJUnit4;
 
+import com.android.modules.utils.pm.PackageStateModulesUtils;
 import com.android.server.art.model.ArtFlags;
 import com.android.server.art.model.Config;
 import com.android.server.art.model.DexoptParams;
 import com.android.server.art.model.DexoptResult;
 import com.android.server.art.model.OperationProgress;
 import com.android.server.art.testing.StaticMockitoRule;
-import com.android.server.art.wrapper.PackageStateWrapper;
 import com.android.server.pm.PackageManagerLocal;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.AndroidPackageSplit;
@@ -63,18 +64,22 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnitRunner;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 @SmallTest
-@RunWith(MockitoJUnitRunner.StrictStubs.class)
+@RunWith(AndroidJUnit4.class)
 public class DexoptHelperTest {
     private static final String PKG_NAME_FOO = "com.example.foo";
     private static final String PKG_NAME_BAR = "com.example.bar";
@@ -84,7 +89,8 @@ public class DexoptHelperTest {
     private static final String PKG_NAME_LIB4 = "com.example.lib4";
     private static final String PKG_NAME_LIBBAZ = "com.example.libbaz";
 
-    @Rule public StaticMockitoRule mockitoRule = new StaticMockitoRule(PackageStateWrapper.class);
+    @Rule
+    public StaticMockitoRule mockitoRule = new StaticMockitoRule(PackageStateModulesUtils.class);
 
     @Mock private DexoptHelper.Injector mInjector;
     @Mock private PrimaryDexopter mPrimaryDexopter;
@@ -207,29 +213,29 @@ public class DexoptHelperTest {
         inOrder.verify(mWakeLock).setWorkSource(any());
         inOrder.verify(mWakeLock).acquire(anyLong());
         inOrder.verify(mInjector).getPrimaryDexopter(
-                same(mPkgStateFoo), same(mPkgFoo), same(mParams), same(mCancellationSignal));
+                same(mPkgStateFoo), same(mPkgFoo), same(mParams), any());
         inOrder.verify(mInjector).getSecondaryDexopter(
-                same(mPkgStateFoo), same(mPkgFoo), same(mParams), same(mCancellationSignal));
+                same(mPkgStateFoo), same(mPkgFoo), same(mParams), any());
         inOrder.verify(mInjector).getPrimaryDexopter(
-                same(mPkgStateBar), same(mPkgBar), same(mParams), same(mCancellationSignal));
+                same(mPkgStateBar), same(mPkgBar), same(mParams), any());
         inOrder.verify(mInjector).getSecondaryDexopter(
-                same(mPkgStateBar), same(mPkgBar), same(mParams), same(mCancellationSignal));
+                same(mPkgStateBar), same(mPkgBar), same(mParams), any());
         inOrder.verify(mInjector).getPrimaryDexopter(
-                same(mPkgStateLibbaz), same(mPkgLibbaz), same(mParams), same(mCancellationSignal));
+                same(mPkgStateLibbaz), same(mPkgLibbaz), same(mParams), any());
         inOrder.verify(mInjector).getSecondaryDexopter(
-                same(mPkgStateLibbaz), same(mPkgLibbaz), same(mParams), same(mCancellationSignal));
+                same(mPkgStateLibbaz), same(mPkgLibbaz), same(mParams), any());
         inOrder.verify(mInjector).getPrimaryDexopter(
-                same(mPkgStateLib1), same(mPkgLib1), same(mParams), same(mCancellationSignal));
+                same(mPkgStateLib1), same(mPkgLib1), same(mParams), any());
         inOrder.verify(mInjector).getSecondaryDexopter(
-                same(mPkgStateLib1), same(mPkgLib1), same(mParams), same(mCancellationSignal));
+                same(mPkgStateLib1), same(mPkgLib1), same(mParams), any());
         inOrder.verify(mInjector).getPrimaryDexopter(
-                same(mPkgStateLib2), same(mPkgLib2), same(mParams), same(mCancellationSignal));
+                same(mPkgStateLib2), same(mPkgLib2), same(mParams), any());
         inOrder.verify(mInjector).getSecondaryDexopter(
-                same(mPkgStateLib2), same(mPkgLib2), same(mParams), same(mCancellationSignal));
+                same(mPkgStateLib2), same(mPkgLib2), same(mParams), any());
         inOrder.verify(mInjector).getPrimaryDexopter(
-                same(mPkgStateLib4), same(mPkgLib4), same(mParams), same(mCancellationSignal));
+                same(mPkgStateLib4), same(mPkgLib4), same(mParams), any());
         inOrder.verify(mInjector).getSecondaryDexopter(
-                same(mPkgStateLib4), same(mPkgLib4), same(mParams), same(mCancellationSignal));
+                same(mPkgStateLib4), same(mPkgLib4), same(mParams), any());
         inOrder.verify(mWakeLock).release();
 
         verifyNoMoreDexopt(6 /* expectedPrimaryTimes */, 6 /* expectedSecondaryTimes */);
@@ -339,14 +345,113 @@ public class DexoptHelperTest {
                 result, 5 /* index */, PKG_NAME_LIB4, DexoptResult.DEXOPT_CANCELLED, List.of());
 
         verify(mInjector).getPrimaryDexopter(
-                same(mPkgStateFoo), same(mPkgFoo), same(mParams), same(mCancellationSignal));
+                same(mPkgStateFoo), same(mPkgFoo), same(mParams), any());
 
         verifyNoMoreDexopt(1 /* expectedPrimaryTimes */, 0 /* expectedSecondaryTimes */);
     }
 
+    // This test verifies that every child thread can register its own listener on the cancellation
+    // signal through `setOnCancelListener` (i.e., the listeners don't overwrite each other).
     @Test
-    public void testDexoptNoCode() throws Exception {
-        when(mPkgFoo.getSplits().get(0).isHasCode()).thenReturn(false);
+    public void testDexoptCancelledDuringDex2oatInvocationsMultiThreaded() throws Exception {
+        final int NUM_PACKAGES = 6;
+        final long TIMEOUT_SEC = 1;
+        var dexoptStarted = new Semaphore(0);
+        var dexoptCancelled = new Semaphore(0);
+
+        when(mInjector.getPrimaryDexopter(any(), any(), any(), any())).thenAnswer(invocation -> {
+            var cancellationSignal = invocation.<CancellationSignal>getArgument(3);
+            var dexopter = mock(PrimaryDexopter.class);
+            when(dexopter.dexopt()).thenAnswer(innerInvocation -> {
+                // Simulate that the child thread registers its own listener.
+                var isListenerCalled = new AtomicBoolean(false);
+                cancellationSignal.setOnCancelListener(() -> isListenerCalled.set(true));
+
+                dexoptStarted.release();
+                assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
+
+                // Verify that the listener is called.
+                assertThat(isListenerCalled.get()).isTrue();
+
+                return mPrimaryResults;
+            });
+            return dexopter;
+        });
+
+        ExecutorService dexoptExecutor = Executors.newFixedThreadPool(NUM_PACKAGES);
+        Future<DexoptResult> future = ForkJoinPool.commonPool().submit(() -> {
+            return mDexoptHelper.dexopt(
+                    mSnapshot, mRequestedPackages, mParams, mCancellationSignal, dexoptExecutor);
+        });
+
+        try {
+            // Wait for all dexopt operations to start.
+            for (int i = 0; i < NUM_PACKAGES; i++) {
+                assertThat(dexoptStarted.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
+            }
+
+            mCancellationSignal.cancel();
+
+            for (int i = 0; i < NUM_PACKAGES; i++) {
+                dexoptCancelled.release();
+            }
+        } finally {
+            dexoptExecutor.shutdown();
+            Utils.getFuture(future);
+        }
+    }
+
+    // This test verifies that dexopt operation on the current thread can be cancelled.
+    @Test
+    public void testDexoptCancelledDuringDex2oatInvocationsOnCurrentThread() throws Exception {
+        final long TIMEOUT_SEC = 1;
+        var dexoptStarted = new Semaphore(0);
+        var dexoptCancelled = new Semaphore(0);
+
+        when(mInjector.getPrimaryDexopter(any(), any(), any(), any())).thenAnswer(invocation -> {
+            var cancellationSignal = invocation.<CancellationSignal>getArgument(3);
+            var dexopter = mock(PrimaryDexopter.class);
+            when(dexopter.dexopt()).thenAnswer(innerInvocation -> {
+                if (cancellationSignal.isCanceled()) {
+                    return mPrimaryResults;
+                }
+
+                var isListenerCalled = new AtomicBoolean(false);
+                cancellationSignal.setOnCancelListener(() -> isListenerCalled.set(true));
+
+                dexoptStarted.release();
+                assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
+
+                // Verify that the listener is called.
+                assertThat(isListenerCalled.get()).isTrue();
+
+                return mPrimaryResults;
+            });
+            return dexopter;
+        });
+
+        // Use the current thread (the one in ForkJoinPool).
+        Executor dexoptExecutor = Runnable::run;
+        Future<DexoptResult> future = ForkJoinPool.commonPool().submit(() -> {
+            return mDexoptHelper.dexopt(
+                    mSnapshot, mRequestedPackages, mParams, mCancellationSignal, dexoptExecutor);
+        });
+
+        try {
+            // Only one dexopt operation should start.
+            assertThat(dexoptStarted.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
+
+            mCancellationSignal.cancel();
+
+            dexoptCancelled.release();
+        } finally {
+            Utils.getFuture(future);
+        }
+    }
+
+    @Test
+    public void testDexoptNotDexoptable() throws Exception {
+        when(PackageStateModulesUtils.isDexoptable(mPkgStateFoo)).thenReturn(false);
 
         mRequestedPackages = List.of(PKG_NAME_FOO);
         DexoptResult result = mDexoptHelper.dexopt(
@@ -361,8 +466,8 @@ public class DexoptHelperTest {
     }
 
     @Test
-    public void testDexoptLibraryNoCode() throws Exception {
-        when(mPkgLib1.getSplits().get(0).isHasCode()).thenReturn(false);
+    public void testDexoptLibraryNotDexoptable() throws Exception {
+        when(PackageStateModulesUtils.isDexoptable(mPkgStateLib1)).thenReturn(false);
 
         mRequestedPackages = List.of(PKG_NAME_FOO);
         DexoptResult result = mDexoptHelper.dexopt(
@@ -607,12 +712,10 @@ public class DexoptHelperTest {
         AndroidPackage pkg = mock(AndroidPackage.class);
 
         var baseSplit = mock(AndroidPackageSplit.class);
-        lenient().when(baseSplit.isHasCode()).thenReturn(true);
 
         if (multiSplit) {
             var split0 = mock(AndroidPackageSplit.class);
             lenient().when(split0.getName()).thenReturn("split_0");
-            lenient().when(split0.isHasCode()).thenReturn(true);
 
             lenient().when(pkg.getSplits()).thenReturn(List.of(baseSplit, split0));
         } else {
@@ -627,9 +730,10 @@ public class DexoptHelperTest {
         PackageState pkgState = mock(PackageState.class);
         lenient().when(pkgState.getPackageName()).thenReturn(packageName);
         lenient().when(pkgState.getAppId()).thenReturn(12345);
-        lenient().when(PackageStateWrapper.getSharedLibraryDependencies(pkgState)).thenReturn(deps);
+        lenient().when(pkgState.getSharedLibraryDependencies()).thenReturn(deps);
         AndroidPackage pkg = createPackage(multiSplit);
         lenient().when(pkgState.getAndroidPackage()).thenReturn(pkg);
+        lenient().when(PackageStateModulesUtils.isDexoptable(pkgState)).thenReturn(true);
         return pkgState;
     }
 
@@ -639,6 +743,7 @@ public class DexoptHelperTest {
         lenient().when(library.getName()).thenReturn(libraryName);
         lenient().when(library.getPackageName()).thenReturn(packageName);
         lenient().when(library.getDependencies()).thenReturn(deps);
+        lenient().when(library.isNative()).thenReturn(false);
         return library;
     }
 
@@ -655,15 +760,20 @@ public class DexoptHelperTest {
 
         mRequestedPackages = List.of(PKG_NAME_FOO, PKG_NAME_BAR, PKG_NAME_LIBBAZ);
 
+        // The native library is not dexoptable.
+        SharedLibrary libNative = createLibrary("libnative", "com.example.libnative", List.of());
+        lenient().when(libNative.isNative()).thenReturn(true);
+
         SharedLibrary libbaz = createLibrary("libbaz", PKG_NAME_LIBBAZ, List.of());
         SharedLibrary lib4 = createLibrary("lib4", PKG_NAME_LIB4, List.of());
         SharedLibrary lib3 = createLibrary("lib3", PKG_NAME_LIB3, List.of());
         SharedLibrary lib2 = createLibrary("lib2", PKG_NAME_LIB2, List.of());
         SharedLibrary lib1a = createLibrary("lib1a", PKG_NAME_LIB1, List.of(libbaz, lib2));
-        SharedLibrary lib1b = createLibrary("lib1b", PKG_NAME_LIB1, List.of(lib2, lib4));
+        SharedLibrary lib1b = createLibrary("lib1b", PKG_NAME_LIB1, List.of(lib2, libNative, lib4));
         SharedLibrary lib1c = createLibrary("lib1c", PKG_NAME_LIB1, List.of(lib3));
 
-        mPkgStateFoo = createPackageState(PKG_NAME_FOO, List.of(lib1a), true /* multiSplit */);
+        mPkgStateFoo =
+                createPackageState(PKG_NAME_FOO, List.of(lib1a, libNative), true /* multiSplit */);
         mPkgFoo = mPkgStateFoo.getAndroidPackage();
         lenient().when(mSnapshot.getPackageState(PKG_NAME_FOO)).thenReturn(mPkgStateFoo);
 

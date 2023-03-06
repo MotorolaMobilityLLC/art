@@ -25,6 +25,10 @@
 #include "code_generator_arm64.h"
 #endif
 
+#ifdef ART_ENABLE_CODEGEN_riscv64
+#include "code_generator_riscv64.h"
+#endif
+
 #ifdef ART_ENABLE_CODEGEN_x86
 #include "code_generator_x86.h"
 #endif
@@ -1037,6 +1041,9 @@ std::unique_ptr<CodeGenerator> CodeGenerator::Create(HGraph* graph,
     }
 #endif
     default:
+      UNUSED(allocator);
+      UNUSED(graph);
+      UNUSED(stats);
       return nullptr;
   }
 }

@@ -37,6 +37,23 @@ bool CodeSinking::Run() {
   // as an indicator of an uncommon branch.
   for (HBasicBlock* exit_predecessor : exit->GetPredecessors()) {
     HInstruction* last = exit_predecessor->GetLastInstruction();
+
+    // TryBoundary instructions are sometimes inserted between the last instruction (e.g. Throw,
+    // Return) and Exit. We don't want to use that instruction for our "uncommon branch" heuristic
+    // because they are not as good an indicator as throwing branches, so we skip them and fetch the
+    // actual last instruction.
+    if (last->IsTryBoundary()) {
+      // We have an exit try boundary. Fetch the previous instruction.
+      DCHECK(!last->AsTryBoundary()->IsEntry());
+      if (last->GetPrevious() == nullptr) {
+        DCHECK(exit_predecessor->IsSingleTryBoundary());
+        exit_predecessor = exit_predecessor->GetSinglePredecessor();
+        last = exit_predecessor->GetLastInstruction();
+      } else {
+        last = last->GetPrevious();
+      }
+    }
+
     // Any predecessor of the exit that does not return, throws an exception.
     if (!last->IsReturn() && !last->IsReturnVoid()) {
       SinkCodeToUncommonBranch(exit_predecessor);
@@ -171,7 +188,6 @@ static bool ShouldFilterUse(HInstruction* instruction,
   return false;
 }
 
-
 // Find the ideal position for moving `instruction`. If `filter` is true,
 // we filter out store instructions to that instruction, which are processed
 // first in the step (3) of the sinking algorithm.
@@ -210,8 +226,10 @@ static HInstruction* FindIdealPosition(HInstruction* instruction,
     return nullptr;
   }
 
-  // Move to the first dominator not in a loop, if we can.
-  while (target_block->IsInLoop()) {
+  // Move to the first dominator not in a loop, if we can. We only do this if we are trying to hoist
+  // `instruction` out of a loop it wasn't a part of.
+  const HLoopInformation* loop_info = instruction->GetBlock()->GetLoopInformation();
+  while (target_block->IsInLoop() && target_block->GetLoopInformation() != loop_info) {
     if (!post_dominated.IsBitSet(target_block->GetDominator()->GetBlockId())) {
       break;
     }

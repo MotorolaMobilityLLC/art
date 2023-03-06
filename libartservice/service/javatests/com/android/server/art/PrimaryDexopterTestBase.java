@@ -24,6 +24,7 @@ import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.same;
 
 import android.os.CancellationSignal;
 import android.os.SystemProperties;
@@ -31,8 +32,8 @@ import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.storage.StorageManager;
 
+import com.android.modules.utils.pm.PackageStateModulesUtils;
 import com.android.server.art.testing.StaticMockitoRule;
-import com.android.server.art.wrapper.PackageStateWrapper;
 import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.AndroidPackageSplit;
 import com.android.server.pm.pkg.PackageState;
@@ -51,10 +52,13 @@ public class PrimaryDexopterTestBase {
     protected static final String PKG_NAME = "com.example.foo";
     protected static final int UID = 12345;
     protected static final int SHARED_GID = UserHandle.getSharedAppGid(UID);
+    protected static final long ART_VERSION = 331413030l;
+    protected static final String APP_VERSION_NAME = "12.34.56";
+    protected static final long APP_VERSION_CODE = 1536036288l;
 
     @Rule
     public StaticMockitoRule mockitoRule = new StaticMockitoRule(
-            SystemProperties.class, Constants.class, PackageStateWrapper.class);
+            SystemProperties.class, Constants.class, PackageStateModulesUtils.class);
 
     @Mock protected PrimaryDexopter.Injector mInjector;
     @Mock protected IArtd mArtd;
@@ -71,9 +75,11 @@ public class PrimaryDexopterTestBase {
     public void setUp() throws Exception {
         lenient().when(mInjector.getArtd()).thenReturn(mArtd);
         lenient().when(mInjector.isSystemUiPackage(any())).thenReturn(false);
+        lenient().when(mInjector.isLauncherPackage(any())).thenReturn(false);
         lenient().when(mInjector.getUserManager()).thenReturn(mUserManager);
         lenient().when(mInjector.getDexUseManager()).thenReturn(mDexUseManager);
         lenient().when(mInjector.getStorageManager()).thenReturn(mStorageManager);
+        lenient().when(mInjector.getArtVersion()).thenReturn(ART_VERSION);
 
         lenient()
                 .when(SystemProperties.get("dalvik.vm.systemuicompilerfilter"))
@@ -133,10 +139,9 @@ public class PrimaryDexopterTestBase {
         lenient().when(pkg.isDebuggable()).thenReturn(false);
         lenient().when(pkg.getTargetSdkVersion()).thenReturn(123);
         lenient().when(pkg.isSignedWithPlatformKey()).thenReturn(false);
-        lenient().when(pkg.isUsesNonSdkApi()).thenReturn(false);
-        lenient().when(pkg.getSdkLibraryName()).thenReturn(null);
-        lenient().when(pkg.getStaticSharedLibraryName()).thenReturn(null);
-        lenient().when(pkg.getLibraryNames()).thenReturn(new ArrayList<>());
+        lenient().when(pkg.isNonSdkApiRequested()).thenReturn(false);
+        lenient().when(pkg.getVersionName()).thenReturn(APP_VERSION_NAME);
+        lenient().when(pkg.getLongVersionCode()).thenReturn(APP_VERSION_CODE);
         return pkg;
     }
 
@@ -148,12 +153,14 @@ public class PrimaryDexopterTestBase {
         lenient().when(pkgState.isSystem()).thenReturn(false);
         lenient().when(pkgState.isUpdatedSystemApp()).thenReturn(false);
         lenient().when(pkgState.getAppId()).thenReturn(UID);
-        lenient()
-                .when(PackageStateWrapper.getSharedLibraryDependencies(pkgState))
-                .thenReturn(new ArrayList<>());
+        lenient().when(pkgState.getSharedLibraryDependencies()).thenReturn(new ArrayList<>());
         lenient().when(pkgState.getStateForUser(any())).thenReturn(mPkgUserStateNotInstalled);
         AndroidPackage pkg = createPackage();
         lenient().when(pkgState.getAndroidPackage()).thenReturn(pkg);
+        lenient()
+                .when(PackageStateModulesUtils.isLoadableInOtherProcesses(
+                        same(pkgState), anyBoolean()))
+                .thenReturn(false);
         return pkgState;
     }
 

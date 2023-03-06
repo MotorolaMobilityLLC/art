@@ -480,8 +480,11 @@ class ProfileCompilationInfo {
   // Save the profile data to the given file descriptor.
   bool Save(int fd);
 
-  // Save the current profile into the given file. The file will be cleared before saving.
+  // Save the current profile into the given file. Overwrites any existing data.
   bool Save(const std::string& filename, uint64_t* bytes_written);
+
+  // A fallback implementation of `Save` that uses a flock.
+  bool SaveFallback(const std::string& filename, uint64_t* bytes_written);
 
   // Return the number of dex files referenced in the profile.
   size_t GetNumberOfDexFiles() const {
@@ -588,6 +591,10 @@ class ProfileCompilationInfo {
       /*out*/std::set<uint16_t>* hot_method_set,
       /*out*/std::set<uint16_t>* startup_method_set,
       /*out*/std::set<uint16_t>* post_startup_method_method_set,
+      const ProfileSampleAnnotation& annotation = ProfileSampleAnnotation::kNone) const;
+
+  const ArenaSet<dex::TypeIndex>* GetClasses(
+      const DexFile& dex_file,
       const ProfileSampleAnnotation& annotation = ProfileSampleAnnotation::kNone) const;
 
   // Returns true iff both profiles have the same version.

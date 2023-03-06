@@ -37,6 +37,7 @@
 #include <string_view>
 #include <system_error>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -193,6 +194,9 @@ OatFileAssistant::DexOptTrigger DexOptTriggerFromAidl(int32_t aidl_value) {
   if ((aidl_value & static_cast<int32_t>(DexoptTrigger::PRIMARY_BOOT_IMAGE_BECOMES_USABLE)) != 0) {
     trigger.primaryBootImageBecomesUsable = true;
   }
+  if ((aidl_value & static_cast<int32_t>(DexoptTrigger::NEED_EXTRACTION)) != 0) {
+    trigger.needExtraction = true;
+  }
   return trigger;
 }
 
@@ -329,6 +333,7 @@ class FdLogger {
 
   std::string GetFds() {
     std::vector<int> fds;
+    fds.reserve(fd_mapping_.size());
     for (const auto& [fd, path] : fd_mapping_) {
       fds.push_back(fd);
     }
@@ -550,7 +555,8 @@ ndk::ScopedAStatus Artd::deleteProfile(const ProfilePath& in_profile) {
   std::string profile_path = OR_RETURN_FATAL(BuildProfileOrDmPath(in_profile));
 
   std::error_code ec;
-  if (!std::filesystem::remove(profile_path, ec) && ec.value() != ENOENT) {
+  std::filesystem::remove(profile_path, ec);
+  if (ec) {
     LOG(ERROR) << "Failed to remove '{}': {}"_format(profile_path, ec.message());
   }
 
@@ -926,6 +932,9 @@ ndk::ScopedAStatus Artd::dexopt(
       in_instructionSet, in_compilerFilter, in_priorityClass, in_dexoptOptions, args);
   AddPerfConfigFlags(in_priorityClass, art_exec_args, args);
 
+  // For being surfaced in crash reports on crashes.
+  args.Add("--comments=%s", in_dexoptOptions.comments);
+
   art_exec_args.Add("--keep-fds=%s", fd_logger.GetFds()).Add("--").Concat(std::move(args));
 
   LOG(INFO) << "Running dex2oat: " << Join(art_exec_args.Get(), /*separator=*/" ")
@@ -1005,6 +1014,33 @@ ScopedAStatus ArtdCancellationSignal::getType(int64_t* _aidl_return) {
 ScopedAStatus Artd::createCancellationSignal(
     std::shared_ptr<IArtdCancellationSignal>* _aidl_return) {
   *_aidl_return = ndk::SharedRefBase::make<ArtdCancellationSignal>(kill_);
+  return ScopedAStatus::ok();
+}
+
+ScopedAStatus Artd::cleanup(const std::vector<ProfilePath>& in_profilesToKeep,
+                            const std::vector<ArtifactsPath>& in_artifactsToKeep,
+                            const std::vector<VdexPath>& in_vdexFilesToKeep,
+                            int64_t* _aidl_return) {
+  std::unordered_set<std::string> files_to_keep;
+  for (const ProfilePath& profile : in_profilesToKeep) {
+    files_to_keep.insert(OR_RETURN_FATAL(BuildProfileOrDmPath(profile)));
+  }
+  for (const ArtifactsPath& artifacts : in_artifactsToKeep) {
+    std::string oat_path = OR_RETURN_FATAL(BuildOatPath(artifacts));
+    files_to_keep.insert(OatPathToVdexPath(oat_path));
+    files_to_keep.insert(OatPathToArtPath(oat_path));
+    files_to_keep.insert(std::move(oat_path));
+  }
+  for (const VdexPath& vdex : in_vdexFilesToKeep) {
+    files_to_keep.insert(OR_RETURN_FATAL(BuildVdexPath(vdex)));
+  }
+  *_aidl_return = 0;
+  for (const std::string& file : OR_RETURN_NON_FATAL(ListManagedFiles())) {
+    if (files_to_keep.find(file) == files_to_keep.end()) {
+      LOG(INFO) << "Cleaning up obsolete file '{}'"_format(file);
+      *_aidl_return += GetSizeAndDeleteFile(file);
+    }
+  }
   return ScopedAStatus::ok();
 }
 

@@ -45,6 +45,7 @@
 #include "mirror/object_array-inl.h"
 #include "mirror/object_array.h"
 #include "mirror/string-inl.h"
+#include "nterp_helpers.h"
 #include "oat.h"
 #include "profile/profile_compilation_info.h"
 #include "scoped_thread_state_change-inl.h"
@@ -53,6 +54,8 @@
 namespace art {
 
 using android::base::StringPrintf;
+
+static constexpr bool kEmitDexCacheArrays = true;
 
 /**
  * The native data structures that we store in the image.
@@ -156,36 +159,56 @@ class RuntimeImageHelper {
     return true;
   }
 
-  const std::vector<uint8_t>& GetObjects() const {
-    return objects_;
+  void FillData(std::vector<uint8_t>& data) {
+    // Note we don't put the header, we only have it reserved in `data` as
+    // Image::WriteData expects the object section to contain the image header.
+    auto compute_dest = [&](const ImageSection& section) {
+      return data.data() + section.Offset();
+    };
+
+    auto objects_section = header_.GetImageSection(ImageHeader::kSectionObjects);
+    memcpy(compute_dest(objects_section) + sizeof(ImageHeader), objects_.data(), objects_.size());
+    std::vector<uint8_t>().swap(objects_);
+
+    auto fields_section = header_.GetImageSection(ImageHeader::kSectionArtFields);
+    memcpy(compute_dest(fields_section), art_fields_.data(), fields_section.Size());
+    std::vector<uint8_t>().swap(art_fields_);
+
+    auto methods_section = header_.GetImageSection(ImageHeader::kSectionArtMethods);
+    memcpy(compute_dest(methods_section), art_methods_.data(), methods_section.Size());
+    std::vector<uint8_t>().swap(art_methods_);
+
+    auto im_tables_section = header_.GetImageSection(ImageHeader::kSectionImTables);
+    memcpy(compute_dest(im_tables_section), im_tables_.data(), im_tables_section.Size());
+    std::vector<uint8_t>().swap(im_tables_);
+
+    auto intern_section = header_.GetImageSection(ImageHeader::kSectionInternedStrings);
+    intern_table_.WriteToMemory(compute_dest(intern_section));
+
+    auto class_table_section = header_.GetImageSection(ImageHeader::kSectionClassTable);
+    class_table_.WriteToMemory(compute_dest(class_table_section));
+
+    auto string_offsets_section =
+        header_.GetImageSection(ImageHeader::kSectionStringReferenceOffsets);
+    memcpy(compute_dest(string_offsets_section),
+           string_reference_offsets_.data(),
+           string_offsets_section.Size());
+    std::vector<AppImageReferenceOffsetInfo>().swap(string_reference_offsets_);
+
+    auto dex_cache_section = header_.GetImageSection(ImageHeader::kSectionDexCacheArrays);
+    memcpy(compute_dest(dex_cache_section), dex_cache_arrays_.data(), dex_cache_section.Size());
+    std::vector<uint8_t>().swap(dex_cache_arrays_);
+
+    auto metadata_section = header_.GetImageSection(ImageHeader::kSectionMetadata);
+    memcpy(compute_dest(metadata_section), metadata_.data(), metadata_section.Size());
+    std::vector<uint8_t>().swap(metadata_);
+
+    DCHECK_EQ(metadata_section.Offset() + metadata_section.Size(), data.size());
   }
 
-  const std::vector<uint8_t>& GetArtMethods() const {
-    return art_methods_;
-  }
 
-  const std::vector<uint8_t>& GetArtFields() const {
-    return art_fields_;
-  }
-
-  const std::vector<uint8_t>& GetImTables() const {
-    return im_tables_;
-  }
-
-  const std::vector<uint8_t>& GetMetadata() const {
-    return metadata_;
-  }
-
-  const std::vector<uint8_t>& GetDexCacheArrays() const {
-    return dex_cache_arrays_;
-  }
-
-  const std::vector<AppImageReferenceOffsetInfo>& GetStringReferenceOffsets() const {
-    return string_reference_offsets_;
-  }
-
-  const ImageHeader& GetHeader() const {
-    return header_;
+  ImageHeader* GetHeader() {
+    return &header_;
   }
 
   const gc::accounting::ContinuousSpaceBitmap& GetImageBitmap() const {
@@ -194,14 +217,6 @@ class RuntimeImageHelper {
 
   const std::string& GetDexLocation() const {
     return dex_location_;
-  }
-
-  void GenerateInternData(std::vector<uint8_t>& data) const {
-    intern_table_.WriteToMemory(data.data());
-  }
-
-  void GenerateClassTableData(std::vector<uint8_t>& data) const {
-    class_table_.WriteToMemory(data.data());
   }
 
  private:
@@ -283,12 +298,13 @@ class RuntimeImageHelper {
 
     // Round up to the alignment dex caches arrays expects.
     cur_pos =
-        RoundUp(sections_[ImageHeader::kSectionStringReferenceOffsets].End(), sizeof(uint32_t));
+        RoundUp(sections_[ImageHeader::kSectionStringReferenceOffsets].End(), sizeof(void*));
     sections_[ImageHeader::kSectionDexCacheArrays] =
         ImageSection(cur_pos, dex_cache_arrays_.size());
 
-    // Round up to the alignment expected for the metadata.
-    cur_pos = RoundUp(sections_[ImageHeader::kSectionDexCacheArrays].End(), sizeof(uint32_t));
+    // Round up to the alignment expected for the metadata, which holds dex
+    // cache arrays.
+    cur_pos = RoundUp(sections_[ImageHeader::kSectionDexCacheArrays].End(), sizeof(void*));
     sections_[ImageHeader::kSectionMetadata] = ImageSection(cur_pos, metadata_.size());
   }
 
@@ -462,12 +478,23 @@ class RuntimeImageHelper {
       if (cls == nullptr) {
         return true;
       }
-      const dex::ClassDef* class_def = cls->GetClassDef();
-      if (class_def == nullptr) {
-        // Covers array classes and proxy classes.
-        // TODO: Handle these differently.
+      if (cls->IsProxyClass()) {
         return false;
       }
+      if (cls->IsArrayClass()) {
+        if (cls->IsBootStrapClassLoaded()) {
+          // For boot classpath arrays, we can only emit them if they are
+          // in the boot image already.
+          return helper_->IsInBootImage(cls.Get());
+        }
+        ObjPtr<mirror::Class> temp = cls.Get();
+        while ((temp = temp->GetComponentType())->IsArrayClass()) {}
+        StackHandleScope<1> hs(self_);
+        Handle<mirror::Class> other_class = hs.NewHandle(temp);
+        return CanEmit(other_class);
+      }
+      const dex::ClassDef* class_def = cls->GetClassDef();
+      DCHECK_NE(class_def, nullptr);
       auto existing = visited_.find(class_def);
       if (existing != visited_.end()) {
         // Already processed;
@@ -656,12 +683,14 @@ class RuntimeImageHelper {
       return;
     }
 
-    auto it = native_relocations_[old_method_array];
-    std::vector<uint8_t>& data = (it.first == NativeRelocationKind::kFullNativeDexCacheArray)
-        ? dex_cache_arrays_ : metadata_;
+    auto it = native_relocations_.find(old_method_array);
+    DCHECK(it != native_relocations_.end());
+    std::vector<uint8_t>& data =
+        (it->second.first == NativeRelocationKind::kFullNativeDexCacheArray)
+            ? dex_cache_arrays_ : metadata_;
 
     mirror::NativeArray<T>* content_array =
-        reinterpret_cast<mirror::NativeArray<T>*>(data.data() + it.second);
+        reinterpret_cast<mirror::NativeArray<T>*>(data.data() + it->second.second);
     for (uint32_t i = 0; i < num_ids; ++i) {
       // We may not have relocations for some entries, in which case we'll
       // just store null.
@@ -692,7 +721,12 @@ class RuntimeImageHelper {
     ScopedTrace relocate_native_pointers("Relocate native pointers");
     ScopedObjectAccess soa(Thread::Current());
     NativePointerVisitor visitor(this);
-    for (auto it : classes_) {
+    for (auto entry : classes_) {
+      mirror::Class* cls = reinterpret_cast<mirror::Class*>(&objects_[entry.second]);
+      cls->FixupNativePointers(cls, kRuntimePointerSize, visitor);
+      RelocateMethodPointerArrays(cls, visitor);
+    }
+    for (auto it : array_classes_) {
       mirror::Class* cls = reinterpret_cast<mirror::Class*>(&objects_[it.second]);
       cls->FixupNativePointers(cls, kRuntimePointerSize, visitor);
       RelocateMethodPointerArrays(cls, visitor);
@@ -808,8 +842,10 @@ class RuntimeImageHelper {
         stub = StubType::kQuickToInterpreterBridge;
       } else if (method->NeedsClinitCheckBeforeCall()) {
         stub = StubType::kQuickResolutionTrampoline;
-      } else {
+      } else if (interpreter::IsNterpSupported() && CanMethodUseNterp(method)) {
         stub = StubType::kNterpTrampoline;
+      } else {
+        stub = StubType::kQuickToInterpreterBridge;
       }
       const std::vector<gc::space::ImageSpace*>& image_spaces =
           Runtime::Current()->GetHeap()->GetBootImageSpaces();
@@ -1042,7 +1078,7 @@ class RuntimeImageHelper {
       CopyObject(image_roots.Get());
     }
 
-    // Emit classes defined in the app class loader (which will also indrirectly
+    // Emit classes defined in the app class loader (which will also indirectly
     // emit dex caches and their arrays).
     EmitClasses(soa.Self(), dex_cache_array);
 
@@ -1096,19 +1132,26 @@ class RuntimeImageHelper {
     if (array == nullptr) {
       return;
     }
-    size_t size = num_entries * sizeof(void*);
 
     bool only_startup = !mirror::DexCache::ShouldAllocateFullArray(num_entries, max_entries);
     std::vector<uint8_t>& data = only_startup ? metadata_ : dex_cache_arrays_;
     NativeRelocationKind relocation_kind = only_startup
         ? NativeRelocationKind::kStartupNativeDexCacheArray
         : NativeRelocationKind::kFullNativeDexCacheArray;
-    size_t offset = data.size() + sizeof(uint32_t);
-    data.resize(offset + size);
-    // We need to store `num_entries` because ImageSpace doesn't have
+
+    size_t size = num_entries * sizeof(void*);
+    // We need to reserve space to store `num_entries` because ImageSpace doesn't have
     // access to the dex files when relocating dex caches.
-    reinterpret_cast<uint32_t*>(data.data() + offset)[-1] = num_entries;
-    memcpy(data.data() + offset, array, size);
+    size_t offset = RoundUp(data.size(), sizeof(void*)) + sizeof(uintptr_t);
+    data.resize(RoundUp(data.size(), sizeof(void*)) + sizeof(uintptr_t) + size);
+    reinterpret_cast<uintptr_t*>(data.data() + offset)[-1] = num_entries;
+
+    // Copy each entry individually. We cannot use memcpy, as the entries may be
+    // updated concurrently by other mutator threads.
+    mirror::NativeArray<T>* copy = reinterpret_cast<mirror::NativeArray<T>*>(data.data() + offset);
+    for (uint32_t i = 0; i < num_entries; ++i) {
+      copy->Set(i, array->Get(i));
+    }
     native_relocations_[array] = std::make_pair(relocation_kind, offset);
   }
 
@@ -1119,17 +1162,17 @@ class RuntimeImageHelper {
     if (array == nullptr) {
       return nullptr;
     }
-    size_t size = num_entries * sizeof(GcRoot<T>);
-
     bool only_startup = !mirror::DexCache::ShouldAllocateFullArray(num_entries, max_entries);
     std::vector<uint8_t>& data = only_startup ? metadata_ : dex_cache_arrays_;
     NativeRelocationKind relocation_kind = only_startup
         ? NativeRelocationKind::kStartupNativeDexCacheArray
         : NativeRelocationKind::kFullNativeDexCacheArray;
-    size_t offset = data.size() + sizeof(uint32_t);
-    data.resize(offset + size);
-    // We need to store `num_entries` because ImageSpace doesn't have
+    size_t size = num_entries * sizeof(GcRoot<T>);
+    // We need to reserve space to store `num_entries` because ImageSpace doesn't have
     // access to the dex files when relocating dex caches.
+    static_assert(sizeof(GcRoot<T>) == sizeof(uint32_t));
+    size_t offset = data.size() + sizeof(uint32_t);
+    data.resize(data.size() + sizeof(uint32_t) + size);
     reinterpret_cast<uint32_t*>(data.data() + offset)[-1] = num_entries;
     native_relocations_[array] = std::make_pair(relocation_kind, offset);
 
@@ -1147,6 +1190,10 @@ class RuntimeImageHelper {
     mirror::Object* copy = reinterpret_cast<mirror::Object*>(objects_.data() + offset);
     reinterpret_cast<mirror::DexCache*>(copy)->ResetNativeArrays();
     reinterpret_cast<mirror::DexCache*>(copy)->SetDexFile(nullptr);
+
+    if (!kEmitDexCacheArrays) {
+      return offset;
+    }
 
     // Copy the ArtMethod array.
     mirror::NativeArray<ArtMethod>* resolved_methods = cache->GetResolvedMethodsArray();
@@ -1208,13 +1255,26 @@ class RuntimeImageHelper {
   }
 
   uint32_t CopyClass(ObjPtr<mirror::Class> cls) REQUIRES_SHARED(Locks::mutator_lock_) {
-    const dex::ClassDef* class_def = cls->GetClassDef();
-    auto it = classes_.find(class_def);
-    if (it != classes_.end()) {
-      return it->second;
+    DCHECK(!cls->IsBootStrapClassLoaded());
+    uint32_t offset = 0u;
+    if (cls->IsArrayClass()) {
+      std::string class_name;
+      cls->GetDescriptor(&class_name);
+      auto it = array_classes_.find(class_name);
+      if (it != array_classes_.end()) {
+        return it->second;
+      }
+      offset = CopyObject(cls);
+      array_classes_[class_name] = offset;
+    } else {
+      const dex::ClassDef* class_def = cls->GetClassDef();
+      auto it = classes_.find(class_def);
+      if (it != classes_.end()) {
+        return it->second;
+      }
+      offset = CopyObject(cls);
+      classes_[class_def] = offset;
     }
-    uint32_t offset = CopyObject(cls);
-    classes_[class_def] = offset;
 
     uint32_t hash = cls->DescriptorHash();
     // Save the hash, the `HashSet` implementation requires to find it.
@@ -1228,7 +1288,11 @@ class RuntimeImageHelper {
     // Clear internal state.
     mirror::Class* copy = reinterpret_cast<mirror::Class*>(objects_.data() + offset);
     copy->SetClinitThreadId(static_cast<pid_t>(0u));
-    copy->SetStatusInternal(cls->IsVerified() ? ClassStatus::kVerified : ClassStatus::kResolved);
+    if (cls->IsArrayClass()) {
+      DCHECK(copy->IsVisiblyInitialized());
+    } else {
+      copy->SetStatusInternal(cls->IsVerified() ? ClassStatus::kVerified : ClassStatus::kResolved);
+    }
     copy->SetObjectSizeAllocFastPath(std::numeric_limits<uint32_t>::max());
     copy->SetAccessFlags(copy->GetAccessFlags() & ~kAccRecursivelyInitialized);
 
@@ -1396,6 +1460,7 @@ class RuntimeImageHelper {
   std::vector<uint32_t> object_offsets_;
 
   std::map<const dex::ClassDef*, uint32_t> classes_;
+  std::map<std::string, uint32_t> array_classes_;
   std::map<const DexFile*, uint32_t> dex_caches_;
   std::map<uint32_t, uint32_t> class_hashes_;
 
@@ -1481,138 +1546,36 @@ bool RuntimeImage::WriteImageToDisk(std::string* error_msg) {
   // We first generate the app image in a temporary file, which we will then
   // move to `path`.
   const std::string temp_path = ReplaceFileExtension(path, std::to_string(getpid()) + ".tmp");
-  std::unique_ptr<File> out(OS::CreateEmptyFileWriteOnly(temp_path.c_str()));
-  if (out == nullptr) {
+  ImageFileGuard image_file;
+  image_file.reset(OS::CreateEmptyFileWriteOnly(temp_path.c_str()));
+
+  if (image_file == nullptr) {
     *error_msg = "Could not open " + temp_path + " for writing";
     return false;
   }
 
-  // Write objects. The header is written at the end in case we get killed.
-  if (out->Write(reinterpret_cast<const char*>(image.GetObjects().data()),
-                 image.GetObjects().size(),
-                 sizeof(ImageHeader)) != static_cast<int64_t>(image.GetObjects().size())) {
-    *error_msg = "Could not write image data to " + temp_path;
-    out->Erase(/*unlink=*/true);
+  std::vector<uint8_t> full_data(image.GetHeader()->GetImageSize());
+  image.FillData(full_data);
+
+  // Specify default block size of 512K to enable parallel image decompression.
+  static constexpr size_t kMaxImageBlockSize = 524288;
+  // Use LZ4 as good compromise between CPU time and compression. LZ4HC
+  // empirically takes 10x more time compressing.
+  static constexpr ImageHeader::StorageMode kImageStorageMode = ImageHeader::kStorageModeLZ4;
+  // Note: no need to update the checksum of the runtime app image: we have no
+  // use for it, and computing it takes CPU time.
+  if (!image.GetHeader()->WriteData(
+          image_file,
+          full_data.data(),
+          reinterpret_cast<const uint8_t*>(image.GetImageBitmap().Begin()),
+          kImageStorageMode,
+          kMaxImageBlockSize,
+          /* update_checksum= */ false,
+          error_msg)) {
     return false;
   }
 
-  {
-    // Write fields.
-    auto fields_section = image.GetHeader().GetImageSection(ImageHeader::kSectionArtFields);
-    if (out->Write(reinterpret_cast<const char*>(image.GetArtFields().data()),
-                   fields_section.Size(),
-                   fields_section.Offset()) != fields_section.Size()) {
-      *error_msg = "Could not write fields section " + temp_path;
-      out->Erase(/*unlink=*/true);
-      return false;
-    }
-  }
-
-  {
-    // Write methods.
-    auto methods_section = image.GetHeader().GetImageSection(ImageHeader::kSectionArtMethods);
-    if (out->Write(reinterpret_cast<const char*>(image.GetArtMethods().data()),
-                   methods_section.Size(),
-                   methods_section.Offset()) != methods_section.Size()) {
-      *error_msg = "Could not write methods section " + temp_path;
-      out->Erase(/*unlink=*/true);
-      return false;
-    }
-  }
-
-  {
-    // Write im tables.
-    auto im_tables_section = image.GetHeader().GetImageSection(ImageHeader::kSectionImTables);
-    if (out->Write(reinterpret_cast<const char*>(image.GetImTables().data()),
-                   im_tables_section.Size(),
-                   im_tables_section.Offset()) != im_tables_section.Size()) {
-      *error_msg = "Could not write ImTable section " + temp_path;
-      out->Erase(/*unlink=*/true);
-      return false;
-    }
-  }
-
-  {
-    // Write intern string set.
-    auto intern_section = image.GetHeader().GetImageSection(ImageHeader::kSectionInternedStrings);
-    std::vector<uint8_t> intern_data(intern_section.Size());
-    image.GenerateInternData(intern_data);
-    if (out->Write(reinterpret_cast<const char*>(intern_data.data()),
-                   intern_section.Size(),
-                   intern_section.Offset()) != intern_section.Size()) {
-      *error_msg = "Could not write intern section " + temp_path;
-      out->Erase(/*unlink=*/true);
-      return false;
-    }
-  }
-
-  {
-    // Write class table.
-    auto class_table_section = image.GetHeader().GetImageSection(ImageHeader::kSectionClassTable);
-    std::vector<uint8_t> class_table_data(class_table_section.Size());
-    image.GenerateClassTableData(class_table_data);
-    if (out->Write(reinterpret_cast<const char*>(class_table_data.data()),
-                   class_table_section.Size(),
-                   class_table_section.Offset()) != class_table_section.Size()) {
-      *error_msg = "Could not write class table section " + temp_path;
-      out->Erase(/*unlink=*/true);
-      return false;
-    }
-  }
-
-  // Write bitmap.
-  auto bitmap_section = image.GetHeader().GetImageSection(ImageHeader::kSectionImageBitmap);
-  if (out->Write(reinterpret_cast<const char*>(image.GetImageBitmap().Begin()),
-                 bitmap_section.Size(),
-                 bitmap_section.Offset()) != bitmap_section.Size()) {
-    *error_msg = "Could not write image bitmap " + temp_path;
-    out->Erase(/*unlink=*/true);
-    return false;
-  }
-
-  // Write metadata section.
-  auto metadata_section = image.GetHeader().GetImageSection(ImageHeader::kSectionMetadata);
-  if (out->Write(reinterpret_cast<const char*>(image.GetMetadata().data()),
-                 metadata_section.Size(),
-                 metadata_section.Offset()) != metadata_section.Size()) {
-    *error_msg = "Could not write metadata " + temp_path;
-    out->Erase(/*unlink=*/true);
-    return false;
-  }
-
-  // Write string offset array section.
-  auto string_offsets_section =
-      image.GetHeader().GetImageSection(ImageHeader::kSectionStringReferenceOffsets);
-  if (out->Write(reinterpret_cast<const char*>(image.GetStringReferenceOffsets().data()),
-                 string_offsets_section.Size(),
-                 string_offsets_section.Offset()) != string_offsets_section.Size()) {
-    *error_msg = "Could not write string reference offsets " + temp_path;
-    out->Erase(/*unlink=*/true);
-    return false;
-  }
-
-  // Write dex cache array section.
-  auto dex_cache_section = image.GetHeader().GetImageSection(ImageHeader::kSectionDexCacheArrays);
-  if (out->Write(reinterpret_cast<const char*>(image.GetDexCacheArrays().data()),
-                 dex_cache_section.Size(),
-                 dex_cache_section.Offset()) != dex_cache_section.Size()) {
-    *error_msg = "Could not write dex cache arrays " + temp_path;
-    out->Erase(/*unlink=*/true);
-    return false;
-  }
-
-  // Now write header.
-  if (out->Write(reinterpret_cast<const char*>(&image.GetHeader()), sizeof(ImageHeader), 0u) !=
-          sizeof(ImageHeader)) {
-    *error_msg = "Could not write image header to " + temp_path;
-    out->Erase(/*unlink=*/true);
-    return false;
-  }
-
-  if (out->FlushClose() != 0) {
-    *error_msg = "Could not flush and close " + temp_path;
-    // Unlink directly: we cannot use `out` as we may have closed it.
-    unlink(temp_path.c_str());
+  if (!image_file.WriteHeaderAndClose(temp_path, image.GetHeader(), error_msg)) {
     return false;
   }
 

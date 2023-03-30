@@ -1219,7 +1219,8 @@
                   "2238-checker-polymorphic-recursive-inlining",
                   "2240-tracing-non-invokable-method",
                   "2246-trace-stream",
-                  "2254-class-value-before-and-after-u"],
+                  "2254-class-value-before-and-after-u",
+                  "2261-badcleaner-in-systemcleaner"],
         "variant": "jvm",
         "description": ["Doesn't run on RI."]
     },
@@ -1557,11 +1558,5 @@
         "env_vars": {"ART_TEST_DEBUG_GC": "true"},
         "bug": "b/264844668",
         "description": ["Test timing out on debug gc."]
-    },
-    {
-        "tests": ["845-data-image", "846-multidex-data-image"],
-        "env_vars": {"ART_USE_READ_BARRIER": "false"},
-        "bug": "b/270936884",
-        "description": ["Fails with CMC."]
     }
 ]

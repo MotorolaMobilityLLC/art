@@ -714,35 +714,20 @@ void Runtime::Abort(const char* msg) {
 }
 
 /**
- * Update entrypoints (native and Java) of methods before the first fork. This
+ * Update entrypoints of methods before the first fork. This
  * helps sharing pages where ArtMethods are allocated between the zygote and
  * forked apps.
  */
 class UpdateMethodsPreFirstForkVisitor : public ClassVisitor {
  public:
-  UpdateMethodsPreFirstForkVisitor(Thread* self, ClassLinker* class_linker)
-      : vm_(down_cast<JNIEnvExt*>(self->GetJniEnv())->GetVm()),
-        self_(self),
-        class_linker_(class_linker),
+  explicit UpdateMethodsPreFirstForkVisitor(ClassLinker* class_linker)
+      : class_linker_(class_linker),
         can_use_nterp_(interpreter::CanRuntimeUseNterp()) {}
 
   bool operator()(ObjPtr<mirror::Class> klass) override REQUIRES_SHARED(Locks::mutator_lock_) {
     bool is_initialized = klass->IsVisiblyInitialized();
     for (ArtMethod& method : klass->GetDeclaredMethods(kRuntimePointerSize)) {
-      if (is_initialized || !method.NeedsClinitCheckBeforeCall()) {
-        if (method.IsNative()) {
-          const void* existing = method.GetEntryPointFromJni();
-          if (method.IsCriticalNative()
-                  ? class_linker_->IsJniDlsymLookupCriticalStub(existing)
-                  : class_linker_->IsJniDlsymLookupStub(existing)) {
-            const void* native_code =
-                vm_->FindCodeForNativeMethod(&method, /*error_msg=*/ nullptr, /*can_suspend=*/ false);
-            if (native_code != nullptr) {
-              class_linker_->RegisterNative(self_, &method, native_code);
-            }
-          }
-        }
-      } else if (can_use_nterp_) {
+      if (!is_initialized && method.NeedsClinitCheckBeforeCall() && can_use_nterp_) {
         const void* existing = method.GetEntryPointFromQuickCompiledCode();
         if (class_linker_->IsQuickResolutionStub(existing) && CanMethodUseNterp(&method)) {
           method.SetEntryPointFromQuickCompiledCode(interpreter::GetNterpWithClinitEntryPoint());
@@ -753,8 +738,6 @@ class UpdateMethodsPreFirstForkVisitor : public ClassVisitor {
   }
 
  private:
-  JavaVMExt* const vm_;
-  Thread* const self_;
   ClassLinker* const class_linker_;
   const bool can_use_nterp_;
 
@@ -775,7 +758,7 @@ void Runtime::PreZygoteFork() {
     class_linker_->MakeInitializedClassesVisiblyInitialized(self, /*wait=*/ true);
 
     ScopedObjectAccess soa(self);
-    UpdateMethodsPreFirstForkVisitor visitor(self, class_linker_);
+    UpdateMethodsPreFirstForkVisitor visitor(class_linker_);
     class_linker_->VisitClasses(&visitor);
   }
   heap_->PreZygoteFork();
@@ -811,7 +794,9 @@ void Runtime::SweepSystemWeaks(IsMarkedVisitor* visitor) {
   GetMonitorList()->SweepMonitorList(visitor);
   GetJavaVM()->SweepJniWeakGlobals(visitor);
   GetHeap()->SweepAllocationRecords(visitor);
-  if (GetJit() != nullptr) {
+  // Sweep JIT tables only if the GC is moving as in other cases the entries are
+  // not updated.
+  if (GetJit() != nullptr && GetHeap()->IsMovingGc()) {
     // Visit JIT literal tables. Objects in these tables are classes and strings
     // and only classes can be affected by class unloading. The strings always
     // stay alive as they are strongly interned.
@@ -1775,9 +1760,8 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
       break;
   }
 
+  fault_manager.Init(!no_sig_chain_);
   if (!no_sig_chain_) {
-    fault_manager.Init();
-
     if (HandlesSignalsInCompiledCode()) {
       // These need to be in a specific order.  The null point check handler must be
       // after the suspend check and stack overflow check handlers.
@@ -2577,17 +2561,20 @@ void Runtime::VisitReflectiveTargets(ReflectiveValueVisitor *visitor) {
 }
 
 void Runtime::VisitImageRoots(RootVisitor* visitor) {
-  for (auto* space : GetHeap()->GetContinuousSpaces()) {
-    if (space->IsImageSpace()) {
-      auto* image_space = space->AsImageSpace();
-      const auto& image_header = image_space->GetImageHeader();
-      for (int32_t i = 0, size = image_header.GetImageRoots()->GetLength(); i != size; ++i) {
-        mirror::Object* obj =
-            image_header.GetImageRoot(static_cast<ImageHeader::ImageRoot>(i)).Ptr();
-        if (obj != nullptr) {
-          mirror::Object* after_obj = obj;
-          visitor->VisitRoot(&after_obj, RootInfo(kRootStickyClass));
-          CHECK_EQ(after_obj, obj);
+  // We only confirm that image roots are unchanged.
+  if (kIsDebugBuild) {
+    for (auto* space : GetHeap()->GetContinuousSpaces()) {
+      if (space->IsImageSpace()) {
+        auto* image_space = space->AsImageSpace();
+        const auto& image_header = image_space->GetImageHeader();
+        for (int32_t i = 0, size = image_header.GetImageRoots()->GetLength(); i != size; ++i) {
+          mirror::Object* obj =
+              image_header.GetImageRoot(static_cast<ImageHeader::ImageRoot>(i)).Ptr();
+          if (obj != nullptr) {
+            mirror::Object* after_obj = obj;
+            visitor->VisitRoot(&after_obj, RootInfo(kRootStickyClass));
+            CHECK_EQ(after_obj, obj);
+          }
         }
       }
     }
@@ -3400,31 +3387,6 @@ bool Runtime::IsSystemServerProfiled() const {
 
 bool Runtime::GetOatFilesExecutable() const {
   return !IsAotCompiler() && !IsSystemServerProfiled();
-}
-
-void Runtime::ProcessWeakClass(GcRoot<mirror::Class>* root_ptr,
-                               IsMarkedVisitor* visitor,
-                               mirror::Class* update) {
-    // This does not need a read barrier because this is called by GC.
-  mirror::Class* cls = root_ptr->Read<kWithoutReadBarrier>();
-  if (cls != nullptr && cls != GetWeakClassSentinel()) {
-    DCHECK((cls->IsClass<kDefaultVerifyFlags>()));
-    // Look at the classloader of the class to know if it has been unloaded.
-    // This does not need a read barrier because this is called by GC.
-    ObjPtr<mirror::Object> class_loader =
-        cls->GetClassLoader<kDefaultVerifyFlags, kWithoutReadBarrier>();
-    if (class_loader == nullptr || visitor->IsMarked(class_loader.Ptr()) != nullptr) {
-      // The class loader is live, update the entry if the class has moved.
-      mirror::Class* new_cls = down_cast<mirror::Class*>(visitor->IsMarked(cls));
-      // Note that new_object can be null for CMS and newly allocated objects.
-      if (new_cls != nullptr && new_cls != cls) {
-        *root_ptr = GcRoot<mirror::Class>(new_cls);
-      }
-    } else {
-      // The class loader is not live, clear the entry.
-      *root_ptr = GcRoot<mirror::Class>(update);
-    }
-  }
 }
 
 void Runtime::MadviseFileForRange(size_t madvise_size_limit_bytes,

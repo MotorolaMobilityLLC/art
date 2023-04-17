@@ -4485,7 +4485,7 @@ static void SweepCacheEntry(IsMarkedVisitor* visitor, const Instruction* inst, s
           Runtime* runtime = Runtime::Current();
           gc::collector::ConcurrentCopying* cc = runtime->GetHeap()->ConcurrentCopyingCollector();
           CHECK_NE(cc, nullptr);
-          LOG(FATAL) << cc->DumpReferenceInfo(object, "string")
+          LOG(WARNING) << cc->DumpReferenceInfo(object, "string")
                      << " string interned: " << std::boolalpha
                      << runtime->GetInternTable()->LookupStrong(Thread::Current(),
                                                                 down_cast<mirror::String*>(object))

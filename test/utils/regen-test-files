@@ -211,8 +211,11 @@ known_failing_tests = frozenset([
   "844-exception2",
   # 966-default-conflict: Dependency on `libarttest`.
   "966-default-conflict",
-  # 993-breakpoints-non-debuggable: This test needs native code.
+  # These tests need native code.
   "993-breakpoints-non-debuggable",
+  "2243-single-step-default",
+  "2262-miranda-methods",
+  "2262-default-conflict-methods"
 ])
 
 known_failing_on_hwasan_tests = frozenset([
@@ -598,6 +601,10 @@ class Generator:
         for t in mainline_presubmit_tests
     ]
 
+    # Android Virtualization Framework presubmits
+    avf_presubmit_tests = ["ComposHostTestCases"]
+    avf_presubmit_tests_dict = [{"name": t} for t in avf_presubmit_tests]
+
     # Presubmits.
     other_presubmit_tests = [
         "ArtServiceTests",
@@ -620,6 +627,7 @@ class Generator:
             ("mainline-presubmit", mainline_presubmit_tests_dict),
             ("presubmit", presubmit_tests_dict),
             ("hwasan-presubmit", hwasan_presubmit_tests_dict),
+            ("avf-presubmit", avf_presubmit_tests_dict),
         ]
         if test_group_dict
     ])

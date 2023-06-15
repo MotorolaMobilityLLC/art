@@ -329,6 +329,9 @@ inline ArtMethod* ClassLinker::ResolveMethod(uint32_t method_idx,
   // Check for hit in the dex cache.
   ArtMethod* resolved = dex_cache->GetResolvedMethod(method_idx);
   Thread::PoisonObjectPointersIfDebug();
+  if ((int64_t)resolved == -1) {
+    DCHECK(resolved->GetDeclaringClassUnchecked() != nullptr) << resolved->GetDexMethodIndex();
+  }
   DCHECK(resolved == nullptr || !resolved->IsRuntimeMethod());
   bool valid_dex_cache_method = resolved != nullptr;
   if (kResolveMode == ResolveMode::kNoChecks && valid_dex_cache_method) {
@@ -365,6 +368,7 @@ inline ArtMethod* ClassLinker::ResolveMethod(uint32_t method_idx,
     // Look for the method again in case the type resolution updated the cache.
     resolved = dex_cache->GetResolvedMethod(method_idx);
     if (kResolveMode == ResolveMode::kNoChecks && resolved != nullptr) {
+      DCHECK(resolved->GetDeclaringClassUnchecked() != nullptr) << resolved->GetDexMethodIndex();
       return resolved;
     }
   }
@@ -407,6 +411,7 @@ inline ArtMethod* ClassLinker::ResolveMethod(uint32_t method_idx,
   if (LIKELY(resolved != nullptr) &&
       LIKELY(kResolveMode == ResolveMode::kNoChecks ||
              !resolved->CheckIncompatibleClassChange(type))) {
+    DCHECK(resolved->GetDeclaringClassUnchecked() != nullptr) << resolved->GetDexMethodIndex();
     return resolved;
   }
 

@@ -531,7 +531,7 @@ Runtime::~Runtime() {
   // Destroy allocators before shutting down the MemMap because they may use it.
   java_vm_.reset();
   linear_alloc_.reset();
-  startup_linear_alloc_.reset();
+  delete ReleaseStartupLinearAlloc();
   linear_alloc_arena_pool_.reset();
   arena_pool_.reset();
   jit_arena_pool_.reset();
@@ -1734,7 +1734,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
     linear_alloc_arena_pool_.reset(new MemMapArenaPool(low_4gb));
   }
   linear_alloc_.reset(CreateLinearAlloc());
-  startup_linear_alloc_.reset(CreateLinearAlloc());
+  startup_linear_alloc_.store(CreateLinearAlloc(), std::memory_order_relaxed);
 
   small_lrt_allocator_ = new jni::SmallLrtAllocator();
 
@@ -2790,6 +2790,30 @@ void Runtime::RegisterAppInfo(const std::string& package_name,
     return;
   }
 
+  // Framework calls this method for all split APKs. Ignore the calls for the ones with no dex code
+  // so that we don't unnecessarily create profiles for them or write bootclasspath profiling info
+  // to those profiles.
+  bool has_code = false;
+  for (const std::string& path : code_paths) {
+    std::string error_msg;
+    std::vector<uint32_t> checksums;
+    std::vector<std::string> dex_locations;
+    if (!ArtDexFileLoader::GetMultiDexChecksums(
+            path.c_str(), &checksums, &dex_locations, &error_msg)) {
+      LOG(WARNING) << error_msg;
+      continue;
+    }
+    if (dex_locations.size() > 0) {
+      has_code = true;
+      break;
+    }
+  }
+  if (!has_code) {
+    VLOG(profiler) << "JIT profile information will not be recorded: no dex code in '" +
+                          android::base::Join(code_paths, ',') + "'.";
+    return;
+  }
+
   jit_->StartProfileSaver(profile_output_filename, code_paths, ref_profile_filename);
 }
 
@@ -3369,6 +3393,7 @@ void Runtime::ResetStartupCompleted() {
 }
 
 bool Runtime::NotifyStartupCompleted() {
+  DCHECK(!IsZygote());
   bool expected = false;
   if (!startup_completed_.compare_exchange_strong(expected, true, std::memory_order_seq_cst)) {
     // Right now NotifyStartupCompleted will be called up to twice, once from profiler and up to

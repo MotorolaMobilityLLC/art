@@ -31,6 +31,7 @@ import android.os.CancellationSignal;
 import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.WorkSource;
+import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
@@ -45,6 +46,9 @@ import com.android.server.pm.pkg.AndroidPackage;
 import com.android.server.pm.pkg.PackageState;
 import com.android.server.pm.pkg.SharedLibrary;
 
+import java.io.IOException;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -77,6 +81,7 @@ public class DexoptHelper {
      * value so that it should normally never triggered.
      */
     private static final long WAKE_LOCK_TIMEOUT_MS = TimeUnit.DAYS.toMillis(1);
+    private static boolean sMtprofDisable = false;
 
     @NonNull private final Injector mInjector;
 
@@ -221,6 +226,7 @@ public class DexoptHelper {
     @NonNull
     private PackageDexoptResult dexoptPackage(@NonNull PackageState pkgState,
             @NonNull DexoptParams params, @NonNull CancellationSignal cancellationSignal) {
+        addBootEvent("ART:performDexOpt:"+pkgState.getPackageName());
         List<DexContainerFileDexoptResult> results = new ArrayList<>();
         Function<Integer, PackageDexoptResult> createResult = (packageLevelStatus)
                 -> PackageDexoptResult.create(
@@ -370,6 +376,33 @@ public class DexoptHelper {
         @NonNull
         public Config getConfig() {
             return mConfig;
+        }
+    }
+    private static void addBootEvent(String bootevent) {
+        if (sMtprofDisable) {
+            return;
+        }
+        // skip this in Cuttlestone
+        if (Build.HARDWARE.equals("cutf_cvm")) {
+            return;
+        }
+        FileOutputStream fos = null;
+        try {
+            fos = new FileOutputStream("/proc/bootprof");
+            fos.write(bootevent.getBytes());
+            fos.flush();
+        } catch (FileNotFoundException e) {
+            Log.e("BOOTPROF", "Failure open /proc/bootprof, not found!", e);
+        } catch (java.io.IOException e) {
+            Log.e("BOOTPROF", "Failure open /proc/bootprof entry", e);
+        } finally {
+            if (fos != null) {
+                try {
+                    fos.close();
+                } catch (IOException e) {
+                    Log.e("BOOTPROF", "Failure close /proc/bootprof entry", e);
+                }
+            }
         }
     }
 }

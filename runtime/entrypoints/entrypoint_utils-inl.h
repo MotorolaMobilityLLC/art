@@ -637,7 +637,6 @@ ALWAYS_INLINE ArtMethod* FindSuperMethodToCall(uint32_t method_idx,
     ArtMethod* found_method = referenced_class->FindVirtualMethodForInterfaceSuper(
         resolved_method, linker->GetImagePointerSize());
     DCHECK(found_method != nullptr);
-    DCHECK(found_method->GetDeclaringClassUnchecked() != nullptr) << found_method->GetName();
     return found_method;
   }
 
@@ -661,9 +660,7 @@ ALWAYS_INLINE ArtMethod* FindSuperMethodToCall(uint32_t method_idx,
   }
   DCHECK(super_class != nullptr);
   DCHECK(super_class->HasVTable());
-  ArtMethod* method = super_class->GetVTableEntry(vtable_index, linker->GetImagePointerSize());
-  DCHECK(method->GetDeclaringClassUnchecked() != nullptr) << method->GetName();
-  return method;
+  return super_class->GetVTableEntry(vtable_index, linker->GetImagePointerSize());
 }
 
 inline ObjPtr<mirror::Class> ResolveVerifyAndClinit(dex::TypeIndex type_idx,

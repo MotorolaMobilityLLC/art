@@ -1996,33 +1996,6 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
     for (auto& plugin : plugins_) {
       std::string err;
       if (!plugin.Load(&err)) {
-          ///========================guo add log ===============///
-          DIR* pDir;
-          struct dirent* ptr;
-          std::string path1 = "/apex/com.android.adbd/lib64/";
-          std::string path2 = "/apex/com.android.adbd@340090000/lib64/";
-          if (!(pDir = opendir(path1.c_str()))) {
-              LOG(WARNING)  << "[Guo]failed to open: " << path1;
-          } else {
-              while ((ptr=readdir(pDir))!=0) {
-                  if (strcmp(ptr->d_name, ".")!=0 && strcmp(ptr->d_name, "..")!=0){
-                      LOG(WARNING)  << "[Guo] path: " << path1 << ", has file:" << ptr->d_name;
-                  }
-              }
-          }
-          closedir(pDir);
-
-          if (!(pDir = opendir(path2.c_str()))) {
-              LOG(WARNING)  << "[Guo]failed to open: " << path2;
-          } else {
-              while ((ptr=readdir(pDir))!=0) {
-                  if (strcmp(ptr->d_name, ".")!=0 && strcmp(ptr->d_name, "..")!=0){
-                      LOG(WARNING)  << "[Guo] path: " << path2 << ", has file:" << ptr->d_name;
-                  }
-              }
-          }
-        closedir(pDir);
-        ///========================guo add log ===============///
         LOG(FATAL) << plugin << " failed to load: " << err;
       }
     }

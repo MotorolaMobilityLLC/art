@@ -764,7 +764,7 @@ void ThreadList::SuspendAllInternal(Thread* self,
               oss << std::endl << "Thread not suspended: " << *thread;
             }
           }
-          LOG(kIsDebugBuild ? ::android::base::FATAL : ::android::base::ERROR)
+          LOG(::android::base::FATAL)
               << "Timed out waiting for threads to suspend, waited for "
               << PrettyDuration(wait_time)
               << oss.str();

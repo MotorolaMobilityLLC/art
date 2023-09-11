@@ -1613,24 +1613,13 @@ bool ImageSpace::BootImageLayout::MatchNamedComponents(
           to_match = path + component;
           base_location = path + base_name;
         }
-        std::string  test = ExpandLocation(base_location, bcp_pos);
-        LOG(ERROR) << "[mtk]MatchNamedComponents(), before: base_location:"
-            << base_location << ", bcp_pos:" << bcp_pos  << ", to_match:"
-            << to_match << ", base_name:"  << base_name  << ", test:"
-            << test << ", component:" << component;
-        if (test == to_match) {
-            LOG(ERROR) << "[mtk]MatchNamedComponents(), break: base_location:" << base_location
-                << ", bcp_pos:" << bcp_pos  << ", to_match:" << to_match<< ", base_name:"
-                << base_name   << ", test:" << test << ", component:" << component;
+        if (ExpandLocation(base_location, bcp_pos) == to_match) {
             break;
         }
         ++bcp_pos;
         if (bcp_pos == bcp_component_count) {
           *error_msg = StringPrintf("Image component %s does not match a boot class path component",
                                     component.c_str());
-           LOG(ERROR) << "[mtk]MatchNamedComponents(), return: base_location:" << base_location
-             << ", bcp_pos:" << bcp_pos  << ", to_match:" << to_match << ", bcp_component_count:"
-             << bcp_component_count;
            return false;
         }
       }
@@ -1640,8 +1629,6 @@ bool ImageSpace::BootImageLayout::MatchNamedComponents(
         profile_filename.insert(/*pos*/ 0u, GetBcpComponentPath(bcp_pos));
       }
     }
-    LOG(ERROR) << "[mtk]MatchNamedComponents(): base_location:" << base_location
-        << ", bcp_pos:" << bcp_pos;
     NamedComponentLocation location;
     location.base_location = base_location;
     location.bcp_index = bcp_pos;
@@ -1720,9 +1707,7 @@ bool ImageSpace::BootImageLayout::ValidateHeader(const ImageHeader& header,
   size_t allowed_component_count = bcp_component_count - bcp_index;
   DCHECK_LE(total_reservation_size_, kMaxTotalImageReservationSize);
   size_t allowed_reservation_size = kMaxTotalImageReservationSize - total_reservation_size_;
-  LOG(ERROR) << "[mtk]ValidateHeader(): file_description:" << file_description
-    << ",bcp_component_count :" << bcp_component_count << ",header.GetComponentCount() :"
-    << header.GetComponentCount() << ",bcp_index :" << bcp_index;
+
   if (header.GetComponentCount() == 0u ||
       header.GetComponentCount() > allowed_component_count) {
     *error_msg = StringPrintf("Unexpected component count in %s, received %u, "
@@ -2075,12 +2060,6 @@ bool ImageSpace::BootImageLayout::Load(FilenameFn&& filename_fn,
   DCHECK_EQ(GetBaseAddress(), 0u);
 
   ArrayRef<const std::string> components = image_locations_;
-
-  for (size_t i = 0, size = components.size(); i != size; ++i) {
-    std::string component = components[i];
-    LOG(ERROR) << "[MTK]Load():component:" << component <<  ",i :" << i;
-  }
-
   size_t named_components_count = 0u;
   if (!VerifyImageLocation(components, &named_components_count, error_msg)) {
     return false;
@@ -2104,8 +2083,6 @@ bool ImageSpace::BootImageLayout::Load(FilenameFn&& filename_fn,
     const std::vector<std::string>& profile_filenames =
         named_component_locations[i].profile_filenames;
     DCHECK_EQ(i == 0, bcp_index == 0);
-    LOG(ERROR) << "[guo]imageSpace::BootImageLayout::Load(): base_location:" << base_location
-        << ",bcp_index :" << bcp_index << ",size :" << size << ",i :" << i;
     if (bcp_index < bcp_pos) {
       DCHECK_NE(i, 0u);
       LOG(ERROR) << "Named image component already covered by previous image: " << base_location;

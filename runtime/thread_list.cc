@@ -762,26 +762,17 @@ void ThreadList::SuspendAllInternal(Thread* self,
             }
             if (!thread->IsSuspended()) {
               oss << std::endl << "Thread not suspended: " << *thread;
-              if (wait_time > ((thread_suspend_timeout_ns_ / 5) * 2 + 1)) {
+
+              if (wait_time > (MsToNs(3000))) {
                   LOG(::android::base::ERROR) << " Thread stack size: " << thread->GetStackSize()
-                      << " Thread GetStackEnd: " << thread->GetStackEnd();
-              } else {
-                  LOG(::android::base::ERROR) << " Thread stack size: " << thread->GetStackSize();
+                     << " Thread GetStackEnd: " << thread->GetStackEnd();
               }
             }
           }
-
-          if (wait_time > ((thread_suspend_timeout_ns_ / 5) * 2 + 1)) {
-            LOG(::android::base::FATAL)
-              << "Timed out waiting for threads to suspend, waited for "
-              << PrettyDuration(wait_time)
-              << oss.str();
-          } else {
-            LOG(::android::base::ERROR)
-              << "Timed out waiting for threads to suspend, waited for "
-              << PrettyDuration(wait_time)
-              << oss.str();
-          }
+          LOG(kIsDebugBuild ? ::android::base::FATAL : ::android::base::ERROR)
+               << "Timed out waiting for threads to suspend, waited for "
+               << PrettyDuration(wait_time)
+               << oss.str();
         } else {
           PLOG(FATAL) << "futex wait failed for SuspendAllInternal()";
         }

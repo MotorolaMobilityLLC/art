@@ -108,6 +108,8 @@ bool SuspensionHandler::Action(int sig ATTRIBUTE_UNUSED, siginfo_t* info ATTRIBU
   uint32_t inst = *reinterpret_cast<uint32_t*>(mc->pc);
   VLOG(signals) << "checking suspend; inst: " << std::hex << inst << " checkinst: " << checkinst;
   if (inst != checkinst) {
+    LOG(ERROR) << "checking suspend fail; inst: "
+        << std::hex << inst << " checkinst: " << checkinst;
     // The instruction is not good, not ours.
     return false;
   }

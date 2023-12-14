@@ -2658,9 +2658,11 @@ void MarkCompact::CompactionPause() {
   non_moving_space_bitmap_ = non_moving_space_->GetLiveBitmap();
   if (kIsDebugBuild) {
     DCHECK_EQ(thread_running_gc_, Thread::Current());
-    stack_low_addr_ = thread_running_gc_->GetStackEnd();
-    stack_high_addr_ =
-        reinterpret_cast<char*>(stack_low_addr_) + thread_running_gc_->GetStackSize();
+    // TODO(Simulator): Test that this should not operate on the simulated stack when the simulator
+    // supports mark compact.
+    stack_low_addr_ = thread_running_gc_->GetStackEnd<kNativeStackType>();
+    stack_high_addr_ = reinterpret_cast<char*>(stack_low_addr_)
+                       + thread_running_gc_->GetUsableStackSize<kNativeStackType>();
   }
   {
     TimingLogger::ScopedTiming t2("(Paused)UpdateCompactionDataStructures", GetTimings());

@@ -1500,8 +1500,10 @@ std::string Heap::DumpSpaceNameFromAddress(const void* addr) const {
 
 void Heap::ThrowOutOfMemoryError(Thread* self, size_t byte_count, AllocatorType allocator_type) {
   // If we're in a stack overflow, do not create a new exception. It would require running the
-  // constructor, which will of course still be in a stack overflow.
-  if (self->IsHandlingStackOverflow()) {
+  // constructor, which will of course still be in a stack overflow. Note: we only care if the
+  // native stack has overflowed. If the simulated stack overflows, it is still possible that the
+  // native stack has room to create a new exception.
+  if (self->IsHandlingStackOverflow<kNativeStackType>()) {
     self->SetException(
         Runtime::Current()->GetPreAllocatedOutOfMemoryErrorWhenHandlingStackOverflow());
     return;
@@ -2794,9 +2796,12 @@ collector::GcType Heap::CollectGarbageInternal(collector::GcType gc_type,
     // This would likely cause a deadlock if we acted on a suspension request.
     // TODO: We really want to assert that we don't transition to kRunnable.
     ScopedAssertNoThreadSuspension scoped_assert("Performing GC");
-    if (self->IsHandlingStackOverflow()) {
+    if (self->IsHandlingStackOverflow<kNativeStackType>()) {
       // If we are throwing a stack overflow error we probably don't have enough remaining stack
-      // space to run the GC.
+      // space to run the GC. Note: we only care if the native stack has overflowed. If the
+      // simulated stack overflows it is still possible that the native stack has room to run the
+      // GC.
+
       // Count this as a GC in case someone is waiting for it to complete.
       gcs_completed_.fetch_add(1, std::memory_order_release);
       return collector::kGcTypeNone;
@@ -3975,8 +3980,10 @@ class Heap::ConcurrentGCTask : public HeapTask {
 
 static bool CanAddHeapTask(Thread* self) REQUIRES(!Locks::runtime_shutdown_lock_) {
   Runtime* runtime = Runtime::Current();
+  // We only care if the native stack has overflowed. If the simulated stack overflows, it is still
+  // possible that the native stack has room to add a heap task.
   return runtime != nullptr && runtime->IsFinishedStarting() && !runtime->IsShuttingDown(self) &&
-      !self->IsHandlingStackOverflow();
+      !self->IsHandlingStackOverflow<kNativeStackType>();
 }
 
 bool Heap::RequestConcurrentGC(Thread* self,

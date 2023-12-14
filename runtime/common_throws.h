@@ -22,6 +22,7 @@
 #include "base/locks.h"
 #include "base/macros.h"
 #include "obj_ptr.h"
+#include "thread.h"
 
 namespace art HIDDEN {
 namespace mirror {
@@ -253,6 +254,7 @@ void ThrowSecurityException(const char* fmt, ...)
 
 // Stack overflow.
 
+template <StackType stack_type>
 void ThrowStackOverflowError(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_) COLD_ATTR;
 
 // StringIndexOutOfBoundsException

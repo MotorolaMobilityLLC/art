@@ -145,9 +145,9 @@ OatFileAssistant::OatFileAssistant(const char* dex_location,
     load_executable_ = false;
   }
 
-  if (load_executable_ && isa != kRuntimeISA) {
+  if (load_executable_ && isa != kRuntimeQuickCodeISA) {
     LOG(WARNING) << "OatFileAssistant: Load executable specified, "
-                 << "but isa is not kRuntimeISA. Will not attempt to load executable.";
+                 << "but isa is not kRuntimeQuickCodeISA. Will not attempt to load executable.";
     load_executable_ = false;
   }
 

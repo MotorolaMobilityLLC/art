@@ -4138,7 +4138,7 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
     }
   }
 
-  access_flags |= GetNterpFastPathFlags(shorty, access_flags, kRuntimeISA);
+  access_flags |= GetNterpFastPathFlags(shorty, access_flags, kRuntimeQuickCodeISA);
 
   if (UNLIKELY((access_flags & kAccNative) != 0u)) {
     // Check if the native method is annotated with @FastNative or @CriticalNative.

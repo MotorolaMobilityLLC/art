@@ -18,11 +18,9 @@
 
 #include "entrypoints/quick/quick_default_init_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints.h"
+#include "entrypoints/quick/runtime_entrypoints_list.h"
 
 namespace art HIDDEN {
-
-// Cast entrypoints.
-extern "C" size_t artInstanceOfFromCode(mirror::Object* obj, mirror::Class* ref_class);
 
 // Read barrier entrypoints.
 // art_quick_read_barrier_mark_regX uses an non-standard calling convention: it

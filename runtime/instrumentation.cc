@@ -34,6 +34,7 @@
 #include "dex/dex_instruction-inl.h"
 #include "entrypoints/quick/quick_alloc_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints.h"
+#include "entrypoints/quick/runtime_entrypoints_list.h"
 #include "entrypoints/runtime_asm_entrypoints.h"
 #include "gc_root-inl.h"
 #include "interpreter/interpreter.h"
@@ -55,7 +56,6 @@
 #include "thread_list.h"
 
 namespace art HIDDEN {
-extern "C" void artDeliverPendingExceptionFromCode(Thread* self);
 
 namespace instrumentation {
 

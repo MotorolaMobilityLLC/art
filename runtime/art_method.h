@@ -470,12 +470,19 @@ class EXPORT ArtMethod final {
     return IsCriticalNative(GetAccessFlags());
   }
 
-  static bool IsCriticalNative(uint32_t access_flags) {
+  static bool IsCriticalNative([[maybe_unused]] uint32_t access_flags) {
+#ifdef ART_USE_RESTRICTED_MODE
+    // Return false to treat all critical native methods as normal native methods instead, i.e.:
+    // will use the generic JNI trampoline instead.
+    // TODO(Simulator): support critical native methods
+    return false;
+#else
     // The presence of the annotation is checked by ClassLinker and recorded in access flags.
     // The kAccCriticalNative flag value is used with a different meaning for non-native methods,
     // so we need to check the kAccNative flag as well.
     constexpr uint32_t mask = kAccCriticalNative | kAccNative;
     return (access_flags & mask) == mask;
+#endif
   }
 
   // Returns true if the method is managed (not native).

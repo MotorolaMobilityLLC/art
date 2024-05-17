@@ -155,7 +155,6 @@
 #include "thread.h"
 #include "thread_list.h"
 #include "trace.h"
-#include "transaction.h"
 #include "vdex_file.h"
 #include "verifier/class_verifier.h"
 #include "verifier/verifier_deps.h"
@@ -11339,6 +11338,12 @@ bool ClassLinker::IsTransactionAborted() const {
 
 void ClassLinker::VisitTransactionRoots([[maybe_unused]] RootVisitor* visitor) {
   // Nothing to do for normal `ClassLinker`, only `AotClassLinker` handles transactions.
+}
+
+const void* ClassLinker::GetTransactionalInterpreter() {
+  // Should not be called on ClassLinker, only on AotClassLinker that overrides this.
+  LOG(FATAL) << "UNREACHABLE";
+  UNREACHABLE();
 }
 
 void ClassLinker::RemoveDexFromCaches(const DexFile& dex_file) {

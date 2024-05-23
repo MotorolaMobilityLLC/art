@@ -380,29 +380,8 @@ class Transaction final {
   std::string abort_message_;
   mirror::Class* root_;
   mirror::Object* last_allocated_object_;
-  const char* assert_no_new_records_reason_;
-
-  friend class ScopedAssertNoNewTransactionRecords;
 
   DISALLOW_COPY_AND_ASSIGN(Transaction);
-};
-
-class ScopedAssertNoNewTransactionRecords {
- public:
-  explicit ScopedAssertNoNewTransactionRecords(const char* reason)
-    : transaction_(kIsDebugBuild ? InstallAssertion(reason) : nullptr) {}
-
-  ~ScopedAssertNoNewTransactionRecords() {
-    if (kIsDebugBuild && transaction_ != nullptr) {
-      RemoveAssertion(transaction_);
-    }
-  }
-
- private:
-  static Transaction* InstallAssertion(const char* reason);
-  static void RemoveAssertion(Transaction* transaction);
-
-  Transaction* transaction_;
 };
 
 }  // namespace art

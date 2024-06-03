@@ -226,7 +226,7 @@ TEST_F(LoadStoreAnalysisTest, ArrayIndexAliasingTest) {
 }
 
 TEST_F(LoadStoreAnalysisTest, ArrayAliasingTest) {
-  constexpr size_t vlen1 = kDefaultTestVectorSize;
+  constexpr size_t vlen1 = kDefaultTestVectorSizeInBytes;
   constexpr size_t vlen2 = vlen1 / 2;
 
   HBasicBlock* main = InitEntryMainExitGraphWithReturnVoid();

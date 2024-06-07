@@ -225,8 +225,6 @@ known_failing_tests = frozenset([
 postsubmit_only_tests = frozenset([
   "458-checker-riscv64-shift-add",
   "856-clone",
-  "2247-checker-write-barrier-elimination",
-  "2273-checker-unreachable-intrinsics",
   "2274-checker-bitwise-gvn",
 ])
 

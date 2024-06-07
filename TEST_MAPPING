@@ -1378,6 +1378,9 @@
       "name": "art_standalone_dexlist_tests"
     },
     {
+      "name": "art_standalone_dexopt_chroot_setup_tests"
+    },
+    {
       "name": "art_standalone_dexoptanalyzer_tests"
     },
     {
@@ -1420,6 +1423,9 @@
     },
     {
       "name": "art_standalone_sigchain_tests"
+    },
+    {
+      "name": "libnativebridge-tests"
     },
     {
       "name": "libnativeloader_e2e_tests"
@@ -2804,6 +2810,9 @@
     },
     {
       "name": "art_standalone_dexlist_tests[com.google.android.art.apex]"
+    },
+    {
+      "name": "art_standalone_dexopt_chroot_setup_tests[com.google.android.art.apex]"
     },
     {
       "name": "art_standalone_dexoptanalyzer_tests[com.google.android.art.apex]"
@@ -5742,6 +5751,15 @@
     },
     {
       "name": "art-run-test-2273-checker-unreachable-intrinsics"
+    },
+    {
+      "name": "art-run-test-2274-checker-bitwise-gvn"
+    },
+    {
+      "name": "art-run-test-458-checker-riscv64-shift-add"
+    },
+    {
+      "name": "art-run-test-856-clone"
     }
   ]
 }

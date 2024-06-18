@@ -2480,10 +2480,7 @@ TEST_F(AssemblerRISCV64Test, Jalr_WithoutC) {
             "Jalr_WithoutC");
 }
 
-// The clang assembler we're currently using for testing (clang 18.0.0) does not auto-forward
-// `beq zero, rs2, offset` to `c.beqz` but newer clang assembler versions (clang 18.0.1) do.
-// TODO (riscv64): Enable this test when we're using a clang assembler that auto-forwards.
-TEST_F(AssemblerRISCV64Test, DISABLED_Beq) {
+TEST_F(AssemblerRISCV64Test, Beq) {
   DriverStr(
       RepeatRRIbS(
           &Riscv64Assembler::Beq, /*imm_bits=*/-12, /*shift=*/1, "beq {reg1}, {reg2}, {imm}\n"),
@@ -2498,10 +2495,7 @@ TEST_F(AssemblerRISCV64Test, Beq_WithoutC) {
       "Beq_WithoutC");
 }
 
-// The clang assembler we're currently using for testing (clang 18.0.0) does not auto-forward
-// `bne zero, rs2, offset` to `c.bnez` but newer clang assembler versions (clang 18.0.1) do.
-// TODO (riscv64): Enable this test when we're using a clang assembler that auto-forwards.
-TEST_F(AssemblerRISCV64Test, DISABLED_Bne) {
+TEST_F(AssemblerRISCV64Test, Bne) {
   DriverStr(
       RepeatRRIbS(
           &Riscv64Assembler::Bne, /*imm_bits=*/-12, /*shift=*/1, "bne {reg1}, {reg2}, {imm}\n"),

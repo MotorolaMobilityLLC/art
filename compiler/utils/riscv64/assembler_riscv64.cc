@@ -6574,6 +6574,7 @@ const Riscv64Assembler::Branch::BranchInfo Riscv64Assembler::Branch::branch_info
     {8, 4, Riscv64Assembler::Branch::kOffset21},  // kCondBranch21
 
     // Long branches.
+    {10, 2, Riscv64Assembler::Branch::kOffset32},  // kLongCondCBranch
     {12, 4, Riscv64Assembler::Branch::kOffset32},  // kLongCondBranch
     {8, 0, Riscv64Assembler::Branch::kOffset32},   // kLongUncondBranch
     {8, 0, Riscv64Assembler::Branch::kOffset32},   // kLongCall
@@ -6608,7 +6609,7 @@ void Riscv64Assembler::Branch::InitializeType(Type initial_type) {
       CHECK(IsCompressableCondition());
       if (condition_ != kUncond) {
         InitShortOrLong(
-            offset_size_needed, {kCondCBranch, kCondBranch, kCondCBranch21, kLongCondBranch});
+            offset_size_needed, {kCondCBranch, kCondBranch, kCondCBranch21, kLongCondCBranch});
         break;
       }
       FALLTHROUGH_INTENDED;
@@ -6707,6 +6708,7 @@ bool Riscv64Assembler::Branch::IsCompressed(Type type) {
     case kBareCondCBranch:
     case kBareUncondCBranch:
     case kCondCBranch21:
+    case kLongCondCBranch:
       return true;
     default:
       return false;
@@ -6950,12 +6952,10 @@ uint32_t Riscv64Assembler::Branch::PromoteIfNeeded() {
         return 0u;
       }
 
-      Type cond21Type = old_type == kCondCBranch ? kCondCBranch21 : kCondBranch21;
-      if (compression_allowed_ && cond21Type == kCondBranch21 && IsCompressableCondition()) {
-        // If this branch was promoted from compressed one on initialization stage
-        // it could be promoted back to compressed if possible
-        cond21Type = kCondCBranch21;
-      }
+      Type cond21Type =
+          (compression_allowed_ && IsCompressableCondition()) ? kCondCBranch21 : kCondBranch21;
+      Type longCondType =
+          (compression_allowed_ && IsCompressableCondition()) ? kLongCondCBranch : kLongCondBranch;
 
       // The offset remains the same for `kCond[C]Branch21` for forward branches.
       DCHECK_EQ(branch_info_[cond21Type].length - branch_info_[cond21Type].pc_offset,
@@ -6964,7 +6964,7 @@ uint32_t Riscv64Assembler::Branch::PromoteIfNeeded() {
         // Calculate the needed size for kCond[C]Branch21.
         needed_size = GetOffsetSizeNeeded(location_ + branch_info_[cond21Type].pc_offset, target_);
       }
-      type_ = (needed_size <= branch_info_[cond21Type].offset_size) ? cond21Type : kLongCondBranch;
+      type_ = (needed_size <= branch_info_[cond21Type].offset_size) ? cond21Type : longCondType;
       break;
     }
     case kUncondBranch:
@@ -6979,10 +6979,15 @@ uint32_t Riscv64Assembler::Branch::PromoteIfNeeded() {
       }
       type_ = kLongCall;
       break;
-    // Medium branch (can be promoted to long).
-    case kCondCBranch21:
-      DCHECK(IsCompressableCondition());
-      FALLTHROUGH_INTENDED;
+    // Medium branches (can be promoted to long).
+    case kCondCBranch21: {
+      OffsetBits needed_size = GetOffsetSizeNeeded(GetOffsetLocation(), target_);
+      if (needed_size <= GetOffsetSize()) {
+        return 0u;
+      }
+      type_ = kLongCondCBranch;
+      break;
+    }
     case kCondBranch21: {
       OffsetBits needed_size = GetOffsetSizeNeeded(GetOffsetLocation(), target_);
       if (needed_size <= GetOffsetSize()) {
@@ -7063,6 +7068,18 @@ void Riscv64Assembler::EmitBranch(Riscv64Assembler::Branch* branch) {
     next(short_offset);
   };
 
+  auto emit_cbcondz_opposite = [&]() {
+    DCHECK(branch->IsCompressableCondition());
+    ScopedUseCInstructions use_compression(this);
+    if (condition == kCondNE) {
+      DCHECK_EQ(Branch::OppositeCondition(condition), kCondEQ);
+      CBeqz(branch->GetNonZeroRegister(), branch->GetLength());
+    } else {
+      DCHECK_EQ(Branch::OppositeCondition(condition), kCondNE);
+      CBnez(branch->GetNonZeroRegister(), branch->GetLength());
+    }
+  };
+
   switch (branch->GetType()) {
     // Compressed branches
     case Branch::kCondCBranch:
@@ -7109,22 +7126,16 @@ void Riscv64Assembler::EmitBranch(Riscv64Assembler::Branch* branch) {
       J(offset);
       break;
     case Branch::kCondCBranch21: {
-      DCHECK(branch->IsCompressableCondition());
-      {
-        ScopedUseCInstructions use_compression(this);
-        if (condition == kCondNE) {
-          DCHECK_EQ(Branch::OppositeCondition(condition), kCondEQ);
-          CBeqz(branch->GetNonZeroRegister(), branch->GetLength());
-        } else {
-          DCHECK_EQ(Branch::OppositeCondition(condition), kCondNE);
-          CBnez(branch->GetNonZeroRegister(), branch->GetLength());
-        }
-      }
+      emit_cbcondz_opposite();
       CHECK_EQ(overwrite_location_, branch->GetOffsetLocation());
       J(offset);
       break;
     }
     // Long branches.
+    case Branch::kLongCondCBranch:
+      emit_cbcondz_opposite();
+      emit_auipc_and_next(TMP, [&](int32_t short_offset) { Jalr(Zero, TMP, short_offset); });
+      break;
     case Branch::kLongCondBranch:
       EmitBcond(Branch::OppositeCondition(condition), lhs, rhs, branch->GetLength());
       FALLTHROUGH_INTENDED;

@@ -223,8 +223,11 @@ known_failing_tests = frozenset([
 # removing them from this set (in order to promote them to
 # presubmits).
 postsubmit_only_tests = frozenset([
+  "458-checker-riscv64-shift-add",
+  "856-clone",
   "2247-checker-write-barrier-elimination",
   "2273-checker-unreachable-intrinsics",
+  "2274-checker-bitwise-gvn",
 ])
 
 known_failing_on_hwasan_tests = frozenset([
@@ -275,8 +278,15 @@ art_gtest_module_names = sorted(art_gtest_user_module_names + art_gtest_eng_only
 art_gtest_postsubmit_only_module_names = [
 ]
 
+# ART gtests not supported in MTS.
+art_gtest_modules_excluded_from_mts = [
+    # TODO(b/347717488): Consider adding this test to ART MTS.
+    "libnativebridge-tests",
+]
+
 # ART gtests supported in MTS that do not need root access to the device.
-art_gtest_mts_user_module_names = copy.copy(art_gtest_user_module_names)
+art_gtest_mts_user_module_names = [t for t in art_gtest_user_module_names
+                                   if t not in art_gtest_modules_excluded_from_mts]
 
 # ART gtests supported in presubmits.
 art_gtest_presubmit_module_names = [t for t in art_gtest_module_names

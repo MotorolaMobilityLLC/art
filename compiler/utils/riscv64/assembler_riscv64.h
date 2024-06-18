@@ -1965,6 +1965,7 @@ class Riscv64Assembler final : public Assembler {
       kCondBranch21,
 
       // Long branches.
+      kLongCondCBranch,
       kLongCondBranch,
       kLongUncondBranch,
       kLongCall,

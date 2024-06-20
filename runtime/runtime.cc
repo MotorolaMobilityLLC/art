@@ -3492,4 +3492,13 @@ void Runtime::AddExtraBootDexFiles(const std::string& filename,
   GetClassLinker()->AddExtraBootDexFiles(Thread::Current(), std::move(dex_files));
 }
 
+void Runtime::DCheckNoTransactionCheckAllowed() {
+  if (kIsDebugBuild) {
+    Thread* self = Thread::Current();
+    if (self != nullptr) {
+      self->AssertNoTransactionCheckAllowed();
+    }
+  }
+}
+
 }  // namespace art

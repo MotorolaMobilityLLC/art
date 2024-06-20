@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ART_RUNTIME_TRANSACTION_H_
-#define ART_RUNTIME_TRANSACTION_H_
+#ifndef ART_DEX2OAT_TRANSACTION_H_
+#define ART_DEX2OAT_TRANSACTION_H_
 
 #include "base/scoped_arena_containers.h"
 #include "base/macros.h"
@@ -386,4 +386,4 @@ class Transaction final {
 
 }  // namespace art
 
-#endif  // ART_RUNTIME_TRANSACTION_H_
+#endif  // ART_DEX2OAT_TRANSACTION_H_

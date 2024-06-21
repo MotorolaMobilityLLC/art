@@ -779,7 +779,11 @@ class EXPORT ArtMethod final {
   }
   ALWAYS_INLINE void SetEntryPointFromQuickCompiledCodePtrSize(
       const void* entry_point_from_quick_compiled_code, PointerSize pointer_size)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    SetNativePointer(EntryPointFromQuickCompiledCodeOffset(pointer_size),
+                     entry_point_from_quick_compiled_code,
+                     pointer_size);
+  }
 
   static constexpr MemberOffset DataOffset(PointerSize pointer_size) {
     return MemberOffset(PtrSizedFieldsOffset(pointer_size) + OFFSETOF_MEMBER(
@@ -1082,19 +1086,6 @@ class EXPORT ArtMethod final {
     return declaring_class_;
   }
 
-  template<typename T>
-  ALWAYS_INLINE void SetNativePointer(MemberOffset offset, T new_value, PointerSize pointer_size)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    static_assert(std::is_pointer<T>::value, "T must be a pointer type");
-    const auto addr = reinterpret_cast<uintptr_t>(this) + offset.Uint32Value();
-    if (pointer_size == PointerSize::k32) {
-      uintptr_t ptr = reinterpret_cast<uintptr_t>(new_value);
-      *reinterpret_cast<uint32_t*>(addr) = dchecked_integral_cast<uint32_t>(ptr);
-    } else {
-      *reinterpret_cast<uint64_t*>(addr) = reinterpret_cast<uintptr_t>(new_value);
-    }
-  }
-
  protected:
   // Field order required by test "ValidateFieldOrderOfJavaCppUnionClasses".
   // The class we are a part of.
@@ -1171,6 +1162,19 @@ class EXPORT ArtMethod final {
     } else {
       auto v = *reinterpret_cast<const uint64_t*>(addr);
       return reinterpret_cast<T>(dchecked_integral_cast<uintptr_t>(v));
+    }
+  }
+
+  template<typename T>
+  ALWAYS_INLINE void SetNativePointer(MemberOffset offset, T new_value, PointerSize pointer_size)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    static_assert(std::is_pointer<T>::value, "T must be a pointer type");
+    const auto addr = reinterpret_cast<uintptr_t>(this) + offset.Uint32Value();
+    if (pointer_size == PointerSize::k32) {
+      uintptr_t ptr = reinterpret_cast<uintptr_t>(new_value);
+      *reinterpret_cast<uint32_t*>(addr) = dchecked_integral_cast<uint32_t>(ptr);
+    } else {
+      *reinterpret_cast<uint64_t*>(addr) = reinterpret_cast<uintptr_t>(new_value);
     }
   }
 

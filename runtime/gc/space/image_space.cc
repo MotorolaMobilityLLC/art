@@ -1418,12 +1418,7 @@ class ImageSpace::Loader {
         const void* old_code = method.GetEntryPointFromQuickCompiledCodePtrSize(kPointerSize);
         const void* new_code = forward_code(old_code);
         if (old_code != new_code) {
-          // Set the pointer directly instead of calling
-          // `SetEntryPointFromQuickCompiledCode` as the old pointer could be
-          // pointing to anything.
-          method.SetNativePointer(ArtMethod::EntryPointFromQuickCompiledCodeOffset(kPointerSize),
-                                  new_code,
-                                  kPointerSize);
+          method.SetEntryPointFromQuickCompiledCode(new_code);
         }
       }, target_base, kPointerSize);
     }

@@ -580,7 +580,17 @@ class Generator:
 
     # Optional test metadata (JSON file).
     metadata = self.get_test_metadata(run_test)
-    is_cts_test = "cts" in metadata.get("test_suites", [])
+    test_suites = metadata.get("test_suites", [])
+    is_cts_test = "cts" in test_suites
+    is_mcts_test = "mcts-art" in test_suites
+
+    # For now we make it mandatory for an ART CTS test to be an ART
+    # MCTS test and vice versa.
+    if is_cts_test != is_mcts_test:
+      (present, absent) = ("mts", "mcts-art") if is_cts_test else ("mcts-art", "mts")
+      logging.error(f"Inconsistent test suites state in metadata for ART run-test `{run_test}`: " +
+                    f"`test_suites` contains `{present}` but not `{absent}`")
+      sys.exit(1)
 
     run_test_module_name = ART_RUN_TEST_MODULE_NAME_PREFIX + run_test
 
@@ -597,11 +607,10 @@ class Generator:
 
     # Define the `test_suites` property, if test suites are present in
     # the test's metadata.
-    test_suites_list = metadata.get("test_suites")
     test_suites_prop = ""
-    if test_suites_list:
+    if test_suites:
       test_suites_joined = """,
-              """.join([f"\"{s}\"" for s in test_suites_list])
+              """.join([f"\"{s}\"" for s in test_suites])
       test_suites_prop = f"""\
 
           test_suites: [
@@ -620,9 +629,9 @@ class Generator:
     # against, if needed.
     sdk_version_prop = ""
     if is_cts_test:
-      # Have CTS test modules use the test API (`test_current`) so
-      # that they do not depend on the framework private platform API
-      # (`private`), which is the default.
+      # Have CTS and MCTS test modules use the test API
+      # (`test_current`) so that they do not depend on the framework
+      # private platform API (`private`), which is the default.
       sdk_version_prop = """
           sdk_version: "test_current","""
 

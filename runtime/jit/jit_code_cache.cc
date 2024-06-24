@@ -55,6 +55,7 @@
 #include "oat/oat_quick_method_header.h"
 #include "object_callbacks.h"
 #include "profile/profile_compilation_info.h"
+#include "runtime.h"
 #include "scoped_thread_state_change-inl.h"
 #include "stack.h"
 #include "thread-current-inl.h"
@@ -452,8 +453,14 @@ void JitCodeCache::SweepRootTables(IsMarkedVisitor* visitor) {
         DCHECK_NE(new_method_type, nullptr) << "old-method-type" << object;
         ObjPtr<mirror::Class> method_type_class =
             WellKnownClasses::java_lang_invoke_MethodType.Get<kWithoutReadBarrier>();
-        DCHECK_EQ((new_method_type->GetClass<kVerifyNone, kWithoutReadBarrier>()),
-                   method_type_class.Ptr());
+
+        DCHECK_EQ((object->GetClass<kVerifyNone, kWithoutReadBarrier>()), method_type_class.Ptr());
+        // SweepSystemWeaks() is happening in the compaction pause. At that point IsMarked(object)
+        // returns the moved address, but the content is not there yet.
+        if (!Runtime::Current()->GetHeap()->IsPerformingUffdCompaction()) {
+          DCHECK_EQ((new_method_type->GetClass<kVerifyNone, kWithoutReadBarrier>()),
+                     method_type_class.Ptr());
+        }
 
         if (new_method_type != object) {
           roots[i] = GcRoot<mirror::Object>(new_method_type);

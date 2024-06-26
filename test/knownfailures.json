@@ -1092,6 +1092,11 @@
         "description": ["Failing on RI. Needs further investigating. Some of these use smali."]
     },
     {
+        "tests": ["2275-pthread-name"],
+        "variant": "jvm",
+        "description": ["ART specific. We try harder to set pthread thread name."]
+    },
+    {
         "tests": ["2042-reference-processing",
                   "2043-reference-pauses"],
         "variant": "jvm",

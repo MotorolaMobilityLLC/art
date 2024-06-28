@@ -5771,7 +5771,13 @@
   ],
   "postsubmit": [
     {
+      "name": "art-run-test-011-array-copy2"
+    },
+    {
       "name": "art-run-test-2274-checker-bitwise-gvn"
+    },
+    {
+      "name": "art-run-test-2275-checker-empty-loops"
     },
     {
       "name": "art-run-test-2275-integral-unsigned-arithmetic"

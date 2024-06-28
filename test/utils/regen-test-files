@@ -233,10 +233,7 @@ known_failing_tests = frozenset([
 # presubmits).
 postsubmit_only_tests = frozenset([
   "011-array-copy2",
-  "458-checker-riscv64-shift-add",
-  "856-clone",
   "857-default-access",
-  "2274-checker-bitwise-gvn",
   "2275-checker-empty-loops",
   "2275-integral-unsigned-arithmetic",
 ])

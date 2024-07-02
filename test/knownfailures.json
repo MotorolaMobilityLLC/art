@@ -243,7 +243,8 @@
     },
     {
         "tests": ["087-gc-after-link",
-                  "141-class-unload"],
+                  "141-class-unload",
+                  "2276-const-method-type-gc-cleanup"],
         "variant": "trace | stream"
     },
     {

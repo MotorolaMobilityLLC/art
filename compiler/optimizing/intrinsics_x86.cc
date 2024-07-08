@@ -2013,8 +2013,11 @@ static void GenUnsafePut(LocationSummary* locations,
     __ movl(temp, value_loc.AsRegister<Register>());
     __ PoisonHeapReference(temp);
     __ movl(Address(base, offset, ScaleFactor::TIMES_1, 0), temp);
-  } else {
+  } else if (type == DataType::Type::kInt32 || type == DataType::Type::kReference) {
     __ movl(Address(base, offset, ScaleFactor::TIMES_1, 0), value_loc.AsRegister<Register>());
+  } else {
+    CHECK_EQ(type, DataType::Type::kInt8) << "Unimplemented GenUnsafePut data type";
+    __ movb(Address(base, offset, ScaleFactor::TIMES_1, 0), value_loc.AsRegister<ByteRegister>());
   }
 
   if (is_volatile) {

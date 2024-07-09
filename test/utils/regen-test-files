@@ -396,49 +396,40 @@ def gen_mts_test_list_file(tests, test_list_file, copyright_year, configuration_
   root.appendChild(configuration)
   configuration.setAttribute("description", configuration_description)
 
+  def append_option(name, value):
+    option = root.createElement("option")
+    option.setAttribute("name", name)
+    option.setAttribute("value", value)
+    configuration.appendChild(option)
+
+  def append_comment(comment):
+    xml_comment = root.createComment(f" {comment} ")
+    configuration.appendChild(xml_comment)
+
   # Test declarations.
   # ------------------
-
-  def append_test_declaration(test):
-    option = root.createElement("option")
-    option.setAttribute("name", "compatibility:include-filter")
-    option.setAttribute("value", test)
-    configuration.appendChild(option)
 
   test_declarations_comments = [tests_description + "."]
   test_declarations_comments.extend(comments)
   for c in test_declarations_comments:
-    xml_comment = root.createComment(f" {c} ")
-    configuration.appendChild(xml_comment)
+    append_comment(c)
   for t in tests:
-    append_test_declaration(t)
+    append_option("compatibility:include-filter", t)
 
   # `MainlineTestModuleController` configurations.
   # ----------------------------------------------
-
-  def append_module_controller_configuration(test):
-    option = root.createElement("option")
-    option.setAttribute("name", "compatibility:module-arg")
-    option.setAttribute("value", f"{test}:enable:true")
-    configuration.appendChild(option)
 
   module_controller_configuration_comments = [
       f"Enable MainlineTestModuleController for {tests_description}."]
   module_controller_configuration_comments.extend(comments)
   for c in module_controller_configuration_comments:
-    xml_comment = root.createComment(f" {c} ")
-    configuration.appendChild(xml_comment)
+    append_comment(c)
   for t in tests:
-    append_module_controller_configuration(t)
+    append_option("compatibility:module-arg", f"{t}:enable:true")
   for t in tests:
     if t in ["CtsLibcoreTestCases", "CtsLibcoreOjTestCases"]:
-      xml_comment = root.createComment(
-        " core-test-mode=mts tells ExpectationBasedFilter to exclude @NonMts Tests ")
-      configuration.appendChild(xml_comment)
-      option = root.createElement("option")
-      option.setAttribute("name", "compatibility:module-arg")
-      option.setAttribute("value", f"{t}:instrumentation-arg:core-test-mode:=mts")
-      configuration.appendChild(option)
+      append_comment("core-test-mode=mts tells ExpectationBasedFilter to exclude @NonMts Tests")
+      append_option("compatibility:module-arg", f"{t}:instrumentation-arg:core-test-mode:=mts")
 
   xml_str = root.toprettyxml(indent = XML_INDENT, encoding = "utf-8")
 

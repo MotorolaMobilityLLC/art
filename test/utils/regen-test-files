@@ -1069,18 +1069,12 @@ class Generator:
     # need root access to the device-under-test and are not part of
     # "user" test plans).
     #
-    # TODO(rpl): Use (and expand, if possible) `art_gtest_eng_only_module_names`
-    # here, instead of this minimal list of tests.
-    art_gtest_mts_eng_only_module_names = [
-        "art_standalone_dexopt_chroot_setup_tests",
-        "libnativeloader_e2e_tests"
-    ]
     # TODO(rpl): Refactor the MTS file generation logic to better
     # handle the special case of "eng-only" tests, which do not play
     # well with `MtsTestShard` at the moment).
     eng_only_test_list_file = os.path.join(self.mts_config_dir, ENG_ONLY_TEST_LIST_NAME + ".xml")
     gen_mts_test_list_file(
-        art_gtest_mts_eng_only_module_names, eng_only_test_list_file,
+        art_gtest_eng_only_module_names, eng_only_test_list_file,
         copyright_year = 2020,
         configuration_description = "List of ART MTS tests that need root access.",
         tests_description = "ART gtests")

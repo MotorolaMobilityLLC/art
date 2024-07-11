@@ -1018,7 +1018,7 @@ void Trace::ReleaseThreadBuffer(Thread* self) {
     return;
   }
   the_trace_->trace_writer_->ReleaseBufferForThread(self);
-  self->SetMethodTraceBuffer(nullptr, 0);
+  self->SetMethodTraceBuffer(nullptr);
 }
 
 void Trace::Abort() {
@@ -1661,25 +1661,25 @@ int TraceWriter::GetMethodTraceIndex(uintptr_t* current_buffer) {
 
 void TraceWriter::FlushBuffer(Thread* thread, bool is_sync, bool release) {
   uintptr_t* method_trace_entries = thread->GetMethodTraceBuffer();
-  uintptr_t** current_entry_ptr = thread->GetTraceBufferCurrEntryPtr();
-  size_t current_offset = *current_entry_ptr - method_trace_entries;
+  size_t* current_offset = thread->GetMethodTraceIndexPtr();
   size_t tid = thread->GetTid();
   DCHECK(method_trace_entries != nullptr);
 
   if (is_sync || thread_pool_ == nullptr) {
     std::unordered_map<ArtMethod*, std::string> method_infos;
     if (trace_format_version_ == Trace::kFormatV1) {
-      PreProcessTraceForMethodInfos(method_trace_entries, current_offset, method_infos);
+      PreProcessTraceForMethodInfos(method_trace_entries, *current_offset, method_infos);
     }
-    FlushBuffer(method_trace_entries, current_offset, tid, method_infos);
+    FlushBuffer(method_trace_entries, *current_offset, tid, method_infos);
 
     // This is a synchronous flush, so no need to allocate a new buffer. This is used either
     // when the tracing has finished or in non-streaming mode.
     // Just reset the buffer pointer to the initial value, so we can reuse the same buffer.
     if (release) {
-      thread->SetMethodTraceBuffer(nullptr, 0);
+      thread->SetMethodTraceBuffer(nullptr);
+      *current_offset = 0;
     } else {
-      thread->SetTraceBufferCurrentEntry(kPerThreadBufSize);
+      *current_offset = kPerThreadBufSize;
     }
   } else {
     int old_index = GetMethodTraceIndex(method_trace_entries);
@@ -1687,11 +1687,13 @@ void TraceWriter::FlushBuffer(Thread* thread, bool is_sync, bool release) {
     // entries are flushed.
     thread_pool_->AddTask(
         Thread::Current(),
-        new TraceEntriesWriterTask(this, old_index, method_trace_entries, current_offset, tid));
+        new TraceEntriesWriterTask(this, old_index, method_trace_entries, *current_offset, tid));
     if (release) {
-      thread->SetMethodTraceBuffer(nullptr, 0);
+      thread->SetMethodTraceBuffer(nullptr);
+      *current_offset = 0;
     } else {
-      thread->SetMethodTraceBuffer(AcquireTraceBuffer(tid), kPerThreadBufSize);
+      thread->SetMethodTraceBuffer(AcquireTraceBuffer(tid));
+      *current_offset = kPerThreadBufSize;
     }
   }
 
@@ -1880,51 +1882,53 @@ void Trace::LogMethodTraceEvent(Thread* thread,
   // concurrently.
 
   uintptr_t* method_trace_buffer = thread->GetMethodTraceBuffer();
-  uintptr_t** current_entry_ptr = thread->GetTraceBufferCurrEntryPtr();
+  size_t* current_index = thread->GetMethodTraceIndexPtr();
   // Initialize the buffer lazily. It's just simpler to keep the creation at one place.
   if (method_trace_buffer == nullptr) {
     method_trace_buffer = trace_writer_->AcquireTraceBuffer(thread->GetTid());
     DCHECK(method_trace_buffer != nullptr);
-    thread->SetMethodTraceBuffer(method_trace_buffer, kPerThreadBufSize);
+    thread->SetMethodTraceBuffer(method_trace_buffer);
+    *current_index = kPerThreadBufSize;
     trace_writer_->RecordThreadInfo(thread);
   }
 
   if (trace_writer_->HasOverflow()) {
     // In non-streaming modes, we stop recoding events once the buffer is full. Just reset the
     // index, so we don't go to runtime for each method.
-    thread->SetTraceBufferCurrentEntry(kPerThreadBufSize);
+    *current_index = kPerThreadBufSize;
     return;
   }
 
   size_t required_entries = GetNumEntries(clock_source_);
-  if (*current_entry_ptr - required_entries < method_trace_buffer) {
+  if (*current_index < required_entries) {
     // This returns nullptr in non-streaming mode if there's an overflow and we cannot record any
     // more entries. In streaming mode, it returns nullptr if it fails to allocate a new buffer.
     method_trace_buffer = trace_writer_->PrepareBufferForNewEntries(thread);
     if (method_trace_buffer == nullptr) {
-      thread->SetTraceBufferCurrentEntry(kPerThreadBufSize);
+      *current_index = kPerThreadBufSize;
       return;
     }
   }
-  *current_entry_ptr = *current_entry_ptr - required_entries;
 
   // Record entry in per-thread trace buffer.
-  int entry_index = 0;
-  uintptr_t* current_entry = *current_entry_ptr;
+  // Update the offset
+  int new_entry_index = *current_index - required_entries;
+  *current_index = new_entry_index;
+
   // Ensure we always use the non-obsolete version of the method so that entry/exit events have the
   // same pointer value.
   method = method->GetNonObsoleteMethod();
-  current_entry[entry_index++] = reinterpret_cast<uintptr_t>(method) | action;
+  method_trace_buffer[new_entry_index++] = reinterpret_cast<uintptr_t>(method) | action;
   if (UseThreadCpuClock(clock_source_)) {
-    current_entry[entry_index++] = thread_clock_diff;
+    method_trace_buffer[new_entry_index++] = thread_clock_diff;
   }
   if (UseWallClock(clock_source_)) {
     if (art::kRuntimePointerSize == PointerSize::k32) {
       // On 32-bit architectures store timestamp counter as two 32-bit values.
-      current_entry[entry_index++] = static_cast<uint32_t>(timestamp_counter);
-      current_entry[entry_index++] = timestamp_counter >> 32;
+      method_trace_buffer[new_entry_index++] = static_cast<uint32_t>(timestamp_counter);
+      method_trace_buffer[new_entry_index++] = timestamp_counter >> 32;
     } else {
-      current_entry[entry_index++] = timestamp_counter;
+      method_trace_buffer[new_entry_index++] = timestamp_counter;
     }
   }
 }

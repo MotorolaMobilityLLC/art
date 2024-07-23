@@ -80,8 +80,6 @@ class MarkCompact final : public GarbageCollector {
   // InitializePhase(). Therefore, it's safe to update without any memory ordering.
   bool IsCompacting() const { return compacting_; }
 
-  bool IsUsingSigbusFeature() const { return use_uffd_sigbus_; }
-
   // Called by SIGBUS handler. NO_THREAD_SAFETY_ANALYSIS for mutator-lock, which
   // is asserted in the function.
   bool SigbusHandler(siginfo_t* info) REQUIRES(!lock_) NO_THREAD_SAFETY_ANALYSIS;
@@ -489,16 +487,12 @@ class MarkCompact final : public GarbageCollector {
   void RegisterUffd(void* addr, size_t size);
   void UnregisterUffd(uint8_t* start, size_t len);
 
-  // Called by thread-pool workers to read uffd_ and process fault events.
-  void ConcurrentCompaction(uint8_t* buf) REQUIRES_SHARED(Locks::mutator_lock_);
-  // Called by thread-pool workers to compact and copy/map the fault page in
-  // moving space.
+  // Called by SIGBUS handler to compact and copy/map the fault page in moving space.
   void ConcurrentlyProcessMovingPage(uint8_t* fault_page,
                                      uint8_t* buf,
                                      size_t nr_moving_space_used_pages)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  // Called by thread-pool workers to process and copy/map the fault page in
-  // linear-alloc.
+  // Called by SIGBUS handler to process and copy/map the fault page in linear-alloc.
   void ConcurrentlyProcessLinearAllocPage(uint8_t* fault_page)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -813,8 +807,6 @@ class MarkCompact final : public GarbageCollector {
   // When using SIGBUS feature, this counter is used by mutators to claim a page
   // out of compaction buffers to be used for the entire compaction cycle.
   std::atomic<uint16_t> compaction_buffer_counter_;
-  // Used to exit from compaction loop at the end of concurrent compaction
-  uint8_t thread_pool_counter_;
   // True while compacting.
   bool compacting_;
   // Flag indicating whether one-time uffd initialization has been done. It will
@@ -823,9 +815,6 @@ class MarkCompact final : public GarbageCollector {
   // Heap::PostForkChildAction() as it's invoked in app startup path. With
   // this, we register the compaction-termination page on the first GC.
   bool uffd_initialized_;
-  // Flag indicating if we should use sigbus signals instead of threads to
-  // handle userfaults.
-  const bool use_uffd_sigbus_;
   // Clamping statue of `info_map_`. Initialized with 'NotDone'. Once heap is
   // clamped but info_map_ is delayed, we set it to 'Pending'. Once 'info_map_'
   // is also clamped, then we set it to 'Finished'.
@@ -844,7 +833,6 @@ class MarkCompact final : public GarbageCollector {
   class ClassLoaderRootsUpdater;
   class LinearAllocPageUpdater;
   class ImmuneSpaceUpdateObjVisitor;
-  class ConcurrentCompactionGcTask;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(MarkCompact);
 };

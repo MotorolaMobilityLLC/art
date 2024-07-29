@@ -238,7 +238,6 @@ known_failing_tests = frozenset([
 # removing them from this set (in order to promote them to
 # presubmits).
 postsubmit_only_tests = frozenset([
-  "2278-nested-loops",
   "2279-aconfig-flags",
   "2279-second-inner-loop-references-first",
 ])

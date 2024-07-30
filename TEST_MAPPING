@@ -5856,6 +5856,12 @@
   "postsubmit": [
     {
       "name": "art-run-test-2278-nested-loops"
+    },
+    {
+      "name": "art-run-test-2279-aconfig-flags"
+    },
+    {
+      "name": "art-run-test-2279-second-inner-loop-references-first"
     }
   ]
 }

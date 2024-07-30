@@ -235,6 +235,8 @@ known_failing_tests = frozenset([
 # presubmits).
 postsubmit_only_tests = frozenset([
   "2278-nested-loops",
+  "2279-aconfig-flags",
+  "2279-second-inner-loop-references-first",
 ])
 
 known_failing_on_hwasan_tests = frozenset([

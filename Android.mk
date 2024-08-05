@@ -473,15 +473,21 @@ standalone-apex-files: deapexer \
 
 .PHONY: build-art-target-golem
 
+ART_TARGET_PLATFORM_LIBS := \
+  libcutils \
+  libprocessgroup \
+  libprocinfo \
+  libselinux \
+  libtombstoned_client \
+  libz \
+
 ART_TARGET_PLATFORM_DEPENDENCIES := \
   $(TARGET_OUT)/etc/public.libraries.txt \
-  $(TARGET_OUT_SHARED_LIBRARIES)/libcutils.so \
-  $(TARGET_OUT_SHARED_LIBRARIES)/liblz4.so \
-  $(TARGET_OUT_SHARED_LIBRARIES)/libprocessgroup.so \
-  $(TARGET_OUT_SHARED_LIBRARIES)/libprocinfo.so \
-  $(TARGET_OUT_SHARED_LIBRARIES)/libselinux.so \
-  $(TARGET_OUT_SHARED_LIBRARIES)/libtombstoned_client.so \
-  $(TARGET_OUT_SHARED_LIBRARIES)/libz.so \
+  $(foreach lib,$(ART_TARGET_PLATFORM_LIBS), $(TARGET_OUT_SHARED_LIBRARIES)/$(lib).so)
+ifdef TARGET_2ND_ARCH
+ART_TARGET_PLATFORM_DEPENDENCIES += \
+  $(foreach lib,$(ART_TARGET_PLATFORM_LIBS), $(2ND_TARGET_OUT_SHARED_LIBRARIES)/$(lib).so)
+endif
 
 # Also include libartbenchmark, we always include it when running golem.
 # libstdc++ is needed when building for ART_TARGET_LINUX.
@@ -529,11 +535,14 @@ build-art-host-tests: build-art-host-gtests build-art-host-run-tests
 
 .PHONY: build-art-target-gtests build-art-target-run-tests build-art-target-tests
 
-build-art-target-gtests: build-art-target $(ART_TEST_TARGET_GTEST_DEPENDENCIES)
+build-art-target-gtests: build-art-target \
+                         $(ART_TEST_TARGET_GTEST_DEPENDENCIES) \
+                         $(ART_TARGET_PLATFORM_DEPENDENCIES)
 
 build-art-target-run-tests: build-art-target \
                             $(TEST_ART_RUN_TEST_DEPENDENCIES) \
                             $(ART_TEST_TARGET_RUN_TEST_DEPENDENCIES) \
+                            $(ART_TARGET_PLATFORM_DEPENDENCIES) \
                             art-run-test-target-data
 
 build-art-target-tests: build-art-target-gtests build-art-target-run-tests

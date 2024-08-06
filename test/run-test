@@ -18,6 +18,7 @@ import os, sys, glob, re, shutil, subprocess, shlex, resource, atexit
 
 import default_run as default_run_module
 
+from argparse import ArgumentParser, BooleanOptionalAction
 from default_run import get_target_arch
 from importlib.machinery import SourceFileLoader
 from inspect import currentframe, getframeinfo, FrameInfo
@@ -228,27 +229,196 @@ if True:
   # particular configurations.
   file_ulimit = 128000
 
-  args = list(sys.argv)
-  arg = args[0]
+  argp, opt_bool = ArgumentParser(), BooleanOptionalAction
+  argp.add_argument("--O", action='store_true',
+                    help="Run non-debug rather than debug build (off by default).")
+  argp.add_argument("--Xcompiler-option", type=str, action='append', default=[],
+                    help="Pass an option to the compiler.")
+  argp.add_argument("--runtime-option", type=str, action='append', default=[],
+                    help="Pass an option to the runtime.")
+  argp.add_argument("--debug", action='store_true',
+                    help="Wait for the default debugger to attach.")
+  argp.add_argument("--debug-agent", type=str,
+                    help="Wait for the given debugger agent to attach. Currently "
+                         "only supported on host.")
+  argp.add_argument("--debug-wrap-agent", action='store_true',
+                    help="use libwrapagentproperties and tools/libjdwp-compat.props "
+                         "to load the debugger agent specified by --debug-agent.")
+  argp.add_argument("--with-agent", type=str, action='append', default=[],
+                    help="Run the test with the given agent loaded with -agentpath:")
+  argp.add_argument("--debuggable", action='store_true',
+                    help="Whether to compile Java code for a debugger.")
+  argp.add_argument("--gdb", action='store_true',
+                    help="Run under gdb; incompatible with some tests.")
+  argp.add_argument("--gdb-dex2oat", action='store_true',
+                    help="Run dex2oat under the prebuilt gdb.")
+  argp.add_argument("--gdbserver", action='store_true',
+                    help="Start gdbserver (defaults to port :5039).")
+  argp.add_argument("--gdbserver-port", type=str,
+                    help="Start gdbserver with the given COMM (see man gdbserver).")
+  argp.add_argument("--gdbserver-bin", type=str,
+                    help="Use the given binary as gdbserver.")
+  argp.add_argument("--gdb-arg", type=str, action='append', default=[],
+                    help="Pass an option to gdb or gdbserver.")
+  argp.add_argument("--gdb-dex2oat-args", type=str,
+                    help="Pass options separated by ';' to gdb for dex2oat.")
+  argp.add_argument("--simpleperf", action='store_true',
+                    help="Wraps the dalvikvm invocation in 'simpleperf record "
+                         "and dumps stats to stdout.")
+  argp.add_argument("--interpreter", action='store_true',
+                    help="Enable interpreter only mode (off by default).")
+  argp.add_argument("--jit", action='store_true',
+                    help="Enable jit (off by default).")
+  argp.add_argument("--optimizing", action='store_true',
+                    help="Enable optimizing compiler (default).")
+  argp.add_argument("--baseline", action='store_true',
+                    help="Enable baseline compiler.")
+  argp.add_argument("--no-verify", action='store_true',
+                    help="Turn off verification (on by default).")
+  argp.add_argument("--verify-soft-fail", action='store_true',
+                    help="Force soft fail verification (off by default). "
+                         "Verification is enabled if neither --no-verify "
+                         "nor --verify-soft-fail is specified.")
+  argp.add_argument("--no-optimize", action='store_true',
+                    help="Turn off optimization (on by default).")
+  argp.add_argument("--no-precise", action='store_true',
+                    help="Turn off precise GC (on by default).")
+  argp.add_argument("--zygote", action='store_true',
+                    help="Spawn the process from the Zygote. "
+                         "If used, then the other runtime options are ignored.")
+  argp.add_argument("--prebuild", action='store_true',
+                    help="Run dex2oat on the files before starting test. (default)")
+  argp.add_argument("--no-prebuild", action='store_true',
+                    help="Do not run dex2oat on the files before starting the test.")
+  argp.add_argument("--strip-dex", action='store_true',
+                    help="Strip the dex files before starting test.")
+  argp.add_argument("--relocate", action='store_true',
+                    help="Force the use of relocating in the test, making "
+                         "the image and oat files be relocated to a random address before running.")
+  argp.add_argument("--no-relocate", action='store_true',
+                    help="Force the use of no relocating in the test. (default)")
+  argp.add_argument("--image", type=str,
+                    help="Run the test using a precompiled boot image. (default)")
+  argp.add_argument("--no-image", action='store_true',
+                    help="Run the test without a precompiled boot image.")
+  argp.add_argument("--host", action='store_true',
+                    help="Use the host-mode virtual machine.")
+  argp.add_argument("--invoke-with", type=str, action='append', default=[],
+                    help="Pass --invoke-with option to runtime.")
+  argp.add_argument("--dalvik", action='store_true',
+                    help="Use Dalvik (off by default).")
+  argp.add_argument("--jvm", action='store_true',
+                    help="Use a host-local RI virtual machine.")
+  argp.add_argument("--use-java-home", action='store_true',
+                    help="Use the JAVA_HOME environment variable to find the java compiler "
+                         "and runtime (if applicable) to run the test with.")
+  argp.add_argument("--64", dest="is64bit", action='store_true',
+                    help="Run the test in 64-bit mode")
+  argp.add_argument("--bionic", action='store_true',
+                    help="Use the (host, 64-bit only) linux_bionic libc runtime")
+  argp.add_argument("--timeout", type=str,
+                    help="Test timeout in seconds")
+  argp.add_argument("--trace", action='store_true',
+                    help="Run with method tracing")
+  argp.add_argument("--strace", action='store_true',
+                    help="Run with syscall tracing from strace.")
+  argp.add_argument("--stream", action='store_true',
+                    help="Run method tracing in streaming mode (requires --trace)")
+  argp.add_argument("--gcstress", action='store_true',
+                    help="Run with gc stress testing")
+  argp.add_argument("--gcverify", action='store_true',
+                    help="Run with gc verification")
+  argp.add_argument("--jvmti-trace-stress", action='store_true',
+                    help="Run with jvmti method tracing stress testing")
+  argp.add_argument("--jvmti-step-stress", action='store_true',
+                    help="Run with jvmti single step stress testing")
+  argp.add_argument("--jvmti-redefine-stress", action='store_true',
+                    help="Run with jvmti method redefinition stress testing")
+  argp.add_argument("--always-clean", action='store_true',
+                    help="Delete the test files even if the test fails.")
+  argp.add_argument("--never-clean", action='store_true',
+                    help="Keep the test files even if the test succeeds.")
+  argp.add_argument("--chroot", type=str,
+                    help="Run with root directory set to newroot.")
+  argp.add_argument("--android-root", type=str,
+                    help="The path on target for the android root. (/system by default).")
+  argp.add_argument("--android-art-root", type=str,
+                    help="The path on target for the ART module root. "
+                         "(/apex/com.android.art by default).")
+  argp.add_argument("--android-tzdata-root", type=str,
+                    help="The path on target for the Android Time Zone Data root. "
+                         "(/apex/com.android.tzdata by default).")
+  argp.add_argument("--android-i18n-root", type=str,
+                    help="The path on target for the i18n module root. "
+                         "(/apex/com.android.i18n by default)."),
+  argp.add_argument("--dex2oat-swap", action='store_true',
+                    help="Use a dex2oat swap file.")
+  argp.add_argument("--instruction-set-features", type=str,
+                    help="Set instruction-set-features for compilation.")
+  argp.add_argument("--quiet", action='store_true',
+                    help="Don't print anything except failure messages")
+  argp.add_argument("--external-log-tags", action='store_true',
+                    help="Deprecated. Use --android-log-tags instead.")
+  argp.add_argument("--android-log-tags", type=str,
+                    help="Custom logging level for a test run.")
+  argp.add_argument("--suspend-timeout", type=str,
+                    help="Change thread suspend timeout ms (default 500000).")
+  argp.add_argument("--switch-interpreter", action='store_true')
+  argp.add_argument("--jvmti-field-stress", action='store_true',
+                    help="Run with jvmti method field stress testing")
+  argp.add_argument("--vdex", action='store_true',
+                    help="Test using vdex as in input to dex2oat. Only works with --prebuild.")
+  argp.add_argument("--dm", action='store_true'),
+  argp.add_argument("--vdex-filter", type=str)
+  argp.add_argument("--random-profile", action='store_true')
+  argp.add_argument("--dex2oat-jobs", type=int,
+                    help="Number of dex2oat jobs.")
+  argp.add_argument("--create-runner", action='store_true',
+                    help="Creates a runner script for use with other tools.")
+  argp.add_argument("--dev", action='store_true',
+                    help="Development mode (dumps to stdout).")
+  argp.add_argument("--update", action='store_true',
+                    help="Update mode (replaces expected-stdout.txt and expected-stderr.txt).")
+  argp.add_argument("--dump-cfg", type=str,
+                    help="Dump the CFG to the specified path.")
+  argp.add_argument("--bisection-search", action='store_true',
+                    help="Perform bisection bug search.")
+  argp.add_argument("--temp-path", type=str,
+                    help="Location where to execute the tests.")
+  argp.add_argument("test_name", nargs="?", default='-', type=str,
+                    help="Name of the test to run.")
+  argp.add_argument("test_args", nargs="*", default=None,
+                    help="Arguments to be passed to the test directly.")
 
-  def shift():
-    global arg
-    args.pop(0)
-    arg = args[0] if args else ""
+  # Python parser requires the format --key=--value, since without the equals symbol
+  # it looks like the required value has been omitted and there is just another flag.
+  # For example, '--Xcompiler-option --debuggable' will become '--Xcompiler-option=--debuggable'
+  # because otherwise the --Xcompiler-option is missing value and --debuggable is unknown argument.
+  argv = list(sys.argv[1:])
+  for i, arg in reversed(list(enumerate(argv))):
+    if arg in ["--runtime-option", "-Xcompiler-option"]:
+      argv[i] += "=" + argv.pop(i + 1)
 
-  shift()
+  # Accept single-dash arguments as if they were double-dash arguments.
+  # For example, '-Xcompiler-option' becomes '--Xcompiler-option'
+  # because single-dash can be used only with single-letter arguments.
+  for i, arg in list(enumerate(argv)):
+    if arg.startswith("-") and not arg.startswith("--"):
+      argv[i] = "-" + arg
+    if arg == "--":
+      break
 
-  while True:
-    if arg == "--host":
+  args = argp.parse_args(argv)
+
+  if True:
+    if args.host:
       target_mode = "no"
       DEX_LOCATION = tmp_dir
       run_args += ["--host"]
       os.environ["RUN_MODE"] = "host"
-      shift()
-    elif arg == "--quiet":
+    if args.quiet:
       quiet = "yes"
-      shift()
-    elif arg == "--use-java-home":
+    if args.use_java_home:
       JAVA_HOME = os.environ.get("JAVA_HOME")
       if JAVA_HOME:
         export("JAVA", f"{JAVA_HOME}/bin/java")
@@ -256,325 +426,184 @@ if True:
       else:
         error("Passed --use-java-home without JAVA_HOME variable set!")
         usage = "yes"
-      shift()
-    elif arg == "--jvm":
+    if args.jvm:
       target_mode = "no"
       DEX_LOCATION = tmp_dir
       runtime = "jvm"
       prebuild_mode = "no"
       run_args += ["--jvm"]
-      shift()
-    elif arg == "-O":
+    if args.O:
       lib = "libart.so"
       testlib = "arttest"
       run_args += ["-O"]
-      shift()
-    elif arg == "--dalvik":
+    if args.dalvik:
       lib = "libdvm.so"
       runtime = "dalvik"
-      shift()
-    elif arg == "--no-image":
+    if args.no_image:
       have_image = "no"
-      shift()
-    elif arg == "--relocate":
+    if args.relocate:
       relocate = "yes"
-      shift()
-    elif arg == "--no-relocate":
+    if args.no_relocate:
       relocate = "no"
-      shift()
-    elif arg == "--prebuild":
+    if args.prebuild:
       run_args += ["--prebuild"]
       prebuild_mode = "yes"
-      shift()
-    elif arg == "--strip-dex":
+    if args.strip_dex:
       run_args += ["--strip-dex"]
-      shift()
-    elif arg == "--debuggable":
+    if args.debuggable:
       run_args += ["-Xcompiler-option --debuggable"]
       debuggable = "yes"
-      shift()
-    elif arg == "--no-prebuild":
+    if args.no_prebuild:
       run_args += ["--no-prebuild"]
       prebuild_mode = "no"
-      shift()
-    elif arg == "--gcverify":
+    if args.gcverify:
       basic_verify = "true"
       gc_verify = "true"
-      shift()
-    elif arg == "--gcstress":
+    if args.gcstress:
       basic_verify = "true"
       gc_stress = "true"
-      shift()
-    elif arg == "--jvmti-step-stress":
+    if args.jvmti_step_stress:
       jvmti_step_stress = "true"
       os.environ["JVMTI_STEP_STRESS"] = "true"
-      shift()
-    elif arg == "--jvmti-redefine-stress":
+    if args.jvmti_redefine_stress:
       jvmti_redefine_stress = "true"
       os.environ["JVMTI_REDEFINE_STRESS"] = "true"
-      shift()
-    elif arg == "--jvmti-field-stress":
+    if args.jvmti_field_stress:
       jvmti_field_stress = "true"
       os.environ["JVMTI_FIELD_STRESS"] = "true"
-      shift()
-    elif arg == "--jvmti-trace-stress":
+    if args.jvmti_trace_stress:
       jvmti_trace_stress = "true"
       os.environ["JVMTI_TRACE_STRESS"] = "true"
-      shift()
-    elif arg == "--suspend-timeout":
-      shift()
-      suspend_timeout = arg
-      shift()
-    elif arg == "--image":
-      shift()
-      image = arg
+    if args.suspend_timeout:
+      suspend_timeout = args.suspend_timeout
+    if args.image:
+      image = args.image
       run_args += [f'--image "{image}"']
-      shift()
-    elif arg == "-Xcompiler-option":
-      shift()
-      option = arg
-      run_args += [f'-Xcompiler-option "{option}"']
-      shift()
-    elif arg == "--runtime-option":
-      shift()
-      option = arg
-      run_args += [f'--runtime-option "{option}"']
-      shift()
-    elif arg == "--gdb-arg":
-      shift()
-      gdb_arg = arg
-      run_args += [f'--gdb-arg "{gdb_arg}"']
-      shift()
-    elif arg == "--gdb-dex2oat-args":
-      shift()
-      gdb_dex2oat_args = arg
+    if args.Xcompiler_option:
+      run_args += [f'-Xcompiler-option "{option}"' for option in args.Xcompiler_option]
+    if args.runtime_option:
+      run_args += [f'--runtime-option "{option}"' for option in args.runtime_option]
+    if args.gdb_arg:
+      run_args += [f'--gdb-arg "{gdb_arg}"' for gdb_arg in args.gdb_arg]
+    if args.gdb_dex2oat_args:
+      gdb_dex2oat_args = args.gdb_dex2oat_args
       run_args += [f'--gdb-dex2oat-args="{gdb_dex2oat_args}"']
-      shift()
-    elif arg == "--debug":
+    if args.debug:
       run_args += ["--debug"]
-      shift()
-    elif arg == "--debug-wrap-agent":
+    if args.debug_wrap_agent:
       run_args += ["--debug-wrap-agent"]
-      shift()
-    elif arg == "--with-agent":
-      shift()
-      option = arg
-      run_args += [f'--with-agent "{arg}"']
-      shift()
-    elif arg == "--debug-agent":
-      shift()
-      option = arg
-      run_args += [f'--debug-agent "{arg}"']
-      shift()
-    elif arg == "--dump-cfg":
-      shift()
+    if args.with_agent:
+      run_args += [f'--with-agent "{arg}"' for arg in args.with_agent]
+    if args.debug_agent:
+      run_args += [f'--debug-agent "{args.debug_agent}"']
+    if args.dump_cfg:
       dump_cfg = "true"
-      dump_cfg_path = arg
-      shift()
-    elif arg == "--gdb":
+      dump_cfg_path = args.dump_cfg
+    if args.gdb:
       run_args += ["--gdb"]
       dev_mode = "yes"
-      shift()
-    elif arg == "--gdb-dex2oat":
+    if args.gdb_dex2oat:
       run_args += ["--gdb-dex2oat"]
       dev_mode = "yes"
-      shift()
-    elif arg == "--gdbserver-bin":
-      shift()
-      run_args += [f'--gdbserver-bin "{arg}"']
-      shift()
-    elif arg == "--gdbserver-port":
-      shift()
-      run_args += [f'--gdbserver-port "{arg}"']
-      shift()
-    elif arg == "--gdbserver":
+    if args.gdbserver_bin:
+      run_args += [f'--gdbserver-bin "{args.gdbserver_bin}"']
+    if args.gdbserver_port:
+      run_args += [f'--gdbserver-port "{args.gdbserver_port}"']
+    if args.gdbserver:
       run_args += ["--gdbserver"]
       dev_mode = "yes"
-      shift()
-    elif arg == "--strace":
+    if args.strace:
       strace = "yes"
       run_args += [
           f'--invoke-with=strace --invoke-with=-o --invoke-with="{tmp_dir}/{strace_output}"'
       ]
       timeout = timeout or "1800"
-      shift()
-    elif arg == "--zygote":
+    if args.zygote:
       run_args += ["--zygote"]
-      shift()
-    elif arg == "--interpreter":
+    if args.interpreter:
       run_args += ["--interpreter"]
-      shift()
-    elif arg == "--switch-interpreter":
+    if args.switch_interpreter:
       run_args += ["--switch-interpreter"]
-      shift()
-    elif arg == "--jit":
+    if args.jit:
       run_args += ["--jit"]
-      shift()
-    elif arg == "--baseline":
+    if args.baseline:
       run_args += ["--baseline"]
-      shift()
-    elif arg == "--optimizing":
+    if args.optimizing:
       run_optimizing = "true"
-      shift()
-    elif arg == "--no-verify":
+    if args.no_verify:
       run_args += ["--no-verify"]
-      shift()
-    elif arg == "--verify-soft-fail":
+    if args.verify_soft_fail:
       run_args += ["--verify-soft-fail"]
       os.environ["VERIFY_SOFT_FAIL"] = "true"
-      shift()
-    elif arg == "--no-optimize":
+    if args.no_optimize:
       run_args += ["--no-optimize"]
-      shift()
-    elif arg == "--no-precise":
+    if args.no_precise:
       run_args += ["--no-precise"]
-      shift()
-    elif arg.startswith("--android-log-tags"):
-      run_args += [arg]
-      shift()
-    elif arg == "--external-log-tags":
+    if args.android_log_tags:
+      run_args += [f"--android-log-tags {args.android_log_tags}"]
+    if args.external_log_tags:
       run_args += ["--external-log-tags"]
-      shift()
-    elif arg == "--invoke-with":
-      shift()
-      what = arg
-      if not arg:
-        error("missing argument to --invoke-with")
-        usage = "yes"
-        break
-      run_args += [f'--invoke-with "{what}"']
-      shift()
-    elif arg == "--create-runner":
+    if args.invoke_with:
+      run_args += [f'--invoke-with "{what}"' for what in args.invoke_with]
+    if args.create_runner:
       run_args += ["--create-runner --dry-run"]
       dev_mode = "yes"
       never_clean = "yes"
       create_runner = "yes"
-      shift()
-    elif arg == "--dev":
+    if args.dev:
       dev_mode = "yes"
-      shift()
-    elif arg == "--temp-path":
-      shift()
-      if not arg:
-        error("missing argument to --temp-path")
-        usage = "yes"
-        break
-      shift()
-    elif arg == "--chroot":
-      shift()
-      if not arg:
-        error("missing argument to --chroot")
-        usage = "yes"
-        break
-      chroot = arg
-      run_args += [f'--chroot "{arg}"']
-      shift()
-    elif arg == "--simpleperf":
+    if args.chroot:
+      chroot = args.chroot
+      run_args += [f'--chroot "{args.chroot}"']
+    if args.simpleperf:
       run_args += ["--simpleperf"]
-      shift()
-    elif arg == "--android-root":
-      shift()
-      if not arg:
-        error("missing argument to --android-root")
-        usage = "yes"
-        break
-      android_root = arg
-      run_args += [f'--android-root "{arg}"']
-      shift()
-    elif arg == "--android-art-root":
-      shift()
-      if not arg:
-        error("missing argument to --android-art-root")
-        usage = "yes"
-        break
-      run_args += [f'--android-art-root "{arg}"']
-      shift()
-    elif arg == "--android-tzdata-root":
-      shift()
-      if not arg:
-        error("missing argument to --android-tzdata-root")
-        usage = "yes"
-        break
-      run_args += [f'--android-tzdata-root "{arg}"']
-      shift()
-    elif arg == "--update":
+    if args.android_root:
+      android_root = args.android_root
+      run_args += [f'--android-root "{args.android_root}"']
+    if args.android_art_root:
+      run_args += [f'--android-art-root "{args.android_art_root}"']
+    if args.android_tzdata_root:
+      run_args += [f'--android-tzdata-root "{args.android_tzdata_root}"']
+    if args.update:
       update_mode = "yes"
-      shift()
-    elif arg == "--help":
-      usage = "yes"
-      shift()
-    elif arg == "--64":
+    if args.is64bit:
       run_args += ["--64"]
       suffix64 = "64"
-      shift()
-    elif arg == "--bionic":
+    if args.bionic:
       # soong linux_bionic builds are 64bit only.
       run_args += ["--bionic --host --64"]
       suffix64 = "64"
       target_mode = "no"
       DEX_LOCATION = tmp_dir
       host_lib_root = f"{OUT_DIR}/soong/host/linux_bionic-x86"
-      shift()
-    elif arg == "--timeout":
-      shift()
-      if not arg:
-        error("missing argument to --timeout")
-        usage = "yes"
-        break
-      timeout = arg
-      shift()
-    elif arg == "--trace":
+    if args.timeout:
+      timeout = args.timeout
+    if args.trace:
       trace = "true"
-      shift()
-    elif arg == "--stream":
+    if args.stream:
       trace_stream = "true"
-      shift()
-    elif arg == "--always-clean":
+    if args.always_clean:
       always_clean = "yes"
-      shift()
-    elif arg == "--never-clean":
+    if args.never_clean:
       never_clean = "yes"
-      shift()
-    elif arg == "--dex2oat-swap":
+    if args.dex2oat_swap:
       run_args += ["--dex2oat-swap"]
-      shift()
-    elif arg == "--instruction-set-features":
-      shift()
-      run_args += [f'--instruction-set-features "{arg}"']
-      shift()
-    elif arg == "--bisection-search":
+    if args.instruction_set_features:
+      run_args += [f'--instruction-set-features "{args.instruction_set_features}"']
+    if args.bisection_search:
       bisection_search = "yes"
-      shift()
-    elif arg == "--vdex":
+    if args.vdex:
       run_args += ["--vdex"]
-      shift()
-    elif arg == "--dm":
+    if args.dm:
       run_args += ["--dm"]
-      shift()
-    elif arg == "--vdex-filter":
-      shift()
-      filter = arg
-      run_args += ['--vdex-filter "{filter}"']
-      shift()
-    elif arg == "--random-profile":
+    if args.vdex_filter:
+      run_args += [f'--vdex-filter "{args.vdex_filter}"']
+    if args.random_profile:
       run_args += ["--random-profile"]
-      shift()
-    elif arg == "--dex2oat-jobs":
-      shift()
-      run_args += [f'-Xcompiler-option "-j{arg}"']
-      shift()
-    elif arg.startswith("--"):
-      error(f"unknown option: {arg}")
-      usage = "yes"
-      break
-    else:
-      break
+    if args.dex2oat_jobs:
+      run_args += [f'-Xcompiler-option "-j{str(args.dex2oat_jobs)}"']
 
   export("DEX_LOCATION", DEX_LOCATION)
-
-  if usage == "no" and not arg:
-    error("missing test to run")
-    usage = "yes"
 
 # The DEX_LOCATION with the chroot prefix, if any.
   chroot_dex_location = f"{chroot}{DEX_LOCATION}"
@@ -729,133 +758,18 @@ if True:
     error("--chroot with --bisection-search is unsupported")
     sys.exit(1)
 
-  if usage == "no":
-    if not arg or arg == "-":
-      test_dir = os.path.basename(oldwd)
+  if args.test_name == "-":
+    test_dir = os.path.basename(oldwd)
+  else:
+    test_dir = args.test_name
+
+  if not os.path.isdir(test_dir):
+    td2 = glob.glob(f"{test_dir}-*")
+    if len(td2) == 1 and os.path.isdir(td2[0]):
+      test_dir = td2[0]
     else:
-      test_dir = arg
-
-    if not os.path.isdir(test_dir):
-      td2 = glob.glob(f"{test_dir}-*")
-      if len(td2) == 1 and os.path.isdir(td2[0]):
-        test_dir = td2[0]
-      else:
-        error(f"{test_dir}: no such test directory")
-        usage = "yes"
-    # Shift to get rid of the test name argument. The rest of the arguments
-    # will get passed to the test run.
-    shift()
-
-  if usage == "yes":
-    prog = os.path.basename(__file__)
-    # pyformat: disable
-    help=(
-        "usage:\n"
-        f"  $prog --help                          Print this message.\n"
-        f"  $prog [options] [test-name]           Run test normally.\n"
-        f"  $prog --dev [options] [test-name]     Development mode\n"
-        "(dumps to stdout).\n"
-        f"  $prog --create-runner [options] [test-name]\n"
-        "              Creates a runner script for use with other \n"
-        "tools (e.g. parallel_run.py).\n"
-        "              The script will only run the test portion, and \n"
-        "share oat and dex files.\n"
-        f"  $prog --update [options] [test-name]  Update mode\n"
-        "(replaces expected-stdout.txt and expected-stderr.txt).\n"
-        '  Omitting the test name or specifying "-" will use the\n'
-        "current directory.\n"
-        "  Runtime Options:\n"
-        "    -O                    Run non-debug rather than debug build (off by default).\n"
-        "    -Xcompiler-option     Pass an option to the compiler.\n"
-        "    --runtime-option      Pass an option to the runtime.\n"
-        "    --debug               Wait for the default debugger to attach.\n"
-        "    --debug-agent <agent-path>\n"
-        "                          Wait for the given debugger agent to attach. Currently\n"
-        "                          only supported on host.\n"
-        "    --debug-wrap-agent    use libwrapagentproperties and tools/libjdwp-compat.props\n"
-        "                          to load the debugger agent specified by --debug-agent.\n"
-        "    --with-agent <agent>  Run the test with the given agent loaded with -agentpath:\n"
-        "    --debuggable          Whether to compile Java code for a debugger.\n"
-        "    --gdb                 Run under gdb; incompatible with some tests.\n"
-        "    --gdb-dex2oat         Run dex2oat under the prebuilt gdb.\n"
-        "    --gdbserver           Start gdbserver (defaults to port :5039).\n"
-        "    --gdbserver-port <port>\n"
-        "                          Start gdbserver with the given COMM (see man gdbserver).\n"
-        "    --gdbserver-bin <binary>\n"
-        "                          Use the given binary as gdbserver.\n"
-        "    --gdb-arg             Pass an option to gdb or gdbserver.\n"
-        "    --gdb-dex2oat-args    Pass options separated by ';' to gdb for dex2oat.\n"
-        "    --simpleperf          Wraps the dalvikvm invocation in 'simpleperf record ...\n"
-        "                          ... simpleperf report' and dumps stats to stdout.\n"
-        "    --temp-path [path]    Location where to execute the tests.\n"
-        "    --interpreter         Enable interpreter only mode (off by default).\n"
-        "    --jit                 Enable jit (off by default).\n"
-        "    --optimizing          Enable optimizing compiler (default).\n"
-        "    --no-verify           Turn off verification (on by default).\n"
-        "    --verify-soft-fail    Force soft fail verification (off by default).\n"
-        "                          Verification is enabled if neither --no-verify\n"
-        "                          nor --verify-soft-fail is specified.\n"
-        "    --no-optimize         Turn off optimization (on by default).\n"
-        "    --no-precise          Turn off precise GC (on by default).\n"
-        "    --zygote              Spawn the process from the Zygote.\n"
-        "If used, then the\n"
-        "                          other runtime options are ignored.\n"
-        "    --prebuild            Run dex2oat on the files before starting test. (default)\n"
-        "    --no-prebuild         Do not run dex2oat on the files before starting\n"
-        "                          the test.\n"
-        "    --strip-dex           Strip the dex files before starting test.\n"
-        "    --relocate            Force the use of relocating in the test, making\n"
-        "                          the image and oat files be relocated to a random\n"
-        "                          address before running.\n"
-        "    --no-relocate         Force the use of no relocating in the test. (default)\n"
-        "    --image               Run the test using a precompiled boot image. (default)\n"
-        "    --no-image            Run the test without a precompiled boot image.\n"
-        "    --host                Use the host-mode virtual machine.\n"
-        "    --invoke-with         Pass --invoke-with option to runtime.\n"
-        "    --dalvik              Use Dalvik (off by default).\n"
-        "    --jvm                 Use a host-local RI virtual machine.\n"
-        "    --use-java-home       Use the JAVA_HOME environment variable\n"
-        "                          to find the java compiler and runtime\n"
-        "                          (if applicable) to run the test with.\n"
-        "    --64                  Run the test in 64-bit mode\n"
-        "    --bionic              Use the (host, 64-bit only) linux_bionic libc runtime\n"
-        "    --timeout n           Test timeout in seconds\n"
-        "    --trace               Run with method tracing\n"
-        "    --strace              Run with syscall tracing from strace.\n"
-        "    --stream              Run method tracing in streaming mode (requires --trace)\n"
-        "    --gcstress            Run with gc stress testing\n"
-        "    --gcverify            Run with gc verification\n"
-        "    --jvmti-trace-stress  Run with jvmti method tracing stress testing\n"
-        "    --jvmti-step-stress   Run with jvmti single step stress testing\n"
-        "    --jvmti-redefine-stress\n"
-        "                          Run with jvmti method redefinition stress testing\n"
-        "    --always-clean        Delete the test files even if the test fails.\n"
-        "    --never-clean         Keep the test files even if the test succeeds.\n"
-        "    --chroot [newroot]    Run with root directory set to newroot.\n"
-        "    --android-root [path] The path on target for the android root. (/system by default).\n"
-        "    --android-i18n-root [path]\n"
-        "                          The path on target for the i18n module root.\n"
-        "                          (/apex/com.android.i18n by default).\n"
-        "    --android-art-root [path]\n"
-        "                          The path on target for the ART module root.\n"
-        "                          (/apex/com.android.art by default).\n"
-        "    --android-tzdata-root [path]\n"
-        "                          The path on target for the Android Time Zone Data root.\n"
-        "                          (/apex/com.android.tzdata by default).\n"
-        "    --dex2oat-swap        Use a dex2oat swap file.\n"
-        "    --instruction-set-features [string]\n"
-        "                          Set instruction-set-features for compilation.\n"
-        "    --quiet               Don't print anything except failure messages\n"
-        "    --external-log-tags   Use ANDROID_LOG_TAGS to set a custom logging level for\n"
-        "                          a test run.\n"
-        "    --bisection-search    Perform bisection bug search.\n"
-        "    --vdex                Test using vdex as in input to dex2oat. Only works with --prebuild.\n"
-        "    --suspend-timeout     Change thread suspend timeout ms (default 500000).\n"
-        "    --dex2oat-jobs        Number of dex2oat jobs.\n"
-    )
-    # pyformat: enable
-    error(help)
-    sys.exit(1)
+      error(f"{test_dir}: no such test directory")
+      usage = "yes"
 
   os.chdir(test_dir)
   test_dir = os.getcwd()
@@ -937,12 +851,9 @@ if True:
   for td_file in [td_info, ctx.expected_stdout, ctx.expected_stderr]:
     assert os.access(td_file, os.R_OK)
 
-  joined_run_args = " ".join(run_args)
-  joined_args = " ".join(args)
-
   # Create runner (bash script that executes the whole test)
   def create_runner_script() -> Path:
-    parsed_args = default_run_module.parse_args(shlex.split(" ".join(run_args + args)))
+    parsed_args = default_run_module.parse_args(shlex.split(" ".join(run_args + args.test_args)))
     parsed_args.stdout_file = os.path.join(DEX_LOCATION, test_stdout)
     parsed_args.stderr_file = os.path.join(DEX_LOCATION, test_stderr)
 

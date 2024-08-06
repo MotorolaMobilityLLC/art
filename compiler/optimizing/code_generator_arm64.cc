@@ -27,6 +27,7 @@
 #include "class_root-inl.h"
 #include "class_table.h"
 #include "code_generator_utils.h"
+#include "com_android_art_flags.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "entrypoints/quick/quick_entrypoints_enum.h"
 #include "gc/accounting/card_table.h"
@@ -57,6 +58,8 @@ using namespace vixl::aarch64;  // NOLINT(build/namespaces)
 using vixl::ExactAssemblyScope;
 using vixl::CodeBufferCheckScope;
 using vixl::EmissionCheckScope;
+
+namespace art_flags = com::android::art::flags;
 
 #ifdef __
 #error "ARM64 Codegen VIXL macro-assembler macro already defined."
@@ -1317,7 +1320,7 @@ void InstructionCodeGeneratorARM64::VisitMethodEntryHook(HMethodEntryHook* instr
 }
 
 void CodeGeneratorARM64::MaybeRecordTraceEvent(bool is_method_entry) {
-  if (!kAlwaysEnableProfileCode) {
+  if (!art_flags::always_enable_profile_code()) {
     return;
   }
 

@@ -829,7 +829,6 @@ class TracingMethodEntryExitHooksSlowPathARM64 : public SlowPathCodeARM64 {
   void EmitNativeCode(CodeGenerator* codegen) override {
     QuickEntrypointEnum entry_point =
         (is_method_entry_) ? kQuickRecordEntryTraceEvent : kQuickRecordExitTraceEvent;
-    CodeGeneratorARM64* arm64_codegen = down_cast<CodeGeneratorARM64*>(codegen);
     vixl::aarch64::Label call;
     __ Bind(GetEntryLabel());
     uint32_t entrypoint_offset = GetThreadOffset<kArm64PointerSize>(entry_point).Int32Value();

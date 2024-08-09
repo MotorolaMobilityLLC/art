@@ -173,7 +173,7 @@ class OdRefreshTest : public CommonArtTest {
     ASSERT_TRUE(EnsureDirectoryExists(system_etc_dir));
     framework_profile_ = system_etc_dir + "/boot-image.prof";
     CreateEmptyFile(framework_profile_);
-    dirty_image_objects_file_ = system_etc_dir + "/dirty-image-objects.txt";
+    dirty_image_objects_file_ = system_etc_dir + "/dirty-image-objects";
     CreateEmptyFile(dirty_image_objects_file_);
     preloaded_classes_file_ = system_etc_dir + "/preloaded-classes";
     CreateEmptyFile(preloaded_classes_file_);
@@ -1036,7 +1036,7 @@ TEST_F(OdRefreshTest, DirtyImageObjects) {
 }
 
 TEST_F(OdRefreshTest, DirtyImageObjectsMultipleFiles) {
-  std::string art_dirty_image_objects = art_etc_dir_ + "/dirty-image-objects.txt";
+  std::string art_dirty_image_objects = art_etc_dir_ + "/dirty-image-objects";
   auto file = ScopedCreateEmptyFile(art_dirty_image_objects);
 
   // Primary.

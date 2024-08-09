@@ -178,6 +178,13 @@ prebuilt_etc {
     installable: false,
 }
 
+prebuilt_etc {
+    name: "dirty-image-objects-art",
+    src: "dirty-image-objects.txt",
+    filename: "dirty-image-objects.txt",
+    installable: false,
+}
+
 // Default values shared by APEXes except test_broken_com.android.art.
 apex_defaults {
     name: "com.android.art-defaults-minus-odrefresh",
@@ -211,6 +218,7 @@ apex_defaults {
         "art-linker-config",
         "com.android.art.init.rc",
         "current_sdkinfo",
+        "dirty-image-objects-art",
     ],
 }
 

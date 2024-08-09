@@ -1872,14 +1872,24 @@ OnDeviceRefresh::RunDex2oatForBootClasspath(const std::string& staging_dir,
 
     args.Add(StringPrintf("--base=0x%08x", ART_BASE_ADDRESS));
 
-    for (const std::string& prefix : {GetAndroidRoot(), GetArtRoot()}) {
-      std::string dirty_image_objects_file = prefix + "/etc/dirty-image-objects";
+    std::string dirty_image_objects_files[] = {
+        // Currently, there are two dirty-image-objects files: one for ART module,
+        // one for framework.
+        GetAndroidRoot() + "/etc/dirty-image-objects.txt",
+        GetArtRoot() + "/etc/dirty-image-objects.txt",
+        // Allow old filename (without .txt) for backward compatibility.
+        GetAndroidRoot() + "/etc/dirty-image-objects",
+    };
+    for (const std::string& dirty_image_objects_file : dirty_image_objects_files) {
       std::unique_ptr<File> file(OS::OpenFileForReading(dirty_image_objects_file.c_str()));
       if (file != nullptr) {
         args.Add("--dirty-image-objects-fd=%d", file->Fd());
         readonly_files_raii.push_back(std::move(file));
       } else if (errno == ENOENT) {
-        LOG(WARNING) << ART_FORMAT("Missing dirty objects file '{}'", dirty_image_objects_file);
+        // Don't report the warning for old filename.
+        if (dirty_image_objects_file.ends_with(".txt")) {
+          LOG(WARNING) << ART_FORMAT("Missing dirty objects file '{}'", dirty_image_objects_file);
+        }
       } else {
         return CompilationResult::Error(OdrMetrics::Status::kIoError,
                                         ART_FORMAT("Failed to open dirty objects file '{}': {}",

@@ -488,7 +488,6 @@ class HGraphVisualizerPrinter final : public HGraphDelegateVisitor {
 
   void VisitCompare(HCompare* compare) override {
     StartAttributeStream("bias") << compare->GetBias();
-    StartAttributeStream("comparison_type") << compare->GetComparisonType();
   }
 
   void VisitCondition(HCondition* condition) override {

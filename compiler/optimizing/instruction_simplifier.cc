@@ -89,6 +89,7 @@ class InstructionSimplifierVisitor final : public HGraphDelegateVisitor {
   void VisitAbs(HAbs* instruction) override;
   void VisitAdd(HAdd* instruction) override;
   void VisitAnd(HAnd* instruction) override;
+  void VisitCompare(HCompare* instruction) override;
   void VisitCondition(HCondition* instruction) override;
   void VisitGreaterThan(HGreaterThan* condition) override;
   void VisitGreaterThanOrEqual(HGreaterThanOrEqual* condition) override;
@@ -878,7 +879,7 @@ void InstructionSimplifierVisitor::VisitStaticFieldSet(HStaticFieldSet* instruct
   }
 }
 
-static HCondition* GetOppositeConditionSwapOps(ArenaAllocator* allocator, HInstruction* cond) {
+static HCondition* CreateOppositeConditionSwapOps(ArenaAllocator* allocator, HInstruction* cond) {
   HInstruction *lhs = cond->InputAt(0);
   HInstruction *rhs = cond->InputAt(1);
   switch (cond->GetKind()) {
@@ -1794,6 +1795,56 @@ static bool RecognizeAndSimplifyClassCheck(HCondition* condition) {
   }
 }
 
+static HInstruction* CreateUnsignedConditionReplacement(ArenaAllocator* allocator,
+                                                        HCondition* cond,
+                                                        HCompare* compare) {
+  DCHECK(cond->InputAt(1)->IsIntConstant());
+  DCHECK_EQ(cond->InputAt(1)->AsIntConstant()->GetValue(), 0);
+  DCHECK(cond->InputAt(0) == compare);
+
+  HBasicBlock* block = cond->GetBlock();
+  HInstruction* lhs = compare->InputAt(0);
+  HInstruction* rhs = compare->InputAt(1);
+
+  switch (cond->GetKind()) {
+    case HInstruction::kLessThan:
+      return new (allocator) HBelow(lhs, rhs, cond->GetDexPc());
+    case HInstruction::kLessThanOrEqual:
+      return new (allocator) HBelowOrEqual(lhs, rhs, cond->GetDexPc());
+    case HInstruction::kGreaterThan:
+      return new (allocator) HAbove(lhs, rhs, cond->GetDexPc());
+    case HInstruction::kGreaterThanOrEqual:
+      return new (allocator) HAboveOrEqual(lhs, rhs, cond->GetDexPc());
+    case HInstruction::kBelow:
+      // Below(Compare(x, y), 0) always False since
+      //   unsigned(-1) < 0 -> False
+      //   0 < 0 -> False
+      //   1 < 0 -> False
+      return block->GetGraph()->GetConstant(DataType::Type::kBool, 0, cond->GetDexPc());
+    case HInstruction::kBelowOrEqual:
+      // BelowOrEqual(Compare(x, y), 0) transforms into Equal(x, y)
+      //    unsigned(-1) <= 0 -> False
+      //    0 <= 0 -> True
+      //    1 <= 0 -> False
+      return new (allocator) HEqual(lhs, rhs, cond->GetDexPc());
+    case HInstruction::kAbove:
+      // Above(Compare(x, y), 0) transforms into NotEqual(x, y)
+      //    unsigned(-1) > 0 -> True
+      //    0 > 0 -> False
+      //    1 > 0 -> True
+      return new (allocator) HNotEqual(lhs, rhs, cond->GetDexPc());
+    case HInstruction::kAboveOrEqual:
+      // AboveOrEqual(Compare(x, y), 0) always True since
+      //   unsigned(-1) >= 0 -> True
+      //   0 >= 0 -> True
+      //   1 >= 0 -> True
+      return block->GetGraph()->GetConstant(DataType::Type::kBool, 1, cond->GetDexPc());
+    default:
+      LOG(FATAL) << "Unknown ConditionType " << cond->GetKind();
+      UNREACHABLE();
+  }
+}
+
 void InstructionSimplifierVisitor::VisitCondition(HCondition* condition) {
   if (condition->IsEqual() || condition->IsNotEqual()) {
     if (RecognizeAndSimplifyClassCheck(condition)) {
@@ -1803,10 +1854,10 @@ void InstructionSimplifierVisitor::VisitCondition(HCondition* condition) {
 
   // Reverse condition if left is constant. Our code generators prefer constant
   // on the right hand side.
+  HBasicBlock* block = condition->GetBlock();
   if (condition->GetLeft()->IsConstant() && !condition->GetRight()->IsConstant()) {
-    HBasicBlock* block = condition->GetBlock();
     HCondition* replacement =
-        GetOppositeConditionSwapOps(block->GetGraph()->GetAllocator(), condition);
+        CreateOppositeConditionSwapOps(block->GetGraph()->GetAllocator(), condition);
     // If it is a fp we must set the opposite bias.
     if (replacement != nullptr) {
       if (condition->IsLtBias()) {
@@ -1814,6 +1865,7 @@ void InstructionSimplifierVisitor::VisitCondition(HCondition* condition) {
       } else if (condition->IsGtBias()) {
         replacement->SetBias(ComparisonBias::kLtBias);
       }
+
       block->ReplaceAndRemoveInstructionWith(condition, replacement);
       RecordSimplification();
 
@@ -1856,16 +1908,153 @@ void InstructionSimplifierVisitor::VisitCondition(HCondition* condition) {
   left->RemoveEnvironmentUsers();
 
   // We have decided to fold the HCompare into the HCondition. Transfer the information.
-  condition->SetBias(left->AsCompare()->GetBias());
+  if (DataType::IsUnsignedType(left->AsCompare()->GetComparisonType())) {
+    DCHECK_EQ(condition->GetBias(), ComparisonBias::kNoBias);
+    HInstruction* replacement = CreateUnsignedConditionReplacement(
+        block->GetGraph()->GetAllocator(), condition, left->AsCompare());
 
-  // Replace the operands of the HCondition.
-  condition->ReplaceInput(left->InputAt(0), 0);
-  condition->ReplaceInput(left->InputAt(1), 1);
+    if (replacement->IsConstant()) {
+      condition->ReplaceWith(replacement);
+      block->RemoveInstruction(condition);
+    } else {
+      block->ReplaceAndRemoveInstructionWith(condition, replacement);
+    }
+  } else {
+    condition->SetBias(left->AsCompare()->GetBias());
+
+    // Replace the operands of the HCondition.
+    condition->ReplaceInput(left->InputAt(0), 0);
+    condition->ReplaceInput(left->InputAt(1), 1);
+  }
 
   // Remove the HCompare.
   left->GetBlock()->RemoveInstruction(left);
 
   RecordSimplification();
+}
+
+static HInstruction* CheckSignedToUnsignedCompareConversion(HInstruction* operand,
+                                                            HCompare* compare) {
+  // Check if operand looks like `ADD op, MIN_INTEGRAL`
+  if (operand->IsConstant()) {
+    // CONSTANT #x -> CONSTANT #(x - MIN_INTEGRAL)
+    HConstant* constant = operand->AsConstant();
+    if (constant->IsIntConstant()) {
+      HIntConstant* int_constant = constant->AsIntConstant();
+      int32_t old_value = int_constant->GetValue();
+      int32_t new_value = old_value - std::numeric_limits<int32_t>::min();
+      return operand->GetBlock()->GetGraph()->GetIntConstant(new_value, constant->GetDexPc());
+    } else if (constant->IsLongConstant()) {
+      HLongConstant* long_constant = constant->AsLongConstant();
+      int64_t old_value = long_constant->GetValue();
+      int64_t new_value = old_value - std::numeric_limits<int64_t>::min();
+      return operand->GetBlock()->GetGraph()->GetLongConstant(new_value, constant->GetDexPc());
+    } else {
+      return nullptr;
+    }
+  }
+
+  if (!operand->IsAdd() && !operand->IsXor()) {
+    return nullptr;
+  }
+
+  if (!operand->GetEnvUses().empty()) {
+    // There is a reference to the compare result in an environment. Do we really need it?
+    if (operand->GetBlock()->GetGraph()->IsDebuggable()) {
+      return nullptr;
+    }
+
+    // We have to ensure that there are no deopt points in the sequence.
+    if (operand->HasAnyEnvironmentUseBefore(compare)) {
+      return nullptr;
+    }
+  }
+
+  HBinaryOperation* additive_operand = operand->AsBinaryOperation();
+
+  HInstruction* left = additive_operand->GetLeft();
+  HInstruction* right = additive_operand->GetRight();
+
+  HConstant* constant = nullptr;
+  HInstruction* value = nullptr;
+
+  if (left->IsConstant() && !right->IsConstant()) {
+    constant = left->AsConstant();
+    value = right;
+  } else if (!left->IsConstant() && right->IsConstant()) {
+    value = left;
+    constant = right->AsConstant();
+  } else {
+    return nullptr;
+  }
+
+  if (constant->IsIntConstant()) {
+    HIntConstant* int_constant = constant->AsIntConstant();
+    if (int_constant->GetValue() != std::numeric_limits<int32_t>::min()) {
+      return nullptr;
+    }
+  } else if (constant->IsLongConstant()) {
+    HLongConstant* long_constant = constant->AsLongConstant();
+    if (long_constant->GetValue() != std::numeric_limits<int64_t>::min()) {
+      return nullptr;
+    }
+  } else {
+    return nullptr;
+  }
+
+  return value;
+}
+
+static DataType::Type GetOpositeSignType(DataType::Type type) {
+  return DataType::IsUnsignedType(type) ? DataType::ToSigned(type) : DataType::ToUnsigned(type);
+}
+
+void InstructionSimplifierVisitor::VisitCompare(HCompare* compare) {
+  // Transform signed compare into unsigned if possible
+  // Replace code looking like
+  //    ADD normalizedLeft, left, MIN_INTEGRAL
+  //    ADD normalizedRight, right, MIN_INTEGRAL
+  //    COMPARE normalizedLeft, normalizedRight, sign
+  // with
+  //    COMPARE left, right, !sign
+
+  if (!DataType::IsIntegralType(compare->GetComparisonType())) {
+    return;
+  }
+
+  HInstruction* compare_left = compare->GetLeft();
+  HInstruction* compare_right = compare->GetRight();
+
+  if (compare_left->IsConstant() && compare_right->IsConstant()) {
+    // Do not simplify, let it be folded.
+    return;
+  }
+
+  HInstruction* left = CheckSignedToUnsignedCompareConversion(compare_left, compare);
+  if (left == nullptr) {
+    return;
+  }
+
+  HInstruction* right = CheckSignedToUnsignedCompareConversion(compare_right, compare);
+  if (right == nullptr) {
+    return;
+  }
+
+  compare->SetComparisonType(GetOpositeSignType(compare->GetComparisonType()));
+  compare->ReplaceInput(left, 0);
+  compare->ReplaceInput(right, 1);
+
+  RecordSimplification();
+
+  if (compare_left->GetUses().empty()) {
+    compare_left->RemoveEnvironmentUsers();
+    compare_left->GetBlock()->RemoveInstruction(compare_left);
+  }
+
+  if (compare_right->GetUses().empty()) {
+    compare_right->RemoveEnvironmentUsers();
+    compare_right->GetBlock()->RemoveInstruction(compare_right);
+  }
 }
 
 // Return whether x / divisor == x * (1.0f / divisor), for every float x.

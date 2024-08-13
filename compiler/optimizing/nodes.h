@@ -4503,6 +4503,7 @@ class HCompare final : public HBinaryOperation {
                          SideEffectsForArchRuntimeCalls(comparison_type),
                          dex_pc) {
     SetPackedField<ComparisonBiasField>(bias);
+    SetPackedField<ComparisonTypeField>(comparison_type);
   }
 
   template <typename T>
@@ -4522,10 +4523,16 @@ class HCompare final : public HBinaryOperation {
     // graph. However HCompare integer instructions can be synthesized
     // by the instruction simplifier to implement IntegerCompare and
     // IntegerSignum intrinsics, so we have to handle this case.
-    return MakeConstantComparison(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    const int32_t value = DataType::IsUnsignedType(GetComparisonType()) ?
+        Compute(x->GetValueAsUint64(), y->GetValueAsUint64()) :
+        Compute(x->GetValue(), y->GetValue());
+    return MakeConstantComparison(value, GetDexPc());
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantComparison(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    const int32_t value = DataType::IsUnsignedType(GetComparisonType()) ?
+        Compute(x->GetValueAsUint64(), y->GetValueAsUint64()) :
+        Compute(x->GetValue(), y->GetValue());
+    return MakeConstantComparison(value, GetDexPc());
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
     return MakeConstantComparison(ComputeFP(x->GetValue(), y->GetValue()), GetDexPc());
@@ -4539,6 +4546,10 @@ class HCompare final : public HBinaryOperation {
   }
 
   ComparisonBias GetBias() const { return GetPackedField<ComparisonBiasField>(); }
+
+  DataType::Type GetComparisonType() const { return GetPackedField<ComparisonTypeField>(); }
+
+  void SetComparisonType(DataType::Type newType) { SetPackedField<ComparisonTypeField>(newType); }
 
   // Does this compare instruction have a "gt bias" (vs an "lt bias")?
   // Only meaningful for floating-point comparisons.
@@ -4558,11 +4569,16 @@ class HCompare final : public HBinaryOperation {
   static constexpr size_t kFieldComparisonBias = kNumberOfGenericPackedBits;
   static constexpr size_t kFieldComparisonBiasSize =
       MinimumBitsToStore(static_cast<size_t>(ComparisonBias::kLast));
+  static constexpr size_t kFieldComparisonType = kFieldComparisonBias + kFieldComparisonBiasSize;
+  static constexpr size_t kFieldComparisonTypeSize =
+      MinimumBitsToStore(static_cast<size_t>(DataType::Type::kLast));
   static constexpr size_t kNumberOfComparePackedBits =
-      kFieldComparisonBias + kFieldComparisonBiasSize;
+      kFieldComparisonType + kFieldComparisonTypeSize;
   static_assert(kNumberOfComparePackedBits <= kMaxNumberOfPackedBits, "Too many packed fields.");
   using ComparisonBiasField =
       BitField<ComparisonBias, kFieldComparisonBias, kFieldComparisonBiasSize>;
+  using ComparisonTypeField =
+      BitField<DataType::Type, kFieldComparisonType, kFieldComparisonTypeSize>;
 
   // Return an integer constant containing the result of a comparison evaluated at compile time.
   HIntConstant* MakeConstantComparison(int32_t value, uint32_t dex_pc) const {

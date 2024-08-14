@@ -58,6 +58,7 @@ class ArenaStack;
 class CodeGenerator;
 class GraphChecker;
 class HBasicBlock;
+class HCondition;
 class HConstructorFence;
 class HCurrentMethod;
 class HDoubleConstant;
@@ -719,10 +720,10 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
   void SetProfilingInfo(ProfilingInfo* info) { profiling_info_ = info; }
   ProfilingInfo* GetProfilingInfo() const { return profiling_info_; }
 
-  // Returns an instruction with the opposite Boolean value from 'cond'.
-  // The instruction has been inserted into the graph, either as a constant, or
-  // before cursor.
-  HInstruction* InsertOppositeCondition(HInstruction* cond, HInstruction* cursor);
+  HCondition* CreateCondition(IfCondition cond,
+                              HInstruction* lhs,
+                              HInstruction* rhs,
+                              uint32_t dex_pc = kNoDexPc);
 
   ReferenceTypeInfo GetInexactObjectRti() {
     return ReferenceTypeInfo::Create(handle_cache_.GetObjectClassHandle(), /* is_exact= */ false);

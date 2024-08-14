@@ -131,6 +131,11 @@ class InstructionSimplifierVisitor final : public HGraphDelegateVisitor {
   bool CanUseKnownImageVarHandle(HInvoke* invoke);
   static bool CanEnsureNotNullAt(HInstruction* input, HInstruction* at);
 
+  // Returns an instruction with the opposite Boolean value from 'cond'.
+  // The instruction is inserted into the graph, either in the entry block
+  // (constant), or before the `cursor` (otherwise).
+  HInstruction* InsertOppositeCondition(HInstruction* cond, HInstruction* cursor);
+
   CodeGenerator* codegen_;
   OptimizingCompilerStats* stats_;
   bool simplification_occurred_ = false;
@@ -879,33 +884,47 @@ void InstructionSimplifierVisitor::VisitStaticFieldSet(HStaticFieldSet* instruct
   }
 }
 
-static HCondition* CreateOppositeConditionSwapOps(ArenaAllocator* allocator, HInstruction* cond) {
-  HInstruction *lhs = cond->InputAt(0);
-  HInstruction *rhs = cond->InputAt(1);
-  switch (cond->GetKind()) {
-    case HInstruction::kEqual:
-      return new (allocator) HEqual(rhs, lhs);
-    case HInstruction::kNotEqual:
-      return new (allocator) HNotEqual(rhs, lhs);
-    case HInstruction::kLessThan:
-      return new (allocator) HGreaterThan(rhs, lhs);
-    case HInstruction::kLessThanOrEqual:
-      return new (allocator) HGreaterThanOrEqual(rhs, lhs);
-    case HInstruction::kGreaterThan:
-      return new (allocator) HLessThan(rhs, lhs);
-    case HInstruction::kGreaterThanOrEqual:
-      return new (allocator) HLessThanOrEqual(rhs, lhs);
-    case HInstruction::kBelow:
-      return new (allocator) HAbove(rhs, lhs);
-    case HInstruction::kBelowOrEqual:
-      return new (allocator) HAboveOrEqual(rhs, lhs);
-    case HInstruction::kAbove:
-      return new (allocator) HBelow(rhs, lhs);
-    case HInstruction::kAboveOrEqual:
-      return new (allocator) HBelowOrEqual(rhs, lhs);
+static IfCondition GetOppositeConditionForOperandSwap(IfCondition cond) {
+  switch (cond) {
+    case kCondEQ: return kCondEQ;
+    case kCondNE: return kCondNE;
+    case kCondLT: return kCondGT;
+    case kCondLE: return kCondGE;
+    case kCondGT: return kCondLT;
+    case kCondGE: return kCondLE;
+    case kCondB: return kCondA;
+    case kCondBE: return kCondAE;
+    case kCondA: return kCondB;
+    case kCondAE: return kCondBE;
     default:
-      LOG(FATAL) << "Unknown ConditionType " << cond->GetKind();
+      LOG(FATAL) << "Unknown ConditionType " << cond;
       UNREACHABLE();
+  }
+}
+
+HInstruction* InstructionSimplifierVisitor::InsertOppositeCondition(HInstruction* cond,
+                                                                    HInstruction* cursor) {
+  if (cond->IsCondition() &&
+      !DataType::IsFloatingPointType(cond->InputAt(0)->GetType())) {
+    // Can't reverse floating point conditions. We have to use `HBooleanNot` in that case.
+    HInstruction* lhs = cond->InputAt(0);
+    HInstruction* rhs = cond->InputAt(1);
+    HInstruction* replacement =
+        GetGraph()->CreateCondition(cond->AsCondition()->GetOppositeCondition(), lhs, rhs);
+    cursor->GetBlock()->InsertInstructionBefore(replacement, cursor);
+    return replacement;
+  } else if (cond->IsIntConstant()) {
+    HIntConstant* int_const = cond->AsIntConstant();
+    if (int_const->IsFalse()) {
+      return GetGraph()->GetIntConstant(1);
+    } else {
+      DCHECK(int_const->IsTrue()) << int_const->GetValue();
+      return GetGraph()->GetIntConstant(0);
+    }
+  } else {
+    HInstruction* replacement = new (GetGraph()->GetAllocator()) HBooleanNot(cond);
+    cursor->GetBlock()->InsertInstructionBefore(replacement, cursor);
+    return replacement;
   }
 }
 
@@ -924,7 +943,7 @@ void InstructionSimplifierVisitor::VisitEqual(HEqual* equal) {
         RecordSimplification();
       } else if (input_const->AsIntConstant()->IsFalse()) {
         // Replace (bool_value == false) with !bool_value
-        equal->ReplaceWith(GetGraph()->InsertOppositeCondition(input_value, equal));
+        equal->ReplaceWith(InsertOppositeCondition(input_value, equal));
         block->RemoveInstruction(equal);
         RecordSimplification();
       } else {
@@ -951,7 +970,7 @@ void InstructionSimplifierVisitor::VisitNotEqual(HNotEqual* not_equal) {
       // be any constant.
       if (input_const->AsIntConstant()->IsTrue()) {
         // Replace (bool_value != true) with !bool_value
-        not_equal->ReplaceWith(GetGraph()->InsertOppositeCondition(input_value, not_equal));
+        not_equal->ReplaceWith(InsertOppositeCondition(input_value, not_equal));
         block->RemoveInstruction(not_equal);
         RecordSimplification();
       } else if (input_const->AsIntConstant()->IsFalse()) {
@@ -993,7 +1012,7 @@ void InstructionSimplifierVisitor::VisitBooleanNot(HBooleanNot* bool_not) {
              // NaNs forces the compares to be done as written by the user.
              !DataType::IsFloatingPointType(input->InputAt(0)->GetType())) {
     // Replace condition with its opposite.
-    replace_with = GetGraph()->InsertOppositeCondition(input->AsCondition(), bool_not);
+    replace_with = InsertOppositeCondition(input->AsCondition(), bool_not);
   }
 
   if (replace_with != nullptr) {
@@ -1109,7 +1128,7 @@ void InstructionSimplifierVisitor::VisitSelect(HSelect* select) {
       replace_with = condition;
     } else if (true_value->AsIntConstant()->IsFalse() && false_value->AsIntConstant()->IsTrue()) {
       // Replace (cond ? false : true) with (!cond).
-      replace_with = GetGraph()->InsertOppositeCondition(condition, select);
+      replace_with = InsertOppositeCondition(condition, select);
     }
   } else if (condition->IsCondition()) {
     IfCondition cmp = condition->AsCondition()->GetCondition();
@@ -1855,26 +1874,22 @@ void InstructionSimplifierVisitor::VisitCondition(HCondition* condition) {
   // Reverse condition if left is constant. Our code generators prefer constant
   // on the right hand side.
   HBasicBlock* block = condition->GetBlock();
-  if (condition->GetLeft()->IsConstant() && !condition->GetRight()->IsConstant()) {
-    HCondition* replacement =
-        CreateOppositeConditionSwapOps(block->GetGraph()->GetAllocator(), condition);
-    // If it is a fp we must set the opposite bias.
-    if (replacement != nullptr) {
-      if (condition->IsLtBias()) {
-        replacement->SetBias(ComparisonBias::kGtBias);
-      } else if (condition->IsGtBias()) {
-        replacement->SetBias(ComparisonBias::kLtBias);
-      }
-
-      block->ReplaceAndRemoveInstructionWith(condition, replacement);
-      RecordSimplification();
-
-      condition = replacement;
-    }
-  }
-
   HInstruction* left = condition->GetLeft();
   HInstruction* right = condition->GetRight();
+  if (left->IsConstant() && !right->IsConstant()) {
+    IfCondition new_cond = GetOppositeConditionForOperandSwap(condition->GetCondition());
+    HCondition* replacement = GetGraph()->CreateCondition(new_cond, right, left);
+    block->ReplaceAndRemoveInstructionWith(condition, replacement);
+    // If it is a FP condition, we must set the opposite bias.
+    if (condition->IsLtBias()) {
+      replacement->SetBias(ComparisonBias::kGtBias);
+    } else if (condition->IsGtBias()) {
+      replacement->SetBias(ComparisonBias::kLtBias);
+    }
+    RecordSimplification();
+    condition = replacement;
+    std::swap(left, right);
+  }
 
   // Try to fold an HCompare into this HCondition.
 

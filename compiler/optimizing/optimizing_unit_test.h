@@ -660,15 +660,24 @@ class OptimizingUnitTestHelper {
     return insn;
   }
 
-  template <typename Type>
-  Type* MakeCondition(HBasicBlock* block,
-                      HInstruction* first,
-                      HInstruction* second,
-                      uint32_t dex_pc = kNoDexPc) {
-    static_assert(std::is_base_of_v<HCondition, Type>);
-    Type* condition = new (GetAllocator()) Type(first, second, dex_pc);
+  HCondition* MakeCondition(HBasicBlock* block,
+                            IfCondition cond,
+                            HInstruction* first,
+                            HInstruction* second,
+                            uint32_t dex_pc = kNoDexPc) {
+    HCondition* condition = graph_->CreateCondition(cond, first, second, dex_pc);
     AddOrInsertInstruction(block, condition);
     return condition;
+  }
+
+  HSelect* MakeSelect(HBasicBlock* block,
+                      HInstruction* condition,
+                      HInstruction* true_value,
+                      HInstruction* false_value,
+                      uint32_t dex_pc = kNoDexPc) {
+    HSelect* select = new (GetAllocator()) HSelect(condition, true_value, false_value, dex_pc);
+    AddOrInsertInstruction(block, select);
+    return select;
   }
 
   HSuspendCheck* MakeSuspendCheck(HBasicBlock* block, uint32_t dex_pc = kNoDexPc) {

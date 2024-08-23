@@ -6218,7 +6218,7 @@ inline std::ostream& operator<<(std::ostream& os, const FieldInfo& a) {
 
 class HInstanceFieldGet final : public HExpression<1> {
  public:
-  HInstanceFieldGet(HInstruction* value,
+  HInstanceFieldGet(HInstruction* object,
                     ArtField* field,
                     DataType::Type field_type,
                     MemberOffset field_offset,
@@ -6238,7 +6238,7 @@ class HInstanceFieldGet final : public HExpression<1> {
                     field_idx,
                     declaring_class_def_index,
                     dex_file) {
-    SetRawInputAt(0, value);
+    SetRawInputAt(0, object);
   }
 
   bool IsClonable() const override { return true; }

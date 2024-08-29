@@ -61,7 +61,7 @@ if [[ $TARGET_ARCH = "riscv64" && ! ( -d frameworks/base ) ]]; then
 fi
 
 java_libraries_dir=${out_dir}/target/common/obj/JAVA_LIBRARIES
-common_targets="vogar core-tests core-ojtests apache-harmony-jdwp-tests-hostdex jsr166-tests libartpalette-system mockito-target desugar"
+common_targets="vogar core-tests core-ojtests apache-harmony-jdwp-tests-hostdex jsr166-tests mockito-target desugar"
 # These build targets have different names on device and host.
 specific_targets="libjavacoretests libwrapagentproperties libwrapagentpropertiesd"
 build_host="no"
@@ -110,11 +110,6 @@ fi
 
 implementation_libs=(
   "heapprofd_client_api"
-  "libartpalette-system"
-  "libdebugstore_cxx" # Needed by "libartpalette-system".
-  "libcutils"
-  "libutils"
-  "libvndksupport"
 )
 
 if [ -d frameworks/base ]; then
@@ -164,6 +159,7 @@ if [[ $build_target == "yes" ]]; then
   make_command+=" build-art-target-gtests"
   test $skip_run_tests_build == "yes" || make_command+=" build-art-target-run-tests"
   make_command+=" debuggerd sh su toybox"
+  make_command+=" libartpalette_fake"
   # Indirect dependencies in the platform, e.g. through heapprofd_client_api.
   # These are built to go into system/lib(64) to be part of the system linker
   # namespace.
@@ -209,6 +205,17 @@ if [[ $build_target == "yes" ]]; then
     msgwarning "ANDROID_HOST_OUT environment variable is empty; using $out_dir/host/linux-x86"
     ANDROID_HOST_OUT=$out_dir/host/linux-x86
   fi
+
+  # Use a fake libartpalette implementation to prevent chroot tests from talking to the platform
+  # through libartpalette.
+  for l in lib lib64; do
+    if [ ! -d "$ANDROID_PRODUCT_OUT/system/$l" ]; then
+      continue
+    fi
+    cmd="cp -p \"$ANDROID_PRODUCT_OUT/system/$l/art_fake/libartpalette-system.so\" \"$ANDROID_PRODUCT_OUT/system/$l/libartpalette-system.so\""
+    msginfo "Executing" "$cmd"
+    eval "$cmd"
+  done
 
   # Extract prebuilt APEXes.
   debugfs=$ANDROID_HOST_OUT/bin/debugfs_static

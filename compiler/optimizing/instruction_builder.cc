@@ -1944,7 +1944,7 @@ bool HInstructionBuilder::BuildSimpleIntrinsic(ArtMethod* method,
                                                uint32_t dex_pc,
                                                const InstructionOperands& operands,
                                                const char* shorty) {
-  Intrinsics intrinsic = static_cast<Intrinsics>(method->GetIntrinsic());
+  Intrinsics intrinsic = method->GetIntrinsic();
   DCHECK_NE(intrinsic, Intrinsics::kNone);
   constexpr DataType::Type kInt32 = DataType::Type::kInt32;
   constexpr DataType::Type kInt64 = DataType::Type::kInt64;

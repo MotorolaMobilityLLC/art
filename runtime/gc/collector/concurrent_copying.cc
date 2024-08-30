@@ -3662,7 +3662,8 @@ mirror::Object* ConcurrentCopying::IsMarked(mirror::Object* from_ref) {
 }
 
 bool ConcurrentCopying::IsOnAllocStack(mirror::Object* ref) {
-  // TODO: Explain why this is here. What release operation does it pair with?
+  // Pairs with release fence after allocation-stack push in
+  // Heap::AllocObjectWithAllocator().
   std::atomic_thread_fence(std::memory_order_acquire);
   accounting::ObjectStack* alloc_stack = GetAllocationStack();
   return alloc_stack->Contains(ref);

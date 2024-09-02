@@ -1346,8 +1346,7 @@ bool HInliner::TryDevirtualize(HInvoke* invoke_instruction,
   // Don't devirtualize to an intrinsic invalid after the builder phase. The ArtMethod might be an
   // intrinsic even when the HInvoke isn't e.g. java.lang.CharSequence.isEmpty (not an intrinsic)
   // can get devirtualized into java.lang.String.isEmpty (which is an intrinsic).
-  if (method->IsIntrinsic() &&
-      !IsValidIntrinsicAfterBuilder(static_cast<Intrinsics>(method->GetIntrinsic()))) {
+  if (method->IsIntrinsic() && !IsValidIntrinsicAfterBuilder(method->GetIntrinsic())) {
     return false;
   }
 
@@ -1598,7 +1597,7 @@ bool HInliner::TryBuildAndInline(HInvoke* invoke_instruction,
   // another chance before we try to inline it.
   if (invoke_instruction->GetResolvedMethod() != method &&
       method->IsIntrinsic() &&
-      IsValidIntrinsicAfterBuilder(static_cast<Intrinsics>(method->GetIntrinsic()))) {
+      IsValidIntrinsicAfterBuilder(method->GetIntrinsic())) {
     MaybeRecordStat(stats_, MethodCompilationStat::kIntrinsicRecognized);
     // For simplicity, always create a new instruction to replace the existing
     // invoke.

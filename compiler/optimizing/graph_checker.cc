@@ -754,10 +754,12 @@ void GraphChecker::VisitInvoke(HInvoke* invoke) {
   // Check for intrinsics which should have been replaced by intermediate representation in the
   // instruction builder.
   if (!IsValidIntrinsicAfterBuilder(invoke->GetIntrinsic())) {
+    std::stringstream ss;
+    ss << invoke->GetIntrinsic();
     AddError(
-        StringPrintf("The graph contains the instrinsic %d which should have been replaced in the "
+        StringPrintf("The graph contains the instrinsic %s which should have been replaced in the "
                      "instruction builder: %s:%d in block %d.",
-                     enum_cast<int>(invoke->GetIntrinsic()),
+                     ss.str().c_str(),
                      invoke->DebugName(),
                      invoke->GetId(),
                      invoke->GetBlock()->GetBlockId()));

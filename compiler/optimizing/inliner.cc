@@ -1343,6 +1343,14 @@ bool HInliner::TryDevirtualize(HInvoke* invoke_instruction,
     return false;
   }
 
+  // Don't devirtualize to an intrinsic invalid after the builder phase. The ArtMethod might be an
+  // intrinsic even when the HInvoke isn't e.g. java.lang.CharSequence.isEmpty (not an intrinsic)
+  // can get devirtualized into java.lang.String.isEmpty (which is an intrinsic).
+  if (method->IsIntrinsic() &&
+      !IsValidIntrinsicAfterBuilder(static_cast<Intrinsics>(method->GetIntrinsic()))) {
+    return false;
+  }
+
   // Don't bother trying to call directly a default conflict method. It
   // doesn't have a proper MethodReference, but also `GetCanonicalMethod`
   // will return an actual default implementation.

@@ -757,7 +757,7 @@ void GraphChecker::VisitInvoke(HInvoke* invoke) {
     std::stringstream ss;
     ss << invoke->GetIntrinsic();
     AddError(
-        StringPrintf("The graph contains the instrinsic %s which should have been replaced in the "
+        StringPrintf("The graph contains the intrinsic %s which should have been replaced in the "
                      "instruction builder: %s:%d in block %d.",
                      ss.str().c_str(),
                      invoke->DebugName(),
@@ -768,7 +768,7 @@ void GraphChecker::VisitInvoke(HInvoke* invoke) {
 
 void GraphChecker::VisitInvokeStaticOrDirect(HInvokeStaticOrDirect* invoke) {
   // We call VisitInvoke and not VisitInstruction to de-duplicate the common code: always throwing
-  // and instrinsic checks.
+  // and intrinsic checks.
   VisitInvoke(invoke);
 
   if (invoke->IsStaticWithExplicitClinitCheck()) {

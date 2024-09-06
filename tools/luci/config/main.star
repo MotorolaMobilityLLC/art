@@ -292,14 +292,12 @@ def add_builder(name,
         "testrunner_args": testrunner_args,
     }
 
-    is_fyi = (name == "qemu-riscv64-ndebug")
-
     ci_builder(name,
                category="|".join(short_name.split("-")[:-1]),
                short_name=short_name.split("-")[-1],
                dimensions=dimensions,
                properties={k:v for k, v in properties.items() if v},
-               is_fyi=is_fyi)
+               is_fyi=False)
 
 add_builder("angler-armv7-debug", 'target', 'arm', 32, debug=True)
 add_builder("angler-armv7-non-gen-cc", 'target', 'arm', 32, debug=True, cc=False, gen_cc=False)
@@ -325,4 +323,3 @@ add_builder("host-x86_64-ndebug", 'host', 'x86', 64)
 add_builder("host-x86_64-poison-debug", 'host', 'x86', 64, debug=True, heap_poisoning=True)
 add_builder("qemu-armv8-ndebug", 'qemu', 'arm', 64)
 add_builder("qemu-riscv64-ndebug", 'qemu', 'riscv', 64)
-add_builder("qemu-riscv64-ndebug-build_only", 'qemu', 'riscv', 64)

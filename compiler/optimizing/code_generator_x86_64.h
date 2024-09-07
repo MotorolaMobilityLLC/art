@@ -28,6 +28,8 @@
 namespace art HIDDEN {
 namespace x86_64 {
 
+static constexpr Register kMethodRegisterArgument = RDI;
+
 // Use a local definition to prevent copying mistakes.
 static constexpr size_t kX86_64WordSize = static_cast<size_t>(kX86_64PointerSize);
 
@@ -92,9 +94,11 @@ static constexpr FloatRegister non_volatile_xmm_regs[] = { XMM12, XMM13, XMM14, 
   V(StringBuilderAppendDouble)                 \
   V(StringBuilderLength)                       \
   V(StringBuilderToString)                     \
+  V(UnsafeArrayBaseOffset)                     \
   /* 1.8 */                                    \
-  V(MethodHandleInvokeExact)                   \
-  V(MethodHandleInvoke)
+  V(JdkUnsafeArrayBaseOffset)                  \
+  V(MethodHandleInvoke)                        \
+
 
 class InvokeRuntimeCallingConvention : public CallingConvention<Register, FloatRegister> {
  public:

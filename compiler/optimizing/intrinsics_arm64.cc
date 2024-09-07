@@ -57,6 +57,7 @@ using helpers::CPURegisterFrom;
 using helpers::DRegisterFrom;
 using helpers::HeapOperand;
 using helpers::LocationFrom;
+using helpers::Int64FromLocation;
 using helpers::InputCPURegisterAt;
 using helpers::InputCPURegisterOrZeroRegAt;
 using helpers::OperandFrom;
@@ -875,10 +876,21 @@ void IntrinsicCodeGeneratorARM64::VisitJdkUnsafeGetByte(HInvoke* invoke) {
 static void CreateUnsafePutLocations(ArenaAllocator* allocator, HInvoke* invoke) {
   LocationSummary* locations =
       new (allocator) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
-  locations->SetInAt(0, Location::NoLocation());        // Unused receiver.
+  static constexpr int kOffsetIndex = 2;
+  static constexpr int kValueIndex = 3;
+  // Unused receiver.
+  locations->SetInAt(0, Location::NoLocation());
+  // The object.
   locations->SetInAt(1, Location::RequiresRegister());
-  locations->SetInAt(2, Location::RequiresRegister());
-  locations->SetInAt(3, Location::RequiresRegister());
+  // The offset.
+  locations->SetInAt(
+      kOffsetIndex, Location::RegisterOrConstant(invoke->InputAt(kOffsetIndex)));
+  // The value.
+  if (IsZeroBitPattern(invoke->InputAt(kValueIndex))) {
+    locations->SetInAt(kValueIndex, Location::ConstantLocation(invoke->InputAt(kValueIndex)));
+  } else {
+    locations->SetInAt(kValueIndex, Location::RequiresRegister());
+  }
 }
 
 void IntrinsicLocationsBuilderARM64::VisitUnsafePut(HInvoke* invoke) {
@@ -960,18 +972,27 @@ static void GenUnsafePut(HInvoke* invoke,
   LocationSummary* locations = invoke->GetLocations();
   MacroAssembler* masm = codegen->GetVIXLAssembler();
 
+  static constexpr int kOffsetIndex = 2;
+  static constexpr int kValueIndex = 3;
   Register base = WRegisterFrom(locations->InAt(1));    // Object pointer.
-  Register offset = XRegisterFrom(locations->InAt(2));  // Long offset.
-  Register value = RegisterFrom(locations->InAt(3), type);
-  Register source = value;
-  MemOperand mem_op(base.X(), offset);
+  Location offset = locations->InAt(kOffsetIndex);       // Long offset.
+  CPURegister value = InputCPURegisterOrZeroRegAt(invoke, kValueIndex);
+  CPURegister source = value;
+  MemOperand mem_op;
+  if (offset.IsConstant()) {
+    mem_op = MemOperand(base.X(), Int64FromLocation(offset));
+  } else {
+    mem_op = MemOperand(base.X(), XRegisterFrom(offset));
+  }
 
   {
     // We use a block to end the scratch scope before the write barrier, thus
     // freeing the temporary registers so they can be used in `MarkGCCard`.
     UseScratchRegisterScope temps(masm);
 
-    if (kPoisonHeapReferences && type == DataType::Type::kReference) {
+    if (kPoisonHeapReferences &&
+        type == DataType::Type::kReference &&
+        !IsZeroBitPattern(invoke->InputAt(kValueIndex))) {
       DCHECK(value.IsW());
       Register temp = temps.AcquireW();
       __ Mov(temp.W(), value.W());
@@ -986,9 +1007,9 @@ static void GenUnsafePut(HInvoke* invoke,
     }
   }
 
-  if (type == DataType::Type::kReference) {
+  if (type == DataType::Type::kReference && !IsZeroBitPattern(invoke->InputAt(kValueIndex))) {
     bool value_can_be_null = true;  // TODO: Worth finding out this information?
-    codegen->MaybeMarkGCCard(base, value, value_can_be_null);
+    codegen->MaybeMarkGCCard(base, Register(source), value_can_be_null);
   }
 }
 
@@ -1554,8 +1575,7 @@ void IntrinsicLocationsBuilderARM64::VisitJdkUnsafeCompareAndSetReference(HInvok
     // We need two non-scratch temporary registers for read barrier.
     LocationSummary* locations = invoke->GetLocations();
     if (kUseBakerReadBarrier) {
-      locations->AddTemp(Location::RequiresRegister());
-      locations->AddTemp(Location::RequiresRegister());
+      locations->AddRegisterTemps(2);
     } else {
       // To preserve the old value across the non-Baker read barrier
       // slow path, use a fixed callee-save register.
@@ -1836,9 +1856,7 @@ void IntrinsicLocationsBuilderARM64::VisitStringCompareTo(HInvoke* invoke) {
                                        kIntrinsified);
   locations->SetInAt(0, Location::RequiresRegister());
   locations->SetInAt(1, Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
+  locations->AddRegisterTemps(3);
   // Need temporary registers for String compression's feature.
   if (mirror::kUseStringCompression) {
     locations->AddTemp(Location::RequiresRegister());
@@ -2602,9 +2620,7 @@ void IntrinsicLocationsBuilderARM64::VisitStringGetCharsNoCheck(HInvoke* invoke)
   locations->SetInAt(3, Location::RequiresRegister());
   locations->SetInAt(4, Location::RequiresRegister());
 
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
+  locations->AddRegisterTemps(3);
 }
 
 void IntrinsicCodeGeneratorARM64::VisitStringGetCharsNoCheck(HInvoke* invoke) {
@@ -2777,9 +2793,7 @@ void IntrinsicLocationsBuilderARM64::VisitSystemArrayCopyChar(HInvoke* invoke) {
   locations->SetInAt(3, LocationForSystemArrayCopyInput(invoke->InputAt(3)));
   locations->SetInAt(4, LocationForSystemArrayCopyInput(invoke->InputAt(4)));
 
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
-  locations->AddTemp(Location::RequiresRegister());
+  locations->AddRegisterTemps(3);
 }
 
 static void CheckSystemArrayCopyPosition(MacroAssembler* masm,

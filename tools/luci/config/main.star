@@ -102,6 +102,27 @@ luci.binding(
 luci.realm(name = "pools/ci")
 luci.bucket(name = "ci")
 
+# Shadow bucket is needed for LED.
+luci.bucket(
+    name = "ci.shadow",
+    shadows = "ci",
+    bindings = [
+        luci.binding(
+            roles = "role/buildbucket.creator",
+            users = ["art-ci-builder@chops-service-accounts.iam.gserviceaccount.com"],
+        ),
+        luci.binding(
+            roles = "role/buildbucket.triggerer",
+            users = ["art-ci-builder@chops-service-accounts.iam.gserviceaccount.com"],
+        ),
+    ],
+    constraints = luci.bucket_constraints(
+        pools = ["luci.art.ci"],
+        service_accounts = ["art-ci-builder@chops-service-accounts.iam.gserviceaccount.com"],
+    ),
+    dynamic = True,
+)
+
 luci.notifier_template(
     name = "default",
     body = io.read_file("luci-notify.template"),
@@ -233,9 +254,25 @@ def add_builder(name,
       product = "riscv64"
 
     dimensions = {"os": "Android" if mode == "target" else "Linux"}
-    if mode == "target" and not cc:
-      # userfault-GC configurations must be run on Pixel 6.
-      dimensions |= {"device_type": "oriole"}
+    if mode == "target":
+      if not cc:
+        # Request devices running Android 24Q3 (`AP1A` builds) for
+        # (`userfaultfd`-based) Concurrent Mark-Compact GC configurations.
+        # Currently (as of 2024-08-22), the only devices within the device pool
+        # allocated to ART that are running `AP1A` builds are Pixel 6 devices
+        # (all other device types are running older Android versions), which are
+        # also the only device model supporting `userfaultfd` among that pool.
+        dimensions |= {"device_os": "A"}
+      else:
+        # Run all other configurations on Android S since it is the oldest we support.
+        # Other than the `AP1A` builds above, all other devices are flashed to `SP2A`.
+        # This avoids allocating `userfaultfd` devices for tests that don't need it.
+        dimensions |= {"device_os": "S"}
+    elif mode == "host":
+      dimensions |= {"os": "Ubuntu-20"}
+    elif mode == "qemu":
+      dimensions |= {"os": "Ubuntu-22"}
+      dimensions |= {"cores": "16"}
 
     testrunner_args = ['--verbose', '--host'] if mode == 'host' else ['--target', '--verbose']
     testrunner_args += ['--debug'] if debug else ['--ndebug']
@@ -256,14 +293,15 @@ def add_builder(name,
         "testrunner_args": testrunner_args,
     }
 
-    is_fyi = (name == "qemu-riscv64-ndebug")
+    if name == "qemu-armv8-ndebug":
+      properties["manifest_branch"] = "main"  # Full tree.
 
     ci_builder(name,
                category="|".join(short_name.split("-")[:-1]),
                short_name=short_name.split("-")[-1],
                dimensions=dimensions,
                properties={k:v for k, v in properties.items() if v},
-               is_fyi=is_fyi)
+               is_fyi=False)
 
 add_builder("angler-armv7-debug", 'target', 'arm', 32, debug=True)
 add_builder("angler-armv7-non-gen-cc", 'target', 'arm', 32, debug=True, cc=False, gen_cc=False)
@@ -289,4 +327,3 @@ add_builder("host-x86_64-ndebug", 'host', 'x86', 64)
 add_builder("host-x86_64-poison-debug", 'host', 'x86', 64, debug=True, heap_poisoning=True)
 add_builder("qemu-armv8-ndebug", 'qemu', 'arm', 64)
 add_builder("qemu-riscv64-ndebug", 'qemu', 'riscv', 64)
-add_builder("qemu-riscv64-ndebug-build_only", 'qemu', 'riscv', 64)

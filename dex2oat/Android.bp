@@ -519,6 +519,7 @@ art_cc_defaults {
     ],
     static_libs: [
         "libcrypto_for_art",
+        "libgmock",
         "liblz4", // libart(d)-dex2oat dependency; must be repeated here since it's a static lib.
     ],
 }
@@ -566,6 +567,7 @@ art_cc_test {
     test_config: "art_standalone_dex2oat_cts_tests.xml",
     test_suites: [
         "cts",
+        "mts-art",
         "mcts-art",
     ],
 }

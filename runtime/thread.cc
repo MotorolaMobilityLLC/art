@@ -3867,6 +3867,7 @@ void Thread::DumpThreadOffset(std::ostream& os, uint32_t offset) {
   QUICK_ENTRY_POINT_INFO(pInvokeSuperTrampolineWithAccessCheck)
   QUICK_ENTRY_POINT_INFO(pInvokeVirtualTrampolineWithAccessCheck)
   QUICK_ENTRY_POINT_INFO(pInvokePolymorphic)
+  QUICK_ENTRY_POINT_INFO(pInvokePolymorphicWithHiddenReceiver)
   QUICK_ENTRY_POINT_INFO(pTestSuspend)
   QUICK_ENTRY_POINT_INFO(pDeliverException)
   QUICK_ENTRY_POINT_INFO(pThrowArrayBounds)
@@ -4213,8 +4214,7 @@ class ReferenceMapVisitor : public StackVisitor {
     if (m->IsNative()) {
       // TODO: Spill the `this` reference in the AOT-compiled String.charAt()
       // slow-path for throwing SIOOBE, so that we can remove this carve-out.
-      if (UNLIKELY(m->IsIntrinsic()) &&
-          m->GetIntrinsic() == enum_cast<uint32_t>(Intrinsics::kStringCharAt)) {
+      if (UNLIKELY(m->IsIntrinsic()) && m->GetIntrinsic() == Intrinsics::kStringCharAt) {
         // The String.charAt() method is AOT-compiled with an intrinsic implementation
         // instead of a JNI stub. It has a slow path that constructs a runtime frame
         // for throwing SIOOBE and in that path we do not get the `this` pointer

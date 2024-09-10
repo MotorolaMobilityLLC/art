@@ -103,12 +103,6 @@ uint16_t SYS_CNTVCT_EL0 = SystemRegisterEncoder<1, 3, 14, 0, 2>::value;
 // generates less code/data with a small num_entries.
 static constexpr uint32_t kPackedSwitchCompareJumpThreshold = 7;
 
-// Reference load (except object array loads) is using LDR Wt, [Xn, #offset] which can handle
-// offset < 16KiB. For offsets >= 16KiB, the load shall be emitted as two or more instructions.
-// For the Baker read barrier implementation using link-time generated thunks we need to split
-// the offset explicitly.
-constexpr uint32_t kReferenceLoadMinFarOffset = 16 * KB;
-
 inline Condition ARM64Condition(IfCondition cond) {
   switch (cond) {
     case kCondEQ: return eq;

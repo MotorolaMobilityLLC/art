@@ -138,6 +138,16 @@ inline Condition ARM64FPCondition(IfCondition cond, bool gt_bias) {
   }
 }
 
+Condition ARM64PCondition(HVecPredToBoolean::PCondKind cond) {
+  switch (cond) {
+    case HVecPredToBoolean::PCondKind::kFirst: return mi;
+    case HVecPredToBoolean::PCondKind::kNFirst: return pl;
+    default:
+      LOG(FATAL) << "Unsupported condition type: " << enum_cast<uint32_t>(cond);
+      UNREACHABLE();
+  }
+}
+
 Location ARM64ReturnLocation(DataType::Type return_type) {
   // Note that in practice, `LocationFrom(x0)` and `LocationFrom(w0)` create the
   // same Location object, and so do `LocationFrom(d0)` and `LocationFrom(s0)`,

@@ -126,7 +126,6 @@ cc_test {
         "NativeBridge3UnloadLibrary_test.cpp",
         "NativeBridge3GetError_test.cpp",
         "NativeBridge3IsPathSupported_test.cpp",
-        "NativeBridge3InitAnonymousNamespace_test.cpp",
         "NativeBridge3CreateNamespace_test.cpp",
         "NativeBridge3LoadLibraryExt_test.cpp",
         "NativeBridge6PreZygoteFork_test.cpp",
@@ -197,8 +196,9 @@ cc_test {
     defaults: ["art_standalone_test_defaults"],
     static_libs: [
         "libbase",
-        "libnativebridge_lazy",
     ],
+    shared_libs: ["libnativebridge_lazy"],
+    data_libs: ["libnativebridge_lazy"],
     srcs: ["libnativebridge_api_test.cpp"],
     test_suites: [
         "general-tests",

@@ -104,7 +104,7 @@ elif [[ $action = boot ]]; then
     cp "$(dirname $0)/user-data.img" "$ART_TEST_VM_DIR/user-data.img"
     cd "$ART_TEST_VM_DIR"
     if [[ "$TARGET_ARCH" = "riscv64" ]]; then
-        ($ANDROID_BUILD_TOP/prebuilts/runtime/mainline/local_riscv64/qemu/x86_64-linux-gnu/bin/qemu-system-riscv64 \
+        ($ANDROID_BUILD_TOP/device/google/cuttlefish_vmm/qemu/x86_64-linux-gnu/bin/qemu-system-riscv64 \
             -M virt \
             -nographic \
             -m 16G \
@@ -112,7 +112,6 @@ elif [[ $action = boot ]]; then
             -cpu rv64,v=true,elen=64,vlen=128,zba=true,zbb=true,zbs=true \
             -bios fw_jump.elf \
             -kernel uboot.elf \
-            -cpu rv64,v=true,vlen=128,vext_spec=v1.0 \
             -drive file="$ART_TEST_VM_IMG",if=virtio \
             -drive file=user-data.img,format=raw,if=virtio \
             -device virtio-net-device,netdev=usernet \

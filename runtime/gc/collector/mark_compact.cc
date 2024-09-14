@@ -67,9 +67,6 @@
 #ifndef MREMAP_DONTUNMAP
 #define MREMAP_DONTUNMAP 4
 #endif
-#ifndef MAP_FIXED_NOREPLACE
-#define MAP_FIXED_NOREPLACE 0x100000
-#endif
 #endif  // __BIONIC__
 
 // See aosp/2996596 for where these values came from.

@@ -721,8 +721,9 @@ class OatDumper {
 
           std::string pretty_method = dex_file->PrettyMethod(dex_method_idx, true);
 
-          os << StringPrintf(
-              "{\"method\":\"%s\",\"offset\":\"0x%08x\"}\n", pretty_method.c_str(), code_offset);
+          os << StringPrintf("{\"method\":\"%s\",\"offset\":\"0x%08zx\"}\n",
+                             pretty_method.c_str(),
+                             AdjustOffset(code_offset));
         }
       }
     }

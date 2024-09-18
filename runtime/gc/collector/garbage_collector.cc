@@ -323,7 +323,7 @@ void GarbageCollector::SweepArray(accounting::ObjectStack* allocations,
     StackReference<mirror::Object>* out = objects;
     for (size_t i = 0; i < count; ++i) {
       mirror::Object* const obj = objects[i].AsMirrorPtr();
-      if (kUseThreadLocalAllocationStack && obj == nullptr) {
+      if (obj == nullptr) {
         continue;
       }
       if (space->HasAddress(obj)) {

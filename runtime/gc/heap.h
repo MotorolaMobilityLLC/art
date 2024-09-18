@@ -825,6 +825,7 @@ class Heap {
 
   // Returns the active concurrent copying collector.
   collector::ConcurrentCopying* ConcurrentCopyingCollector() {
+    DCHECK(gUseReadBarrier);
     collector::ConcurrentCopying* active_collector =
             active_concurrent_copying_collector_.load(std::memory_order_relaxed);
     if (use_generational_cc_) {
@@ -1688,9 +1689,10 @@ class Heap {
   // Whether or not we use homogeneous space compaction to avoid OOM errors.
   bool use_homogeneous_space_compaction_for_oom_;
 
-  // If true, enable generational collection when using the Concurrent Copying
-  // (CC) collector, i.e. use sticky-bit CC for minor collections and (full) CC
-  // for major collections. Set in Heap constructor.
+  // If true, enable generational collection when using a concurrent collector
+  // like Concurrent Copying (CC) or Concurrent Mark Compact (CMC) collectors,
+  // i.e. use sticky-bit for minor collections and full heap for major collections.
+  // Set in Heap constructor.
   const bool use_generational_cc_;
 
   // True if the currently running collection has made some thread wait.

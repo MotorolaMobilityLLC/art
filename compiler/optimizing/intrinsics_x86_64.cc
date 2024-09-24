@@ -4157,11 +4157,6 @@ void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke)
   Address method_handle_kind = Address(method_handle, mirror::MethodHandle::HandleKindOffset());
   if (invoke->AsInvokePolymorphic()->CanTargetInstanceMethod()) {
     // Handle invoke-virtual case.
-    // Even if MethodHandle's kind is kInvokeVirtual, the underlying method can still be an
-    // interface or a direct method (that's what current `MethodHandles$Lookup.findVirtual` is
-    // doing). We don't check whether `method` is an interface method explicitly: in that case the
-    // subtype check below will fail.
-    // TODO(b/297147201): check whether it can be more precise and what d8/r8 can produce.
     __ cmpl(method_handle_kind, Immediate(mirror::MethodHandle::Kind::kInvokeVirtual));
     __ j(kNotEqual, &static_dispatch);
     CpuRegister receiver = locations->InAt(1).AsRegister<CpuRegister>();
@@ -4173,15 +4168,7 @@ void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke)
     __ testl(Address(method, ArtMethod::AccessFlagsOffset()), Immediate(kAccPrivate));
     __ j(kNotZero, &execute_target_method);
 
-    // Using vtable_index register as temporary in subtype check. It will be overridden later.
-    // If `method` is an interface method this check will fail.
     CpuRegister vtable_index = locations->GetTemp(0).AsRegister<CpuRegister>();
-    // We deliberately avoid the read barrier, letting the slow path handle the false negatives.
-    GenerateSubTypeObjectCheckNoReadBarrier(codegen_,
-                                            slow_path,
-                                            receiver,
-                                            vtable_index,
-                                            Address(method, ArtMethod::DeclaringClassOffset()));
 
     // MethodIndex is uint16_t.
     __ movzxw(vtable_index, Address(method, ArtMethod::MethodIndexOffset()));

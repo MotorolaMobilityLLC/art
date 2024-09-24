@@ -1,0 +1,1 @@
+Test that we successfully intrinsify VarHandle's getAndUpdate intrinsics.

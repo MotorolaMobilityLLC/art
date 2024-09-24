@@ -352,7 +352,7 @@ void EnterInterpreterFromInvoke(Thread* self,
   DCHECK_EQ(self, Thread::Current());
   bool implicit_check = Runtime::Current()->GetImplicitStackOverflowChecks();
   if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEndForInterpreter(implicit_check))) {
-    ThrowStackOverflowError(self);
+    ThrowStackOverflowError<kNativeStackType>(self);
     return;
   }
 
@@ -570,7 +570,7 @@ JValue EnterInterpreterFromEntryPoint(Thread* self, const CodeItemDataAccessor& 
   DCHECK_EQ(self, Thread::Current());
   bool implicit_check = Runtime::Current()->GetImplicitStackOverflowChecks();
   if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEndForInterpreter(implicit_check))) {
-    ThrowStackOverflowError(self);
+    ThrowStackOverflowError<kNativeStackType>(self);
     return JValue();
   }
 
@@ -588,7 +588,7 @@ void ArtInterpreterToInterpreterBridge(Thread* self,
                                        JValue* result) {
   bool implicit_check = Runtime::Current()->GetImplicitStackOverflowChecks();
   if (UNLIKELY(__builtin_frame_address(0) < self->GetStackEndForInterpreter(implicit_check))) {
-    ThrowStackOverflowError(self);
+    ThrowStackOverflowError<kNativeStackType>(self);
     return;
   }
 

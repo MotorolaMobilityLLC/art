@@ -4099,12 +4099,6 @@ static void GenerateVarHandleGet(HInvoke* invoke,
 }
 
 void IntrinsicLocationsBuilderX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
-  // Don't emit intrinsic code for MethodHandle.invokeExact when it certainly does not target
-  // invoke-virtual: if invokeExact is called w/o arguments or if the first argument in that
-  // call is not a reference.
-  if (!invoke->AsInvokePolymorphic()->CanHaveFastPath()) {
-    return;
-  }
   ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
   LocationSummary* locations = new (allocator)
       LocationSummary(invoke, LocationSummary::kCallOnMainAndSlowPath, kIntrinsified);
@@ -4127,7 +4121,6 @@ void IntrinsicLocationsBuilderX86_64::VisitMethodHandleInvokeExact(HInvoke* invo
 }
 
 void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
-  DCHECK(invoke->AsInvokePolymorphic()->CanHaveFastPath());
   LocationSummary* locations = invoke->GetLocations();
 
   CpuRegister method_handle = locations->InAt(0).AsRegister<CpuRegister>();
@@ -4137,17 +4130,6 @@ void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke)
   codegen_->AddSlowPath(slow_path);
   X86_64Assembler* assembler = codegen_->GetAssembler();
 
-  Address method_handle_kind = Address(method_handle, mirror::MethodHandle::HandleKindOffset());
-
-  // If it is not InvokeVirtual then go to slow path.
-  // Even if MethodHandle's kind is kInvokeVirtual, the underlying method can still be an interface
-  // or a direct method (that's what current `MethodHandles$Lookup.findVirtual` is doing). We don't
-  // check whether `method` is an interface method explicitly: in that case the subtype check below
-  // will fail.
-  // TODO(b/297147201): check whether it can be more precise and what d8/r8 can produce.
-  __ cmpl(method_handle_kind, Immediate(mirror::MethodHandle::Kind::kInvokeVirtual));
-  __ j(kNotEqual, slow_path->GetEntryLabel());
-
   CpuRegister call_site_type =
       locations->InAt(invoke->GetNumberOfArguments()).AsRegister<CpuRegister>();
 
@@ -4156,40 +4138,56 @@ void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke)
   __ j(kNotEqual, slow_path->GetEntryLabel());
 
   CpuRegister method = CpuRegister(kMethodRegisterArgument);
-
-  // Get method to call.
   __ movq(method, Address(method_handle, mirror::MethodHandle::ArtFieldOrMethodOffset()));
 
-  CpuRegister receiver = locations->InAt(1).AsRegister<CpuRegister>();
+  Label static_dispatch;
+  Label execute_target_method;
 
-  __ testl(receiver, receiver);
-  __ j(kEqual, slow_path->GetEntryLabel());
+  Address method_handle_kind = Address(method_handle, mirror::MethodHandle::HandleKindOffset());
+  if (invoke->AsInvokePolymorphic()->CanTargetInstanceMethod()) {
+    // Handle invoke-virtual case.
+    // Even if MethodHandle's kind is kInvokeVirtual, the underlying method can still be an
+    // interface or a direct method (that's what current `MethodHandles$Lookup.findVirtual` is
+    // doing). We don't check whether `method` is an interface method explicitly: in that case the
+    // subtype check below will fail.
+    // TODO(b/297147201): check whether it can be more precise and what d8/r8 can produce.
+    __ cmpl(method_handle_kind, Immediate(mirror::MethodHandle::Kind::kInvokeVirtual));
+    __ j(kNotEqual, &static_dispatch);
+    CpuRegister receiver = locations->InAt(1).AsRegister<CpuRegister>();
 
-  // Using vtable_index register as temporary in subtype check. It will be overridden later.
-  // If `method` is an interface method this check will fail.
-  CpuRegister vtable_index = locations->GetTemp(0).AsRegister<CpuRegister>();
-  // We deliberately avoid the read barrier, letting the slow path handle the false negatives.
-  GenerateSubTypeObjectCheckNoReadBarrier(codegen_,
-                                          slow_path,
-                                          receiver,
-                                          vtable_index,
-                                          Address(method, ArtMethod::DeclaringClassOffset()));
+    __ testl(receiver, receiver);
+    __ j(kEqual, slow_path->GetEntryLabel());
 
-  NearLabel execute_target_method;
-  // Skip virtual dispatch if `method` is private.
-  __ testl(Address(method, ArtMethod::AccessFlagsOffset()), Immediate(kAccPrivate));
-  __ j(kNotZero, &execute_target_method);
+    // Skip virtual dispatch if `method` is private.
+    __ testl(Address(method, ArtMethod::AccessFlagsOffset()), Immediate(kAccPrivate));
+    __ j(kNotZero, &execute_target_method);
 
-  // MethodIndex is uint16_t.
-  __ movzxw(vtable_index, Address(method, ArtMethod::MethodIndexOffset()));
+    // Using vtable_index register as temporary in subtype check. It will be overridden later.
+    // If `method` is an interface method this check will fail.
+    CpuRegister vtable_index = locations->GetTemp(0).AsRegister<CpuRegister>();
+    // We deliberately avoid the read barrier, letting the slow path handle the false negatives.
+    GenerateSubTypeObjectCheckNoReadBarrier(codegen_,
+                                            slow_path,
+                                            receiver,
+                                            vtable_index,
+                                            Address(method, ArtMethod::DeclaringClassOffset()));
 
-  constexpr uint32_t class_offset = mirror::Object::ClassOffset().Int32Value();
-  // Re-using method register for receiver class.
-  __ movl(method, Address(receiver, class_offset));
+    // MethodIndex is uint16_t.
+    __ movzxw(vtable_index, Address(method, ArtMethod::MethodIndexOffset()));
 
-  constexpr uint32_t vtable_offset =
-      mirror::Class::EmbeddedVTableOffset(art::PointerSize::k64).Int32Value();
-  __ movq(method, Address(method, vtable_index, TIMES_8, vtable_offset));
+    constexpr uint32_t class_offset = mirror::Object::ClassOffset().Int32Value();
+    // Re-using method register for receiver class.
+    __ movl(method, Address(receiver, class_offset));
+
+    constexpr uint32_t vtable_offset =
+        mirror::Class::EmbeddedVTableOffset(art::PointerSize::k64).Int32Value();
+    __ movq(method, Address(method, vtable_index, TIMES_8, vtable_offset));
+    __ Jump(&execute_target_method);
+  }
+  __ Bind(&static_dispatch);
+  __ cmpl(method_handle_kind, Immediate(mirror::MethodHandle::Kind::kInvokeStatic));
+  __ j(kNotEqual, slow_path->GetEntryLabel());
+  // MH's kind is invoke-static. The method can be called directly, hence fall-through.
 
   __ Bind(&execute_target_method);
   __ call(Address(

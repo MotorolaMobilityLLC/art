@@ -1394,14 +1394,9 @@ bool HInstructionBuilder::BuildInvokePolymorphic(uint32_t dex_pc,
   // MethodHandle.invokeExact intrinsic needs to check whether call-site matches with MethodHandle's
   // type. To do that, MethodType corresponding to the call-site is passed as an extra input.
   // Other invoke-polymorphic calls do not need it.
-  bool is_invoke_exact =
+  bool can_be_intrinsified =
       static_cast<Intrinsics>(resolved_method->GetIntrinsic()) ==
           Intrinsics::kMethodHandleInvokeExact;
-  // Currently intrinsic works for MethodHandle targeting invoke-virtual calls only.
-  bool can_be_virtual = number_of_arguments >= 2 &&
-      DataType::FromShorty(shorty[1]) == DataType::Type::kReference;
-
-  bool can_be_intrinsified = is_invoke_exact && can_be_virtual;
 
   uint32_t number_of_other_inputs = can_be_intrinsified ? 1u : 0u;
 
@@ -1418,7 +1413,7 @@ bool HInstructionBuilder::BuildInvokePolymorphic(uint32_t dex_pc,
     return false;
   }
 
-  DCHECK_EQ(invoke->AsInvokePolymorphic()->CanHaveFastPath(), can_be_intrinsified);
+  DCHECK_EQ(invoke->AsInvokePolymorphic()->IsMethodHandleInvokeExact(), can_be_intrinsified);
 
   if (invoke->GetIntrinsic() != Intrinsics::kNone &&
       invoke->GetIntrinsic() != Intrinsics::kMethodHandleInvoke &&
@@ -1902,7 +1897,7 @@ bool HInstructionBuilder::SetupInvokeArguments(HInstruction* invoke,
 
     // MethodHandle.invokeExact intrinsic expects MethodType corresponding to the call-site as an
     // extra input to determine whether to throw WrongMethodTypeException or execute target method.
-    if (invoke_polymorphic->CanHaveFastPath()) {
+    if (invoke_polymorphic->IsMethodHandleInvokeExact()) {
       HLoadMethodType* load_method_type =
           new (allocator_) HLoadMethodType(graph_->GetCurrentMethod(),
                                            invoke_polymorphic->GetProtoIndex(),

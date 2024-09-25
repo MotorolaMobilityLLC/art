@@ -16,7 +16,6 @@
 
 #include "intrinsics_arm_vixl.h"
 
-#include "aarch32/constants-aarch32.h"
 #include "arch/arm/callee_save_frame_arm.h"
 #include "arch/arm/instruction_set_features_arm.h"
 #include "art_method.h"
@@ -31,10 +30,11 @@
 #include "mirror/object_array-inl.h"
 #include "mirror/reference.h"
 #include "mirror/string-inl.h"
-#include "optimizing/data_type.h"
 #include "scoped_thread_state_change-inl.h"
 #include "thread-current-inl.h"
 #include "well_known_classes.h"
+
+#include "aarch32/constants-aarch32.h"
 
 namespace art HIDDEN {
 namespace arm {
@@ -3871,15 +3871,9 @@ static void CreateUnsafeGetAndUpdateLocations(HInvoke* invoke,
   locations->SetInAt(2, Location::RequiresRegister());
   locations->SetInAt(3, Location::RequiresRegister());
 
-  // Request another temporary register for methods that don't return a value.
-  size_t num_temps = 1u;  // We always need `tmp_ptr`.
-  const bool is_void = invoke->GetType() == DataType::Type::kVoid;
-  if (is_void) {
-    num_temps++;
-  } else {
-    locations->SetOut(Location::RequiresRegister(), Location::kOutputOverlap);
-  }
+  locations->SetOut(Location::RequiresRegister(), Location::kOutputOverlap);
 
+  size_t num_temps = 1u;  // We always need `tmp_ptr`.
   if (get_and_update_op == GetAndUpdateOp::kAdd) {
     // Add `maybe_temp` used for the new value in `GenerateGetAndUpdate()`.
     num_temps += (type == DataType::Type::kInt64) ? 2u : 1u;
@@ -3900,18 +3894,10 @@ static void GenUnsafeGetAndUpdate(HInvoke* invoke,
                                   CodeGeneratorARMVIXL* codegen,
                                   DataType::Type type,
                                   GetAndUpdateOp get_and_update_op) {
-  // Currently only used for these GetAndUpdateOp. Might be fine for other ops but double check
-  // before using.
-  DCHECK(get_and_update_op == GetAndUpdateOp::kAdd || get_and_update_op == GetAndUpdateOp::kSet);
-
   ArmVIXLAssembler* assembler = codegen->GetAssembler();
   LocationSummary* locations = invoke->GetLocations();
 
-  const bool is_void = invoke->GetType() == DataType::Type::kVoid;
-
-  // We use a temporary for void methods, as we don't return the value.
-  Location out_or_temp =
-      is_void ? locations->GetTemp(locations->GetTempCount() - 1u) : locations->Out();
+  Location out = locations->Out();                                  // Result.
   vixl32::Register base = InputRegisterAt(invoke, 1);               // Object pointer.
   vixl32::Register offset = LowRegisterFrom(locations->InAt(2));    // Offset (discard high 4B).
   Location arg = locations->InAt(3);                                // New value or addend.
@@ -3944,24 +3930,24 @@ static void GenUnsafeGetAndUpdate(HInvoke* invoke,
                        type,
                        tmp_ptr,
                        arg,
-                       /*old_value=*/ out_or_temp,
+                       /*old_value=*/ out,
                        /*store_result=*/ temp,
                        maybe_temp,
                        /*maybe_vreg_temp=*/ Location::NoLocation());
   codegen->GenerateMemoryBarrier(MemBarrierKind::kAnyAny);
 
-  if (!is_void && type == DataType::Type::kReference && codegen->EmitReadBarrier()) {
+  if (type == DataType::Type::kReference && codegen->EmitReadBarrier()) {
     DCHECK(get_and_update_op == GetAndUpdateOp::kSet);
     if (kUseBakerReadBarrier) {
-      codegen->GenerateIntrinsicMoveWithBakerReadBarrier(RegisterFrom(out_or_temp),
-                                                         RegisterFrom(out_or_temp));
+      codegen->GenerateIntrinsicMoveWithBakerReadBarrier(RegisterFrom(out), RegisterFrom(out));
     } else {
-      codegen->GenerateReadBarrierSlow(invoke,
-                                       out_or_temp,
-                                       out_or_temp,
-                                       Location::RegisterLocation(base.GetCode()),
-                                       /*offset=*/ 0u,
-                                       /*index=*/ Location::RegisterLocation(offset.GetCode()));
+      codegen->GenerateReadBarrierSlow(
+          invoke,
+          out,
+          out,
+          Location::RegisterLocation(base.GetCode()),
+          /*offset=*/ 0u,
+          /*index=*/ Location::RegisterLocation(offset.GetCode()));
     }
   }
 }
@@ -4670,7 +4656,6 @@ static void CreateVarHandleSetLocations(HInvoke* invoke,
 
   LocationSummary* locations = CreateVarHandleCommonLocations(invoke, codegen);
 
-  // Get the type from the shorty as the invokes may not return a value.
   uint32_t number_of_arguments = invoke->GetNumberOfArguments();
   DataType::Type value_type = GetDataTypeFromShorty(invoke, number_of_arguments - 1u);
   if (DataType::Is64BitType(value_type)) {
@@ -5178,10 +5163,7 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
     return;
   }
 
-  // Get the type from the shorty as the invokes may not return a value.
-  uint32_t arg_index = invoke->GetNumberOfArguments() - 1;
-  DataType::Type value_type = GetDataTypeFromShorty(invoke, arg_index);
-  if (value_type == DataType::Type::kReference && codegen->EmitNonBakerReadBarrier()) {
+  if (invoke->GetType() == DataType::Type::kReference && codegen->EmitNonBakerReadBarrier()) {
     // Unsupported for non-Baker read barrier because the artReadBarrierSlow() ignores
     // the passed reference and reloads it from the field, thus seeing the new value
     // that we have just stored. (And it also gets the memory visibility wrong.) b/173104084
@@ -5195,6 +5177,7 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
   DCHECK_EQ(locations->GetTempCount(),
             (GetExpectedVarHandleCoordinatesCount(invoke) == 0) ? 2u : 1u);
 
+  DataType::Type value_type = invoke->GetType();
   if (get_and_update_op == GetAndUpdateOp::kSet) {
     if (DataType::IsFloatingPointType(value_type)) {
       // Add temps needed to do the GenerateGetAndUpdate() with core registers.
@@ -5228,23 +5211,6 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
       locations->AddTemp(Location::RequiresFpuRegister());
     }
   }
-
-  // For the non-void case, we already set `out` in `CreateVarHandleCommonLocations`.
-  DataType::Type return_type = invoke->GetType();
-  const bool is_void = return_type == DataType::Type::kVoid;
-  DCHECK_IMPLIES(!is_void, return_type == value_type);
-  if (is_void) {
-    if (DataType::IsFloatingPointType(value_type)) {
-      // Note: This shall allocate a D register. There is no way to request an S register.
-      locations->AddTemp(Location::RequiresFpuRegister());
-    } else if (DataType::Is64BitType(value_type)) {
-      // We need two for non-fpu 64 bit types.
-      locations->AddTemp(Location::RequiresRegister());
-      locations->AddTemp(Location::RequiresRegister());
-    } else {
-      locations->AddTemp(Location::RequiresRegister());
-    }
-  }
 }
 
 static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
@@ -5252,38 +5218,13 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
                                           GetAndUpdateOp get_and_update_op,
                                           std::memory_order order,
                                           bool byte_swap = false) {
-  // Get the type from the shorty as the invokes may not return a value.
   uint32_t arg_index = invoke->GetNumberOfArguments() - 1;
   DataType::Type value_type = GetDataTypeFromShorty(invoke, arg_index);
 
   ArmVIXLAssembler* assembler = codegen->GetAssembler();
   LocationSummary* locations = invoke->GetLocations();
   Location arg = locations->InAt(arg_index);
-  DataType::Type return_type = invoke->GetType();
-  const bool is_void = return_type == DataType::Type::kVoid;
-  DCHECK_IMPLIES(!is_void, return_type == value_type);
-
-  size_t temps_that_mimic_out;
-  Location result;
-  const size_t temp_count = locations->GetTempCount();
-  if (is_void) {
-    if (value_type == DataType::Type::kFloat32) {
-      // Note: Since we allocated a D register, use the low part.
-      DCHECK(locations->GetTemp(temp_count - 1u).IsFpuRegisterPair());
-      temps_that_mimic_out = 1u;
-      result = locations->GetTemp(temp_count - 1u).ToLow();
-    } else if (!DataType::IsFloatingPointType(value_type) && DataType::Is64BitType(value_type)) {
-      temps_that_mimic_out = 2u;
-      result = LocationFrom(RegisterFrom(locations->GetTemp(temp_count - 2u)),
-                            RegisterFrom(locations->GetTemp(temp_count - 1u)));
-    } else {
-      temps_that_mimic_out = 1u;
-      result = locations->GetTemp(temp_count - 1u);
-    }
-  } else {
-    temps_that_mimic_out = 0u;
-    result = locations->Out();
-  }
+  Location out = locations->Out();
 
   VarHandleTarget target = GetVarHandleTarget(invoke);
   VarHandleSlowPathARMVIXL* slow_path = nullptr;
@@ -5320,7 +5261,7 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
       : value_type;
 
   // Prepare register for old value and temporaries if any.
-  Location old_value = result;
+  Location old_value = out;
   Location maybe_temp = Location::NoLocation();
   Location maybe_vreg_temp = Location::NoLocation();
   if (get_and_update_op == GetAndUpdateOp::kSet) {
@@ -5328,9 +5269,7 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
     // rather than moving between core and FP registers in the loop.
     if (value_type == DataType::Type::kFloat64) {
       vixl32::DRegister arg_vreg = DRegisterFrom(arg);
-      // `store_result` and the four here, plus maybe an extra one for the temp that mimics the
-      // "out" register.
-      DCHECK_EQ(temp_count, 5u + temps_that_mimic_out);
+      DCHECK_EQ(locations->GetTempCount(), 5u);  // `store_result` and the four here.
       old_value =
           LocationFrom(RegisterFrom(locations->GetTemp(1)), RegisterFrom(locations->GetTemp(2)));
       arg = LocationFrom(RegisterFrom(locations->GetTemp(3)), RegisterFrom(locations->GetTemp(4)));
@@ -5342,9 +5281,7 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
       }
     } else if (value_type == DataType::Type::kFloat32) {
       vixl32::SRegister arg_vreg = SRegisterFrom(arg);
-      // `store_result` and the two here, plus maybe an extra one for the temp that mimics the
-      // "out" register.
-      DCHECK_EQ(temp_count, 3u + temps_that_mimic_out);
+      DCHECK_EQ(locations->GetTempCount(), 3u);  // `store_result` and the two here.
       old_value = locations->GetTemp(1);
       arg = locations->GetTemp(2);
       __ Vmov(RegisterFrom(arg), arg_vreg);
@@ -5356,7 +5293,7 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
         // Load the old value initially to a temporary register.
         // We shall move it to `out` later with a read barrier.
         old_value = LocationFrom(store_result);
-        store_result = RegisterFrom(result);  // Use `result` for the exclusive store result.
+        store_result = RegisterFrom(out);  // Use the `out` for the exclusive store result.
       } else {
         // The store_result is a separate temporary.
         DCHECK(!store_result.Is(target.object));
@@ -5368,7 +5305,7 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
       if (value_type == DataType::Type::kInt64) {
         arg = LocationFrom(RegisterFrom(arg), RegisterFrom(locations->GetTemp(2)));
         // Swap the high/low regs and reverse the bytes in each after the load.
-        old_value = LocationFrom(HighRegisterFrom(result), LowRegisterFrom(result));
+        old_value = LocationFrom(HighRegisterFrom(out), LowRegisterFrom(out));
       }
       GenerateReverseBytes(assembler, value_type, original_arg, arg);
     }
@@ -5378,7 +5315,7 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
         : locations->GetTemp(1);
     DCHECK(!maybe_temp.Contains(LocationFrom(store_result)));
     if (DataType::IsFloatingPointType(value_type)) {
-      maybe_vreg_temp = locations->GetTemp(temp_count - 1u - temps_that_mimic_out);
+      maybe_vreg_temp = locations->GetTemp(locations->GetTempCount() - 1u);
       DCHECK(maybe_vreg_temp.IsFpuRegisterPair());
     }
     if (byte_swap) {
@@ -5387,7 +5324,7 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
         get_and_update_op = GetAndUpdateOp::kAddWithByteSwap;
       } else if (value_type == DataType::Type::kInt64) {
         // Swap the high/low regs and reverse the bytes in each after the load.
-        old_value = LocationFrom(HighRegisterFrom(result), LowRegisterFrom(result));
+        old_value = LocationFrom(HighRegisterFrom(out), LowRegisterFrom(out));
         // Due to lack of registers, reverse bytes in `arg` and undo that later.
         GenerateReverseBytesInPlaceForEachWord(assembler, arg);
         arg = LocationFrom(HighRegisterFrom(arg), LowRegisterFrom(arg));
@@ -5416,38 +5353,36 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
         seq_cst_barrier ? MemBarrierKind::kAnyAny : MemBarrierKind::kLoadAny);
   }
 
-  if (!is_void) {
-    if (byte_swap && get_and_update_op != GetAndUpdateOp::kAddWithByteSwap) {
-      if (value_type == DataType::Type::kInt64) {
-        GenerateReverseBytesInPlaceForEachWord(assembler, old_value);
-        if (get_and_update_op != GetAndUpdateOp::kSet) {
-          // Undo byte swapping in `arg`. We do not have the information
-          // whether the value in these registers shall be needed later.
-          GenerateReverseBytesInPlaceForEachWord(assembler, arg);
-        }
-      } else {
-        GenerateReverseBytes(assembler, value_type, old_value, result);
+  if (byte_swap && get_and_update_op != GetAndUpdateOp::kAddWithByteSwap) {
+    if (value_type == DataType::Type::kInt64) {
+      GenerateReverseBytesInPlaceForEachWord(assembler, old_value);
+      if (get_and_update_op != GetAndUpdateOp::kSet) {
+        // Undo byte swapping in `arg`. We do not have the information
+        // whether the value in these registers shall be needed later.
+        GenerateReverseBytesInPlaceForEachWord(assembler, arg);
       }
-    } else if (get_and_update_op == GetAndUpdateOp::kSet &&
-               DataType::IsFloatingPointType(value_type)) {
-      if (value_type == DataType::Type::kFloat64) {
-        __ Vmov(DRegisterFrom(result), LowRegisterFrom(old_value), HighRegisterFrom(old_value));
-      } else {
-        __ Vmov(SRegisterFrom(result), RegisterFrom(old_value));
-      }
-    } else if (value_type == DataType::Type::kReference && codegen->EmitReadBarrier()) {
-      if (kUseBakerReadBarrier) {
-        codegen->GenerateIntrinsicMoveWithBakerReadBarrier(RegisterFrom(result),
-                                                           RegisterFrom(old_value));
-      } else {
-        codegen->GenerateReadBarrierSlow(
-            invoke,
-            Location::RegisterLocation(RegisterFrom(result).GetCode()),
-            Location::RegisterLocation(RegisterFrom(old_value).GetCode()),
-            Location::RegisterLocation(target.object.GetCode()),
-            /*offset=*/ 0u,
-            /*index=*/ Location::RegisterLocation(target.offset.GetCode()));
-      }
+    } else {
+      GenerateReverseBytes(assembler, value_type, old_value, out);
+    }
+  } else if (get_and_update_op == GetAndUpdateOp::kSet &&
+             DataType::IsFloatingPointType(value_type)) {
+    if (value_type == DataType::Type::kFloat64) {
+      __ Vmov(DRegisterFrom(out), LowRegisterFrom(old_value), HighRegisterFrom(old_value));
+    } else {
+      __ Vmov(SRegisterFrom(out), RegisterFrom(old_value));
+    }
+  } else if (value_type == DataType::Type::kReference && codegen->EmitReadBarrier()) {
+    if (kUseBakerReadBarrier) {
+      codegen->GenerateIntrinsicMoveWithBakerReadBarrier(RegisterFrom(out),
+                                                         RegisterFrom(old_value));
+    } else {
+      codegen->GenerateReadBarrierSlow(
+          invoke,
+          Location::RegisterLocation(RegisterFrom(out).GetCode()),
+          Location::RegisterLocation(RegisterFrom(old_value).GetCode()),
+          Location::RegisterLocation(target.object.GetCode()),
+          /*offset=*/ 0u,
+          /*index=*/ Location::RegisterLocation(target.offset.GetCode()));
     }
   }
 

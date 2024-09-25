@@ -2955,20 +2955,35 @@ static void CreateUnsafeGetAndUpdateLocations(ArenaAllocator* allocator,
   locations->SetInAt(2, Location::RequiresRegister());
   locations->SetInAt(3, Location::RequiresRegister());
 
-  locations->SetOut(Location::RequiresRegister(), Location::kOutputOverlap);
+  // Request another temporary register for methods that don't return a value.
+  DataType::Type return_type = invoke->GetType();
+  const bool is_void = return_type == DataType::Type::kVoid;
+  if (is_void) {
+    locations->AddTemp(Location::RequiresRegister());
+  } else {
+    locations->SetOut(Location::RequiresRegister(), Location::kOutputOverlap);
+  }
 }
 
 static void GenUnsafeGetAndUpdate(HInvoke* invoke,
                                   DataType::Type type,
                                   CodeGeneratorRISCV64* codegen,
                                   GetAndUpdateOp get_and_update_op) {
+  // Currently only used for these GetAndUpdateOp. Might be fine for other ops but double check
+  // before using.
+  DCHECK(get_and_update_op == GetAndUpdateOp::kAdd || get_and_update_op == GetAndUpdateOp::kSet);
+
   Riscv64Assembler* assembler = codegen->GetAssembler();
   LocationSummary* locations = invoke->GetLocations();
-  Location out_loc = locations->Out();
-  XRegister out = out_loc.AsRegister<XRegister>();                    // Result.
-  XRegister base = locations->InAt(1).AsRegister<XRegister>();        // Object pointer.
-  XRegister offset = locations->InAt(2).AsRegister<XRegister>();      // Long offset.
-  XRegister arg = locations->InAt(3).AsRegister<XRegister>();         // New value or addend.
+  DataType::Type return_type = invoke->GetType();
+  const bool is_void = return_type == DataType::Type::kVoid;
+  // We use a temporary for void methods, as we don't return the value.
+  Location out_or_temp_loc =
+      is_void ? locations->GetTemp(locations->GetTempCount() - 1u) : locations->Out();
+  XRegister out_or_temp = out_or_temp_loc.AsRegister<XRegister>();  // Result.
+  XRegister base = locations->InAt(1).AsRegister<XRegister>();      // Object pointer.
+  XRegister offset = locations->InAt(2).AsRegister<XRegister>();    // Long offset.
+  XRegister arg = locations->InAt(3).AsRegister<XRegister>();       // New value or addend.
 
   // This needs to be before the temp registers, as MarkGCCard also uses scratch registers.
   if (type == DataType::Type::kReference) {
@@ -2987,28 +3002,28 @@ static void GenUnsafeGetAndUpdate(HInvoke* invoke,
                        std::memory_order_seq_cst,
                        tmp_ptr,
                        arg,
-                       /*old_value=*/ out,
+                       /*old_value=*/ out_or_temp,
                        /*mask=*/ kNoXRegister,
                        /*temp=*/ kNoXRegister);
 
-  if (type == DataType::Type::kReference) {
-    __ ZextW(out, out);
+  if (!is_void && type == DataType::Type::kReference) {
+    __ ZextW(out_or_temp, out_or_temp);
     if (codegen->EmitReadBarrier()) {
       DCHECK(get_and_update_op == GetAndUpdateOp::kSet);
       if (kUseBakerReadBarrier) {
         // Use RA as temp. It is clobbered in the slow path anyway.
         static constexpr Location kBakerReadBarrierTemp = Location::RegisterLocation(RA);
-        SlowPathCodeRISCV64* rb_slow_path =
-            codegen->AddGcRootBakerBarrierBarrierSlowPath(invoke, out_loc, kBakerReadBarrierTemp);
-        codegen->EmitBakerReadBarierMarkingCheck(rb_slow_path, out_loc, kBakerReadBarrierTemp);
+        SlowPathCodeRISCV64* rb_slow_path = codegen->AddGcRootBakerBarrierBarrierSlowPath(
+            invoke, out_or_temp_loc, kBakerReadBarrierTemp);
+        codegen->EmitBakerReadBarierMarkingCheck(
+            rb_slow_path, out_or_temp_loc, kBakerReadBarrierTemp);
       } else {
-        codegen->GenerateReadBarrierSlow(
-            invoke,
-            out_loc,
-            out_loc,
-            Location::RegisterLocation(base),
-            /*offset=*/ 0u,
-            /*index=*/ Location::RegisterLocation(offset));
+        codegen->GenerateReadBarrierSlow(invoke,
+                                         out_or_temp_loc,
+                                         out_or_temp_loc,
+                                         Location::RegisterLocation(base),
+                                         /*offset=*/ 0u,
+                                         /*index=*/ Location::RegisterLocation(offset));
       }
     }
   }
@@ -4450,7 +4465,11 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
     return;
   }
 
-  if (invoke->GetType() == DataType::Type::kReference && codegen->EmitNonBakerReadBarrier()) {
+  // Get the type from the shorty as the invokes may not return a value.
+  LocationSummary* locations = CreateVarHandleCommonLocations(invoke, codegen);
+  uint32_t arg_index = invoke->GetNumberOfArguments() - 1;
+  DataType::Type value_type = GetDataTypeFromShorty(invoke, arg_index);
+  if (value_type == DataType::Type::kReference && codegen->EmitNonBakerReadBarrier()) {
     // Unsupported for non-Baker read barrier because the artReadBarrierSlow() ignores
     // the passed reference and reloads it from the field, thus seeing the new value
     // that we have just stored. (And it also gets the memory visibility wrong.) b/173104084
@@ -4458,15 +4477,10 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
   }
 
   // TODO(riscv64): Fix this intrinsic for heap poisoning configuration.
-  if (kPoisonHeapReferences && invoke->GetType() == DataType::Type::kReference) {
+  if (kPoisonHeapReferences && value_type == DataType::Type::kReference) {
     return;
   }
 
-  LocationSummary* locations = CreateVarHandleCommonLocations(invoke, codegen);
-  uint32_t arg_index = invoke->GetNumberOfArguments() - 1u;
-  DCHECK_EQ(arg_index, 1u + GetExpectedVarHandleCoordinatesCount(invoke));
-  DataType::Type value_type = invoke->GetType();
-  DCHECK_EQ(value_type, GetDataTypeFromShorty(invoke, arg_index));
   Location arg = locations->InAt(arg_index);
 
   bool is_fp = DataType::IsFloatingPointType(value_type);
@@ -4517,6 +4531,19 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
   if (temps_needed > old_temp_count + scratch_registers_available) {
     locations->AddRegisterTemps(temps_needed - (old_temp_count + scratch_registers_available));
   }
+
+  // Request another temporary register for methods that don't return a value.
+  // For the non-void case, we already set `out` in `CreateVarHandleCommonLocations`.
+  DataType::Type return_type = invoke->GetType();
+  const bool is_void = return_type == DataType::Type::kVoid;
+  DCHECK_IMPLIES(!is_void, return_type == value_type);
+  if (is_void) {
+    if (DataType::IsFloatingPointType(value_type)) {
+      locations->AddTemp(Location::RequiresFpuRegister());
+    } else {
+      locations->AddTemp(Location::RequiresRegister());
+    }
+  }
 }
 
 static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
@@ -4524,16 +4551,21 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
                                           GetAndUpdateOp get_and_update_op,
                                           std::memory_order order,
                                           bool byte_swap = false) {
+  // Get the type from the shorty as the invokes may not return a value.
   uint32_t arg_index = invoke->GetNumberOfArguments() - 1;
   DCHECK_EQ(arg_index, 1u + GetExpectedVarHandleCoordinatesCount(invoke));
-  DataType::Type value_type = invoke->GetType();
-  DCHECK_EQ(value_type, GetDataTypeFromShorty(invoke, arg_index));
+  DataType::Type value_type = GetDataTypeFromShorty(invoke, arg_index);
 
   Riscv64Assembler* assembler = codegen->GetAssembler();
   LocationSummary* locations = invoke->GetLocations();
   Location arg = locations->InAt(arg_index);
   DCHECK_IMPLIES(arg.IsConstant(), arg.GetConstant()->IsZeroBitPattern());
-  Location out = locations->Out();
+  DataType::Type return_type = invoke->GetType();
+  const bool is_void = return_type == DataType::Type::kVoid;
+  DCHECK_IMPLIES(!is_void, return_type == value_type);
+  // We use a temporary for void methods, as we don't return the value.
+  Location out_or_temp =
+      is_void ? locations->GetTemp(locations->GetTempCount() - 1u) : locations->Out();
 
   VarHandleTarget target = GetVarHandleTarget(invoke);
   VarHandleSlowPathRISCV64* slow_path = nullptr;
@@ -4589,6 +4621,8 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
       available_scratch_registers -= 1u;
       return srs.AllocateXRegister();
     } else {
+      DCHECK_IMPLIES(is_void, next_temp != locations->GetTempCount() - 1u)
+          << "The last temp is special for the void case, as it represents the out register.";
       XRegister temp = locations->GetTemp(next_temp).AsRegister<XRegister>();
       next_temp += 1u;
       return temp;
@@ -4678,24 +4712,24 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
     codegen->GetInstructionVisitor()->Load(
         Location::RegisterLocation(old_value), tmp_ptr, /*offset=*/ 0, op_type);
     if (byte_swap) {
-      GenerateByteSwapAndExtract(codegen, out, old_value, shift, value_type);
+      GenerateByteSwapAndExtract(codegen, out_or_temp, old_value, shift, value_type);
     } else {
       DCHECK(is_fp);
-      codegen->MoveLocation(out, Location::RegisterLocation(old_value), value_type);
+      codegen->MoveLocation(out_or_temp, Location::RegisterLocation(old_value), value_type);
     }
     if (is_fp) {
       codegen->GetInstructionVisitor()->FAdd(
-          ftmp, out.AsFpuRegister<FRegister>(), arg.AsFpuRegister<FRegister>(), value_type);
+          ftmp, out_or_temp.AsFpuRegister<FRegister>(), arg.AsFpuRegister<FRegister>(), value_type);
       codegen->MoveLocation(
           Location::RegisterLocation(new_value), Location::FpuRegisterLocation(ftmp), op_type);
     } else if (arg.IsConstant()) {
       DCHECK(arg.GetConstant()->IsZeroBitPattern());
-      __ Mv(new_value, out.AsRegister<XRegister>());
+      __ Mv(new_value, out_or_temp.AsRegister<XRegister>());
     } else if (value_type == DataType::Type::kInt64) {
-      __ Add(new_value, out.AsRegister<XRegister>(), arg.AsRegister<XRegister>());
+      __ Add(new_value, out_or_temp.AsRegister<XRegister>(), arg.AsRegister<XRegister>());
     } else {
       DCHECK_EQ(op_type, DataType::Type::kInt32);
-      __ Addw(new_value, out.AsRegister<XRegister>(), arg.AsRegister<XRegister>());
+      __ Addw(new_value, out_or_temp.AsRegister<XRegister>(), arg.AsRegister<XRegister>());
     }
     if (byte_swap) {
       DataType::Type swap_type = op_type;
@@ -4706,7 +4740,7 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
         // To update the 16 bits, we can XOR the new value with the `out`, byte swap as Uint16
         // (extracting only the bits we want to update), shift and XOR with the old value.
         swap_type = DataType::Type::kUint16;
-        __ Xor(new_value, new_value, out.AsRegister<XRegister>());
+        __ Xor(new_value, new_value, out_or_temp.AsRegister<XRegister>());
       }
       GenerateReverseBytes(codegen, Location::RegisterLocation(new_value), new_value, swap_type);
       if (is_small) {
@@ -4727,15 +4761,15 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
                           store_result,
                           /*expected=*/ old_value);
   } else {
-    XRegister old_value = is_fp ? get_temp() : out.AsRegister<XRegister>();
+    XRegister old_value = is_fp ? get_temp() : out_or_temp.AsRegister<XRegister>();
     GenerateGetAndUpdate(
         codegen, get_and_update_op, op_type, order, tmp_ptr, arg_reg, old_value, mask, temp);
     if (byte_swap) {
-      DCHECK_IMPLIES(is_small, out.AsRegister<XRegister>() == old_value)
-          << " " << value_type << " " << out.AsRegister<XRegister>() << "!=" << old_value;
-      GenerateByteSwapAndExtract(codegen, out, old_value, shift, value_type);
+      DCHECK_IMPLIES(is_small, out_or_temp.AsRegister<XRegister>() == old_value)
+          << " " << value_type << " " << out_or_temp.AsRegister<XRegister>() << "!=" << old_value;
+      GenerateByteSwapAndExtract(codegen, out_or_temp, old_value, shift, value_type);
     } else if (is_fp) {
-      codegen->MoveLocation(out, Location::RegisterLocation(old_value), value_type);
+      codegen->MoveLocation(out_or_temp, Location::RegisterLocation(old_value), value_type);
     } else if (is_small) {
       __ Srlw(old_value, old_value, shift);
       DCHECK_NE(value_type, DataType::Type::kUint8);
@@ -4754,14 +4788,14 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
       if (codegen->EmitBakerReadBarrier()) {
         // Use RA as temp. It is clobbered in the slow path anyway.
         static constexpr Location kBakerReadBarrierTemp = Location::RegisterLocation(RA);
-        SlowPathCodeRISCV64* rb_slow_path =
-            codegen->AddGcRootBakerBarrierBarrierSlowPath(invoke, out, kBakerReadBarrierTemp);
-        codegen->EmitBakerReadBarierMarkingCheck(rb_slow_path, out, kBakerReadBarrierTemp);
+        SlowPathCodeRISCV64* rb_slow_path = codegen->AddGcRootBakerBarrierBarrierSlowPath(
+            invoke, out_or_temp, kBakerReadBarrierTemp);
+        codegen->EmitBakerReadBarierMarkingCheck(rb_slow_path, out_or_temp, kBakerReadBarrierTemp);
       } else if (codegen->EmitNonBakerReadBarrier()) {
         Location base_loc = Location::RegisterLocation(target.object);
         Location index = Location::RegisterLocation(target.offset);
         SlowPathCodeRISCV64* rb_slow_path = codegen->AddReadBarrierSlowPath(
-            invoke, out, out, base_loc, /*offset=*/ 0u, index);
+            invoke, out_or_temp, out_or_temp, base_loc, /*offset=*/ 0u, index);
         __ J(rb_slow_path->GetEntryLabel());
         __ Bind(rb_slow_path->GetExitLabel());
       }
@@ -4775,13 +4809,16 @@ static void GenerateVarHandleGetAndUpdate(HInvoke* invoke,
 
   // Check that we have allocated the right number of temps. We may need more registers
   // for byte swapped CAS in the slow path, so skip this check for the main path in that case.
+  // In the void case, we requested an extra register to mimic the `out` register.
+  const size_t extra_temp_registers = is_void ? 1u : 0u;
   bool has_byte_swap = (arg_index == 3u) && (!is_reference && data_size != 1u);
-  if ((!has_byte_swap || byte_swap) && next_temp != locations->GetTempCount()) {
+  if ((!has_byte_swap || byte_swap) &&
+      next_temp != locations->GetTempCount() - extra_temp_registers) {
     // We allocate a temporary register for the class object for a static field `VarHandle` but
     // we do not update the `next_temp` if it's otherwise unused after the address calculation.
     CHECK_EQ(arg_index, 1u);
     CHECK_EQ(next_temp, 1u);
-    CHECK_EQ(locations->GetTempCount(), 2u);
+    CHECK_EQ(locations->GetTempCount(), 2u + extra_temp_registers);
   }
 }
 

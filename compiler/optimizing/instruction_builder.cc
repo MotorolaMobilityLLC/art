@@ -26,8 +26,8 @@
 #include "data_type-inl.h"
 #include "dex/bytecode_utils.h"
 #include "dex/dex_instruction-inl.h"
-#include "driver/dex_compilation_unit.h"
 #include "driver/compiler_options.h"
+#include "driver/dex_compilation_unit.h"
 #include "entrypoints/entrypoint_utils-inl.h"
 #include "imtable-inl.h"
 #include "intrinsics.h"
@@ -36,6 +36,7 @@
 #include "jit/profiling_info.h"
 #include "mirror/dex_cache.h"
 #include "oat/oat_file.h"
+#include "optimizing/data_type.h"
 #include "optimizing_compiler_stats.h"
 #include "reflective_handle_scope-inl.h"
 #include "scoped_thread_state_change-inl.h"
@@ -1357,7 +1358,7 @@ static void DecideVarHandleIntrinsic(HInvoke* invoke) {
         optimizations.SetDoNotIntrinsify();
         return;
       }
-      if (value_type != return_type) {
+      if (value_type != return_type && return_type != DataType::Type::kVoid) {
         optimizations.SetDoNotIntrinsify();
         return;
       }

@@ -71,6 +71,8 @@ class TraceProfiler {
                              uint8_t* buffer /* out */,
                              std::unordered_set<ArtMethod*>& methods /* out */);
 
+  static std::string GetMethodInfoLine(ArtMethod* method) REQUIRES(Locks::mutator_lock_);
+
   static bool profile_in_progress_ GUARDED_BY(Locks::trace_lock_);
   DISALLOW_COPY_AND_ASSIGN(TraceProfiler);
 };

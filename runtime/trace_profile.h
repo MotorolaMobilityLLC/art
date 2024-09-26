@@ -49,6 +49,9 @@ class TraceProfiler {
   static void Dump(int fd);
   static void Dump(const char* trace_filename);
 
+  // Called when thread is exiting to release the allocated buffer.
+  static void ReleaseThreadBuffer(Thread* self) REQUIRES(Locks::trace_lock_);
+
   static bool IsTraceProfileInProgress() REQUIRES(Locks::trace_lock_);
 
  private:

@@ -738,8 +738,8 @@ NO_INLINE uint8_t* Thread::FindStackTop<StackType::kHardware>() {
 
 // Install a protected region in the stack.  This is used to trigger a SIGSEGV if a stack
 // overflow is detected.  It is located right below the stack_begin_.
-ATTRIBUTE_NO_SANITIZE_ADDRESS
 template <StackType stack_type>
+ATTRIBUTE_NO_SANITIZE_ADDRESS
 void Thread::InstallImplicitProtection() {
   uint8_t* pregion = GetStackBegin<stack_type>() - GetStackOverflowProtectedSize();
   // Page containing current top of stack.

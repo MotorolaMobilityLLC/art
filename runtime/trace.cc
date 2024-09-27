@@ -93,7 +93,7 @@ static constexpr size_t kScalingFactorEncodedEntries = 6;
 
 TraceClockSource Trace::default_clock_source_ = kDefaultTraceClockSource;
 
-Trace* volatile Trace::the_trace_ = nullptr;
+Trace* Trace::the_trace_ = nullptr;
 pthread_t Trace::sampling_pthread_ = 0U;
 std::unique_ptr<std::vector<ArtMethod*>> Trace::temp_stack_trace_;
 

@@ -5056,7 +5056,7 @@ verifier::FailureKind ClassLinker::VerifyClass(Thread* self,
                      << " in " << klass->GetDexCache()->GetLocation()->ToModifiedUtf8()
                      << ": "
                      << preverified
-                     << "( " << oat_file_class_status << ")";
+                     << " (" << oat_file_class_status << ")";
 
   // If the oat file says the class had an error, re-run the verifier. That way we will either:
   // 1) Be successful at runtime, or

@@ -16,6 +16,8 @@
 
 set -e
 
+. "$(dirname $0)/buildbot-utils.sh"
+
 if [[ $1 = -h ]]; then
   cat <<EOF
 Usage: $0 [<gtest>...] [--] [<gtest-option>...]

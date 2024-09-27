@@ -29,9 +29,8 @@ namespace art {
 
 class DexFile;
 
-enum {
-  kNumPackedOpcodes = 0x100
-};
+// The number of Dalvik opcodes.
+static constexpr size_t kNumPackedOpcodes = 0x100;
 
 class Instruction {
  public:

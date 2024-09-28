@@ -200,6 +200,17 @@ void TraceProfiler::Dump(std::unique_ptr<File>&& trace_file) {
   }
 }
 
+void TraceProfiler::ReleaseThreadBuffer(Thread* self) {
+  if (!IsTraceProfileInProgress()) {
+    return;
+  }
+  // TODO(mythria): Maybe it's good to cache these and dump them when requested. For now just
+  // relese the buffer when a thread is exiting.
+  auto buffer = self->GetMethodTraceBuffer();
+  delete[] buffer;
+  self->SetMethodTraceBuffer(nullptr, 0);
+}
+
 bool TraceProfiler::IsTraceProfileInProgress() {
   return profile_in_progress_;
 }

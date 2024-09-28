@@ -33,6 +33,7 @@
 #include "base/utils.h"
 #include "class_linker.h"
 #include "common_throws.h"
+#include "com_android_art_flags.h"
 #include "debugger.h"
 #include "dex/descriptors_names.h"
 #include "dex/dex_file-inl.h"
@@ -51,6 +52,8 @@
 #include "thread.h"
 #include "thread_list.h"
 #include "trace_profile.h"
+
+namespace art_flags = com::android::art::flags;
 
 namespace art HIDDEN {
 
@@ -90,7 +93,7 @@ static constexpr size_t kScalingFactorEncodedEntries = 6;
 
 TraceClockSource Trace::default_clock_source_ = kDefaultTraceClockSource;
 
-Trace* volatile Trace::the_trace_ = nullptr;
+Trace* Trace::the_trace_ = nullptr;
 pthread_t Trace::sampling_pthread_ = 0U;
 std::unique_ptr<std::vector<ArtMethod*>> Trace::temp_stack_trace_;
 
@@ -975,6 +978,9 @@ void Trace::ReleaseThreadBuffer(Thread* self) {
   // Check if we still need to flush inside the trace_lock_. If we are stopping tracing it is
   // possible we already deleted the trace and flushed the buffer too.
   if (the_trace_ == nullptr) {
+    if (art_flags::always_enable_profile_code()) {
+      TraceProfiler::ReleaseThreadBuffer(self);
+    }
     DCHECK_EQ(self->GetMethodTraceBuffer(), nullptr);
     return;
   }

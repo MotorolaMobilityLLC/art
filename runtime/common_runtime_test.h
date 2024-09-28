@@ -32,7 +32,6 @@
 #include "base/os.h"
 #include "base/unix_file/fd_file.h"
 #include "dex/art_dex_file_loader.h"
-#include "dex/compact_dex_level.h"
 // TODO: Add inl file and avoid including inl.
 #include "obj_ptr-inl.h"
 #include "runtime_globals.h"

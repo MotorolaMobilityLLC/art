@@ -1236,8 +1236,7 @@
                   "2263-method-trace-jit",
                   "2270-mh-internal-hiddenapi-use",
                   "2271-profile-inline-cache",
-                  "2279-aconfig-flags",
-                  "2280-address-of"],
+                  "2279-aconfig-flags"],
         "variant": "jvm",
         "description": ["Doesn't run on RI."]
     },

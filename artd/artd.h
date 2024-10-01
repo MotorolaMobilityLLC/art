@@ -280,6 +280,8 @@ class Artd : public aidl::com::android::server::art::BnArtd {
 
   bool ShouldUseDex2Oat64();
 
+  bool ShouldUseDebugBinaries();
+
   android::base::Result<std::string> GetDex2Oat();
 
   bool ShouldCreateSwapFileForDexopt();

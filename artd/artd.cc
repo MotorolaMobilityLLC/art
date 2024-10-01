@@ -1636,9 +1636,14 @@ bool Artd::ShouldUseDex2Oat64() {
          props_->GetBool("dalvik.vm.dex2oat64.enabled", /*default_value=*/false);
 }
 
+bool Artd::ShouldUseDebugBinaries() {
+  return props_->GetOrEmpty("persist.sys.dalvik.vm.lib.2") == "libartd.so";
+}
+
 Result<std::string> Artd::GetDex2Oat() {
-  std::string binary_name = ShouldUseDex2Oat64() ? "dex2oat64" : "dex2oat32";
-  // TODO(b/234351700): Should we use the "d" variant?
+  std::string binary_name = ShouldUseDebugBinaries() ?
+                                (ShouldUseDex2Oat64() ? "dex2oatd64" : "dex2oatd32") :
+                                (ShouldUseDex2Oat64() ? "dex2oat64" : "dex2oat32");
   return BuildArtBinPath(binary_name);
 }
 
@@ -1675,9 +1680,8 @@ void Artd::AddCompilerConfigFlags(const std::string& instruction_set,
                      props_->GetOrEmpty("dalvik.vm.dex2oat-max-image-block-size"))
       .AddIfNonEmpty("--very-large-app-threshold=%s",
                      props_->GetOrEmpty("dalvik.vm.dex2oat-very-large"))
-      .AddIfNonEmpty(
-          "--resolve-startup-const-strings=%s",
-          props_->GetOrEmpty("dalvik.vm.dex2oat-resolve-startup-strings"));
+      .AddIfNonEmpty("--resolve-startup-const-strings=%s",
+                     props_->GetOrEmpty("dalvik.vm.dex2oat-resolve-startup-strings"));
 
   args.AddIf(dexopt_options.debuggable, "--debuggable")
       .AddIf(props_->GetBool("debug.generate-debug-info", /*default_value=*/false),

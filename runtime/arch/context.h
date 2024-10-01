@@ -20,6 +20,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "arch/instruction_set.h"
 #include "base/macros.h"
 #include "entrypoints/quick/runtime_entrypoints_list.h"
 
@@ -42,9 +43,10 @@ class Context {
   static uintptr_t* CalleeSaveAddress(uint8_t* frame, int num, size_t frame_size) {
     // Callee saves are held at the top of the frame
     uint8_t* save_addr = frame + frame_size - ((num + 1) * sizeof(void*));
-#if defined(__i386__) || defined(__x86_64__)
-    save_addr -= sizeof(void*);  // account for return address
-#endif
+    if (kRuntimeISA == InstructionSet::kX86 ||
+        kRuntimeISA == InstructionSet::kX86_64) {
+      save_addr -= sizeof(void*);  // account for return address
+    }
     return reinterpret_cast<uintptr_t*>(save_addr);
   }
 

@@ -881,6 +881,7 @@ public final class ArtManagerLocal {
     public void onBoot(@NonNull @BootReason String bootReason,
             @Nullable @CallbackExecutor Executor progressCallbackExecutor,
             @Nullable Consumer<OperationProgress> progressCallback) {
+        AsLog.d("onBoot: reason=" + bootReason);
         try (var snapshot = mInjector.getPackageManagerLocal().withFilteredSnapshot()) {
             if ((bootReason.equals(ReasonMapping.REASON_BOOT_AFTER_OTA)
                         || bootReason.equals(ReasonMapping.REASON_BOOT_AFTER_MAINLINE_UPDATE))
@@ -910,10 +911,13 @@ public final class ArtManagerLocal {
      */
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     void systemReady() {
+        AsLog.d("systemReady: mShouldCommitPreRebootStagedFiles="
+                + mShouldCommitPreRebootStagedFiles);
         if (mShouldCommitPreRebootStagedFiles) {
             mInjector.getContext().registerReceiver(new BroadcastReceiver() {
                 @Override
                 public void onReceive(Context context, Intent intent) {
+                    AsLog.d("systemReady.onReceive");
                     context.unregisterReceiver(this);
                     if (!SdkLevel.isAtLeastV()) {
                         throw new IllegalStateException("Broadcast receiver unexpectedly called");
@@ -923,6 +927,8 @@ public final class ArtManagerLocal {
                     }
                     mStatsAfterRebootSession.reportAsync();
                     mStatsAfterRebootSession = null;
+                    // OtaPreRebootDexoptTest looks for this log message.
+                    AsLog.d("Pre-reboot staged files committed");
                 }
             }, new IntentFilter(Intent.ACTION_BOOT_COMPLETED));
         }
@@ -942,6 +948,7 @@ public final class ArtManagerLocal {
      */
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
     public void onApexStaged(@NonNull String[] stagedApexModuleNames) {
+        AsLog.d("onApexStaged");
         mInjector.getPreRebootDexoptJob().onUpdateReady(null /* otaSlot */);
     }
 
@@ -1126,6 +1133,10 @@ public final class ArtManagerLocal {
                 if (!Utils.canDexoptPackage(pkgState, null /* appHibernationManager */)) {
                     continue;
                 }
+
+                AsLog.d("commitPreRebootStagedFiles " + (forSecondary ? "secondary" : "primary")
+                        + " for " + pkgState.getPackageName());
+
                 AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
                 var options = ArtFileManager.Options.builder()
                                       .setForPrimaryDex(!forSecondary)

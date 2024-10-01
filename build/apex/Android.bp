@@ -49,18 +49,17 @@ art_runtime_base_native_shared_libs_minus_libart = [
     "libnativehelper",
     "libnativeloader",
     "libsigchain",
-    // libadbconnection is internal and loaded with dlopen(), but it cannot use
-    // "required" because of cyclic dependency (b/124505714).
+    // These libraries are loaded at runtime from libart (either through
+    // dlopen() or by instructing the user to load with -Xplugin), but they
+    // cannot be runtime_lib dependencies from there because of cyclic
+    // dependencies (b/124505714).
     "libadbconnection",
-    // TODO(b/124476339): Clean up the following libraries once "required"
-    // dependencies work with APEX libraries.
-    "libdt_fd_forward",
-    "libdt_socket",
-    "libjdwp",
-    "libnpt",
-    "libopenjdkjvm",
     "libopenjdkjvmti",
     "libperfetto_hprof",
+    // Likewise libart is loaded at runtime from libnativeloader and also must
+    // be specified explicitly due to cyclic dependencies. However, it's not
+    // listed directly here since test_broken_com.android.art uses a different
+    // implementation.
 ]
 // Actual version of ART runtime base libs, used in non-test ART APEXes.
 art_runtime_base_native_shared_libs = ["libart"] +
@@ -74,14 +73,8 @@ art_runtime_debug_native_shared_libs = [
     "libadbconnectiond",
     "libartd",
     "libdexfiled",
-    "libopenjdkjvmd",
     "libopenjdkjvmtid",
     "libperfetto_hprofd",
-    // Libraries needed to execute ART run-tests.
-    // TODO(b/124476339): When bug 124476339 is fixed, add these libraries as `runtime_libs`
-    // dependencies of `libartd-compiler`, and remove them here.
-    "libart-disassembler",
-    "libartd-disassembler",
 ]
 
 // Debug binaries for which both 32- and 64-bit versions are built, if possible.
@@ -136,11 +129,13 @@ java_library {
 libcore_native_shared_libs = [
     // External API (having APEX stubs).
     "libandroidio",
-    // TODO(b/124476339): Clean up the following libraries once "required"
-    // dependencies work with APEX libraries.
-    "libexpat",
-    "libjavacore",
+    // This library is loaded at runtime from libart but cannot be a runtime_lib
+    // dependency from there because of cyclic dependencies (b/124505714).
     "libopenjdk",
+    // These libraries are internal dependencies in libcore, but they don't get
+    // pulled in automatically into apex_test modules.
+    "libexpat",
+    "libopenjdkjvm",
 ]
 libcore_debug_native_shared_libs = [
     "libopenjdkd",
@@ -267,7 +262,7 @@ apex_test {
     // unwanted_transitive_deps we can ensure `libart` gets excluded
     // anyway.
     // TODO(mast): Add back the binaries and clean this up.
-    native_shared_libs: art_runtime_base_broken_native_shared_libs,
+    native_shared_libs: art_runtime_base_broken_native_shared_libs + ["libopenjdkjvm"],
     unwanted_transitive_deps: ["libart"],
     compile_multilib: "both",
 

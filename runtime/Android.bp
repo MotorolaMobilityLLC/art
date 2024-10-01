@@ -216,8 +216,17 @@ cc_defaults {
     },
     runtime_libs: [
         // Libraries loaded at runtime. Exceptions:
-        // - libart(d)-compiler.so and libopenjdk(d).so cannot be listed here
-        //   due to cyclic dependency.
+        //
+        // - Libraries that cannot be listed here due to cyclic dependency:
+        //   - libopenjdk(d)
+        //   - libadbconnection(d)
+        //   - libopenjdkjvmti(d)
+        //     - This one is not loaded programmatically with dlopen, but the
+        //       user needs to specify it with -Xplugin.
+        //   - libperfetto_hprof(d)
+        //   All libraries above needs to be explicitly added to the ART APEX
+        //   (cf. art/build/apex/Android.bp).
+        //
         // - libicu_jni.so is only loaded to handle dependency order in VM
         //   startup (see Runtime::InitNativeMethods), but its API is internal
         //   to com.android.i18n and not used by ART/libcore. Therefore it's not

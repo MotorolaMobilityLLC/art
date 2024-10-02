@@ -323,7 +323,7 @@ TEST_F(FileUtilsTest, GetSystemOdexFilenameForApex) {
 
   const std::string apex_jar = std::string {kAndroidArtApexDefaultPath} + "/javalib/some.jar";
   EXPECT_EQ(
-      GetAndroidRoot() + "/framework/oat/arm/apex@com.android.art@javalib@some.jar@classes.odex",
+      GetSystemExtRoot() + "/framework/oat/arm/apex@com.android.art@javalib@some.jar@classes.odex",
       GetSystemOdexFilenameForApex(apex_jar, InstructionSet::kArm));
 }
 

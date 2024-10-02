@@ -720,11 +720,22 @@ std::string GetDmFilename(const std::string& dex_location) {
   return ReplaceFileExtension(dex_location, "dm");
 }
 
+// check for the file in /system, followed by /system_ext
 std::string GetSystemOdexFilenameForApex(std::string_view location, InstructionSet isa) {
   DCHECK(LocationIsOnApex(location));
   std::string dir = GetAndroidRoot() + "/framework/oat/" + GetInstructionSetString(isa);
   std::string result, error_msg;
   bool ret = GetLocationEncodedFilename(location, dir, &result, &error_msg);
+  // This should never fail. The function fails only if the location is not absolute, and a location
+  // on /apex is always absolute.
+  DCHECK(ret) << error_msg;
+  std::string path = ReplaceFileExtension(result, "odex");
+  if (OS::FileExists(path.c_str(), /*check_file_type=*/true)) {
+    return path;
+  }
+  // check in /system_ext
+  dir = GetSystemExtRoot() + "/framework/oat/" + GetInstructionSetString(isa);
+  ret = GetLocationEncodedFilename(location, dir, &result, &error_msg);
   // This should never fail. The function fails only if the location is not absolute, and a location
   // on /apex is always absolute.
   DCHECK(ret) << error_msg;

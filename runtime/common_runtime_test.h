@@ -308,6 +308,11 @@ class CheckJniAbortCatcher {
     GTEST_SKIP() << "WARNING: TEST DISABLED ON KERNEL THAT SEGFAULT ON CACHE OPERATIONS"; \
   }
 
+#define TEST_DISABLED_ON_VM() \
+  if (RunningOnVM()) {        \
+    GTEST_SKIP();             \
+  }
+
 }  // namespace art
 
 #endif  // ART_RUNTIME_COMMON_RUNTIME_TEST_H_

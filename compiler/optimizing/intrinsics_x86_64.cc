@@ -2635,8 +2635,10 @@ static void CreateUnsafeGetAndUpdateLocations(ArenaAllocator* allocator,
   // to take advantage of XCHG or XADD. Arbitrarily pick RAX.
   locations->SetInAt(3, Location::RegisterLocation(RAX));
   // Only set the `out` register if it's needed. In the void case we can still use RAX in the
-  // same manner as it is used an as `in` register.
-  if (invoke->GetType() != DataType::Type::kVoid) {
+  // same manner as it is marked as a temp register.
+  if (invoke->GetType() == DataType::Type::kVoid) {
+    locations->AddTemp(Location::RegisterLocation(RAX));
+  } else {
     locations->SetOut(Location::RegisterLocation(RAX));
   }
 }
@@ -2729,9 +2731,16 @@ static void GenUnsafeGetAndUpdate(HInvoke* invoke,
   } else {
     DCHECK_EQ(type, DataType::Type::kReference);
     DCHECK(get_and_update_op == GetAndUpdateOp::kSet);
-    CpuRegister temp1 = locations->GetTemp(0).AsRegister<CpuRegister>();
-    CpuRegister temp2 = locations->GetTemp(1).AsRegister<CpuRegister>();
-    CpuRegister temp3 = locations->GetTemp(2).AsRegister<CpuRegister>();
+
+    // In the void case, we have an extra temp register, which is used to signal the register
+    // allocator that we are clobering RAX.
+    const uint32_t extra_temp = is_void ? 1u : 0u;
+    DCHECK_EQ(locations->GetTempCount(), 3u + extra_temp);
+    DCHECK_IMPLIES(is_void, locations->GetTemp(0u).Equals(Location::RegisterLocation(RAX)));
+
+    CpuRegister temp1 = locations->GetTemp(0u + extra_temp).AsRegister<CpuRegister>();
+    CpuRegister temp2 = locations->GetTemp(1u + extra_temp).AsRegister<CpuRegister>();
+    CpuRegister temp3 = locations->GetTemp(2u + extra_temp).AsRegister<CpuRegister>();
 
     if (codegen->EmitReadBarrier()) {
       DCHECK(kUseBakerReadBarrier);
@@ -4516,13 +4525,6 @@ static void CreateVarHandleGetAndSetLocations(HInvoke* invoke, CodeGeneratorX86_
     // A temporary is needed to load the new floating-point value into a register for XCHG.
     locations->AddTemp(Location::RequiresRegister());
   } else {
-    // Only set the `out` register if it's needed. In the void case we can still use RAX in the
-    // same manner as it is used an as `in` register.
-    if (!is_void) {
-      // Use the same register for both the new value and output to take advantage of XCHG.
-      // It doesn't have to be RAX, but we need to choose some to make sure it's the same.
-      locations->SetOut(Location::RegisterLocation(RAX));
-    }
     locations->SetInAt(new_value_index, Location::RegisterLocation(RAX));
     if (value_type == DataType::Type::kReference) {
       // Need two temporaries for MarkGCCard.
@@ -4532,6 +4534,15 @@ static void CreateVarHandleGetAndSetLocations(HInvoke* invoke, CodeGeneratorX86_
         DCHECK(kUseBakerReadBarrier);
         locations->AddTemp(Location::RequiresRegister());
       }
+    }
+    // Only set the `out` register if it's needed. In the void case we can still use RAX in the
+    // same manner as it is marked as a temp register.
+    if (is_void) {
+      locations->AddTemp(Location::RegisterLocation(RAX));
+    } else {
+      // Use the same register for both the new value and output to take advantage of XCHG.
+      // It doesn't have to be RAX, but we need to choose some to make sure it's the same.
+      locations->SetOut(Location::RegisterLocation(RAX));
     }
   }
 }
@@ -4577,18 +4588,24 @@ static void GenerateVarHandleGetAndSet(HInvoke* invoke,
     // Output register is the same as the one holding new value, so no need to move the result.
     DCHECK(!byte_swap);
 
-    CpuRegister temp1 = locations->GetTemp(temp_count - 1).AsRegister<CpuRegister>();
-    CpuRegister temp2 = locations->GetTemp(temp_count - 2).AsRegister<CpuRegister>();
+    // In the void case, we have an extra temp register, which is used to signal the register
+    // allocator that we are clobering RAX.
+    const uint32_t extra_temp = is_void ? 1u : 0u;
+    DCHECK_IMPLIES(is_void,
+                   locations->GetTemp(temp_count - 1u).Equals(Location::RegisterLocation(RAX)));
+
+    CpuRegister temp1 = locations->GetTemp(temp_count - extra_temp - 1u).AsRegister<CpuRegister>();
+    CpuRegister temp2 = locations->GetTemp(temp_count - extra_temp - 2u).AsRegister<CpuRegister>();
     CpuRegister valreg = value.AsRegister<CpuRegister>();
 
     if (codegen->EmitBakerReadBarrier()) {
       codegen->GenerateReferenceLoadWithBakerReadBarrier(
           invoke,
-          locations->GetTemp(temp_count - 3),
+          locations->GetTemp(temp_count - extra_temp - 3u),
           ref,
           field_addr,
-          /*needs_null_check=*/ false,
-          /*always_update_field=*/ true,
+          /*needs_null_check=*/false,
+          /*always_update_field=*/true,
           &temp1,
           &temp2);
     }
@@ -4677,16 +4694,6 @@ static void CreateVarHandleGetAndBitwiseOpLocations(HInvoke* invoke, CodeGenerat
 
   DCHECK_NE(DataType::Type::kReference, value_type);
   DCHECK(!DataType::IsFloatingPointType(value_type));
-
-  if (!is_void) {
-    // Output is in RAX to accommodate CMPXCHG. It is also used as a temporary.
-    locations->SetOut(Location::RegisterLocation(RAX));
-  } else {
-    // Used as a temporary, even when we are not outputting it so reserve it. This has to be
-    // requested before the other temporary since there's variable number of temp registers and the
-    // other temp register is expected to be the last one.
-    locations->AddTemp(Location::RegisterLocation(RAX));
-  }
   // A temporary to compute the bitwise operation on the old and the new values.
   locations->AddTemp(Location::RequiresRegister());
   // We need value to be either in a register, or a 32-bit constant (as there are no arithmetic
@@ -4695,6 +4702,15 @@ static void CreateVarHandleGetAndBitwiseOpLocations(HInvoke* invoke, CodeGenerat
                      DataType::Is64BitType(value_type) ?
                          Location::RequiresRegister() :
                          Location::RegisterOrConstant(invoke->InputAt(new_value_index)));
+  if (is_void) {
+    // Used as a temporary, even when we are not outputting it so reserve it. This has to be
+    // requested before the other temporary since there's variable number of temp registers and the
+    // other temp register is expected to be the last one.
+    locations->AddTemp(Location::RegisterLocation(RAX));
+  } else {
+    // Output is in RAX to accommodate CMPXCHG. It is also used as a temporary.
+    locations->SetOut(Location::RegisterLocation(RAX));
+  }
 }
 
 static void GenerateVarHandleGetAndOp(HInvoke* invoke,
@@ -4706,19 +4722,25 @@ static void GenerateVarHandleGetAndOp(HInvoke* invoke,
                                       bool byte_swap) {
   X86_64Assembler* assembler = codegen->GetAssembler();
   LocationSummary* locations = invoke->GetLocations();
-  Location temp_loc = locations->GetTemp(locations->GetTempCount() - 1u);
+  // In the void case, we have an extra temp register, which is used to signal the register
+  // allocator that we are clobering RAX.
+  const bool is_void = invoke->GetType() == DataType::Type::kVoid;
+  const uint32_t extra_temp = is_void ? 1u : 0u;
+  const uint32_t temp_count = locations->GetTempCount();
+  DCHECK_IMPLIES(is_void,
+                 locations->GetTemp(temp_count - 1u).Equals(Location::RegisterLocation(RAX)));
+  Location temp_loc = locations->GetTemp(temp_count - extra_temp - 1u);
   Location rax_loc = Location::RegisterLocation(RAX);
-  DCHECK_IMPLIES(invoke->GetType() != DataType::Type::kVoid, locations->Out().Equals(rax_loc));
+  DCHECK_IMPLIES(!is_void, locations->Out().Equals(rax_loc));
   CpuRegister temp = temp_loc.AsRegister<CpuRegister>();
   CpuRegister rax = rax_loc.AsRegister<CpuRegister>();
-  DCHECK_EQ(rax.AsRegister(), RAX);
   bool is64Bit = DataType::Is64BitType(type);
 
   NearLabel retry;
   __ Bind(&retry);
 
   // Load field value into RAX and copy it into a temporary register for the operation.
-  codegen->LoadFromMemoryNoReference(type, Location::RegisterLocation(RAX), field_addr);
+  codegen->LoadFromMemoryNoReference(type, rax_loc, field_addr);
   codegen->Move(temp_loc, rax_loc);
   if (byte_swap) {
     // Byte swap the temporary, since we need to perform operation in native endianness.
@@ -4841,14 +4863,6 @@ static void CreateVarHandleGetAndAddLocations(HInvoke* invoke, CodeGeneratorX86_
     locations->AddTemp(Location::RequiresRegister());
   } else {
     DCHECK_NE(value_type, DataType::Type::kReference);
-    // Only set the `out` register if it's needed. In the void case we can still use RAX in the
-    // same manner as it is used an as `in` register.
-    if (!is_void) {
-      // Use the same register for both the new value and output to take advantage of XADD.
-      // It should be RAX, because the byte-swapping path of GenerateVarHandleGetAndAdd falls
-      // back to GenerateVarHandleGetAndOp that expects out in RAX.
-      locations->SetOut(Location::RegisterLocation(RAX));
-    }
     locations->SetInAt(new_value_index, Location::RegisterLocation(RAX));
     if (GetExpectedVarHandleCoordinatesCount(invoke) == 2) {
       // For byte array views with non-native endianness we need extra BSWAP operations, so we
@@ -4857,6 +4871,16 @@ static void CreateVarHandleGetAndAddLocations(HInvoke* invoke, CodeGeneratorX86_
       // clobbered by repeated CMPXCHG) and one for performing the operation. At compile time we
       // cannot distinguish this case from arrays or native-endian byte array views.
       locations->AddRegisterTemps(2);
+    }
+    // Only set the `out` register if it's needed. In the void case we can still use RAX in the
+    // same manner as it is marked as a temp register.
+    if (is_void) {
+      locations->AddTemp(Location::RegisterLocation(RAX));
+    } else {
+      // Use the same register for both the new value and output to take advantage of XADD.
+      // It should be RAX, because the byte-swapping path of GenerateVarHandleGetAndAdd falls
+      // back to GenerateVarHandleGetAndOp that expects out in RAX.
+      locations->SetOut(Location::RegisterLocation(RAX));
     }
   }
 }
@@ -4948,7 +4972,12 @@ static void GenerateVarHandleGetAndAdd(HInvoke* invoke,
       // implementation that is also used for bitwise operations.
       // Move value from RAX to a temporary register, as RAX may get clobbered by repeated CMPXCHG.
       DCHECK_EQ(GetExpectedVarHandleCoordinatesCount(invoke), 2u);
-      Location temp = locations->GetTemp(temp_count - 2);
+      // In the void case, we have an extra temp register, which is used to signal the register
+      // allocator that we are clobering RAX.
+      const uint32_t extra_temp = is_void ? 1u : 0u;
+      DCHECK_IMPLIES(is_void,
+                     locations->GetTemp(temp_count - 1u).Equals(Location::RegisterLocation(RAX)));
+      Location temp = locations->GetTemp(temp_count - extra_temp - 2u);
       codegen->Move(temp, value);
       GenerateVarHandleGetAndOp(
           invoke, codegen, temp, type, field_addr, GetAndUpdateOp::kAdd, byte_swap);

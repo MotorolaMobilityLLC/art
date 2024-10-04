@@ -5437,16 +5437,17 @@ static void CreateVarHandleGetAndUpdateLocations(HInvoke* invoke,
   }
 
   // Get the type from the shorty as the invokes may not return a value.
-  LocationSummary* locations = CreateVarHandleCommonLocations(invoke, codegen);
   uint32_t arg_index = invoke->GetNumberOfArguments() - 1;
   DataType::Type value_type = GetDataTypeFromShorty(invoke, arg_index);
-  size_t old_temp_count = locations->GetTempCount();
   if (value_type == DataType::Type::kReference && codegen->EmitNonBakerReadBarrier()) {
     // Unsupported for non-Baker read barrier because the artReadBarrierSlow() ignores
     // the passed reference and reloads it from the field, thus seeing the new value
     // that we have just stored. (And it also gets the memory visibility wrong.) b/173104084
     return;
   }
+
+  LocationSummary* locations = CreateVarHandleCommonLocations(invoke, codegen);
+  size_t old_temp_count = locations->GetTempCount();
 
   DCHECK_EQ(old_temp_count, (GetExpectedVarHandleCoordinatesCount(invoke) == 0) ? 2u : 1u);
   if (DataType::IsFloatingPointType(value_type)) {

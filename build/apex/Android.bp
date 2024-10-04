@@ -152,18 +152,10 @@ apex_key {
     private_key: "com.android.art.pem",
 }
 
-// Default shared by all ART APEXes.
-apex_defaults {
-    name: "com.android.art-base-defaults",
-
-    target: {
-        windows: {
-            // When the Soong config variable above sets enabled:true, it
-            // overrides the default false for targets, so we need to disable
-            // windows explicitly.
-            enabled: false,
-        },
-    },
+linker_config {
+    name: "art-linker-config",
+    src: "linker.config.json",
+    installable: false,
 }
 
 prebuilt_etc {
@@ -173,20 +165,28 @@ prebuilt_etc {
     installable: false,
 }
 
-// Default values shared by APEXes except test_broken_com.android.art.
+// Default shared by all ART APEXes.
 apex_defaults {
-    name: "com.android.art-defaults-minus-odrefresh",
-    defaults: [
-        "com.android.art-base-defaults",
-        "s-launched-apex-module",
-    ],
-    compile_multilib: "both",
+    name: "com.android.art-base-defaults",
+    defaults: ["s-launched-apex-module"],
+
     manifest: "manifest-art.json",
+    key: "com.android.art.key",
+    certificate: ":com.android.art.certificate",
     bootclasspath_fragments: ["art-bootclasspath-fragment"],
     systemserverclasspath_fragments: ["art-systemserverclasspath-fragment"],
     compat_configs: ["libcore-platform-compat-config"],
-    native_shared_libs: art_runtime_base_native_shared_libs +
-        libcore_native_shared_libs,
+    required: [
+        "com.android.i18n",
+    ],
+    prebuilts: [
+        "art-linker-config",
+        "com.android.art.init.rc",
+        "current_sdkinfo",
+    ],
+
+    compile_multilib: "both",
+
     multilib: {
         both: {
             binaries: art_runtime_binaries_both,
@@ -198,15 +198,14 @@ apex_defaults {
             ],
         },
     },
-    key: "com.android.art.key",
-    required: [
-        "com.android.i18n",
-    ],
-    prebuilts: [
-        "art-linker-config",
-        "com.android.art.init.rc",
-        "current_sdkinfo",
-    ],
+}
+
+// Default values shared by APEXes except test_broken_com.android.art.
+apex_defaults {
+    name: "com.android.art-defaults-minus-odrefresh",
+    defaults: ["com.android.art-base-defaults"],
+    native_shared_libs: art_runtime_base_native_shared_libs +
+        libcore_native_shared_libs,
 }
 
 // Default values shared by Release, Debug, and Testing APEXes.
@@ -248,28 +247,13 @@ apex_defaults {
 // `libart-broken` instead of `libart`.
 apex_test {
     name: "test_broken_com.android.art",
-    // Use of "s-launched-apex-module" does not imply that this is a released
-    // module.
-    defaults: [
-        "com.android.art-base-defaults",
-        "s-launched-apex-module",
-    ],
+    defaults: ["com.android.art-base-defaults"],
 
-    // Only include native libraries in this test APEX. The intention
-    // was to not include binaries (and maybe other artifacts) for now,
-    // as they'd pull the "non-broken" `libart` module into this test
-    // APEX and overwrite `libart-broken`. However, with
-    // unwanted_transitive_deps we can ensure `libart` gets excluded
-    // anyway.
-    // TODO(mast): Add back the binaries and clean this up.
     native_shared_libs: art_runtime_base_broken_native_shared_libs + libcore_native_shared_libs,
     unwanted_transitive_deps: ["libart"],
-    compile_multilib: "both",
 
-    key: "com.android.art.key",
     manifest: "test_apex_manifest.json",
     file_contexts: ":com.android.art-file_contexts",
-    certificate: ":com.android.art.certificate",
     installable: false,
     compressible: false,
 }
@@ -282,10 +266,8 @@ apex_test {
             binaries: ["odrefresh_broken"],
         },
     },
-    key: "com.android.art.key",
     manifest: "test_apex_manifest.json",
     file_contexts: ":com.android.art-file_contexts",
-    certificate: ":com.android.art.certificate",
     installable: false,
 }
 
@@ -299,10 +281,8 @@ apex_test {
             binaries: ["imgdiag"],
         },
     },
-    key: "com.android.art.key",
     manifest: "test_apex_manifest.json",
     file_contexts: ":com.android.art-file_contexts",
-    certificate: ":com.android.art.certificate",
     installable: false,
 }
 
@@ -312,7 +292,6 @@ apex_test {
 apex {
     name: "com.android.art",
     defaults: ["com.android.art-defaults"],
-    certificate: ":com.android.art.certificate",
     visibility: [
         "//art/build/sdk",
         "//packages/modules/common/build",
@@ -325,7 +304,6 @@ apex {
 apex {
     name: "com.android.art.debug",
     defaults: ["com.android.art-devel-defaults"],
-    certificate: ":com.android.art.certificate",
     visibility: [
         "//packages/modules/common/build",
     ],
@@ -364,7 +342,6 @@ apex_test {
     name: "com.android.art.testing",
     defaults: ["com.android.art-devel-defaults"],
     file_contexts: ":com.android.art.debug-file_contexts",
-    certificate: ":com.android.art.certificate",
     tests: art_gtests,
     binaries: ["signal_dumper"], // Need signal_dumper for run-tests.
     // Mark this test APEX as non-updatable, as its contains
@@ -479,12 +456,6 @@ cc_prebuilt_binary {
     name: "art-check-testing-apex-gen-fakebin",
     defaults: ["art-check-apex-gen-fakebin-defaults"],
     srcs: [":art-check-testing-apex-gen"],
-}
-
-linker_config {
-    name: "art-linker-config",
-    src: "linker.config.json",
-    installable: false,
 }
 
 // sdk module types have 3 (maybe 4 for windows?) variants: linux, android, and common_os.

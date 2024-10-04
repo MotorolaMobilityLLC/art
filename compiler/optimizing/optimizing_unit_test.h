@@ -404,8 +404,8 @@ class OptimizingUnitTestHelper {
 
   HEnvironment* ManuallyBuildEnvFor(HInstruction* instruction,
                                     ArenaVector<HInstruction*>* current_locals) {
-    HEnvironment* environment = new (GetAllocator()) HEnvironment(
-        (GetAllocator()),
+    HEnvironment* environment = HEnvironment::Create(
+        GetAllocator(),
         current_locals->size(),
         graph_->GetArtMethod(),
         instruction->GetDexPc(),

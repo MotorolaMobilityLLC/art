@@ -115,7 +115,6 @@ enum class CopyOption {
 class OatWriter {
  public:
   OatWriter(const CompilerOptions& compiler_options,
-            const VerificationResults* verification_results,
             TimingLogger* timings,
             ProfileCompilationInfo* info);
 
@@ -171,6 +170,7 @@ class OatWriter {
                    SafeMap<std::string, std::string>* key_value_store);
   // Initialize the writer with the given parameters.
   void Initialize(const CompilerDriver* compiler_driver,
+                  const VerificationResults* verification_results,
                   ImageWriter* image_writer,
                   const std::vector<const DexFile*>& dex_files);
   bool FinishVdexFile(File* vdex_file, verifier::VerifierDeps* verifier_deps);
@@ -376,7 +376,7 @@ class OatWriter {
 
   const CompilerDriver* compiler_driver_;
   const CompilerOptions& compiler_options_;
-  const VerificationResults* const verification_results_;
+  const VerificationResults* verification_results_;
   ImageWriter* image_writer_;
   // Whether the dex files being compiled are going to be extracted to the vdex.
   bool extract_dex_files_into_vdex_;

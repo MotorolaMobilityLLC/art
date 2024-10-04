@@ -5165,7 +5165,7 @@ bool ClassLinker::VerifyClassUsingOatFile(Thread* self,
     return true;
   }
   if (oat_file_class_status >= ClassStatus::kVerifiedNeedsAccessChecks) {
-    // We return that the clas has already been verified, and the caller should
+    // We return that the class has already been verified, and the caller should
     // check the class status to ensure we run with access checks.
     return true;
   }

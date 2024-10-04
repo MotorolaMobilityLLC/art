@@ -344,14 +344,13 @@ class OatWriter::OatDexFile {
     << "file_offset=" << file_offset << " offset_=" << offset_
 
 OatWriter::OatWriter(const CompilerOptions& compiler_options,
-                     const VerificationResults* verification_results,
                      TimingLogger* timings,
                      ProfileCompilationInfo* info)
     : write_state_(WriteState::kAddingDexFileSources),
       timings_(timings),
       compiler_driver_(nullptr),
       compiler_options_(compiler_options),
-      verification_results_(verification_results),
+      verification_results_(nullptr),
       image_writer_(nullptr),
       extract_dex_files_into_vdex_(true),
       vdex_begin_(nullptr),
@@ -573,10 +572,12 @@ bool OatWriter::StartRoData(const std::vector<const DexFile*>& dex_files,
 
 // Initialize the writer with the given parameters.
 void OatWriter::Initialize(const CompilerDriver* compiler_driver,
+                           const VerificationResults* verification_results,
                            ImageWriter* image_writer,
                            const std::vector<const DexFile*>& dex_files) {
   CHECK(write_state_ == WriteState::kInitialize);
   compiler_driver_ = compiler_driver;
+  verification_results_ = verification_results;
   image_writer_ = image_writer;
   dex_files_ = &dex_files;
   write_state_ = WriteState::kPrepareLayout;

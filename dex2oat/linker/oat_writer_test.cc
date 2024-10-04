@@ -106,10 +106,7 @@ class OatTest : public CommonCompilerDriverTest {
                 bool verify) {
     TimingLogger timings("WriteElf", false, false);
     ClearBootImageOption();
-    OatWriter oat_writer(*compiler_options_,
-                         verification_results_.get(),
-                         &timings,
-                         /*profile_compilation_info*/nullptr);
+    OatWriter oat_writer(*compiler_options_, &timings, /*profile_compilation_info*/nullptr);
     for (const DexFile* dex_file : dex_files) {
       if (!oat_writer.AddRawDexFileSource(dex_file->GetContainer(),
                                           dex_file->Begin(),
@@ -131,10 +128,7 @@ class OatTest : public CommonCompilerDriverTest {
                 ProfileCompilationInfo* profile_compilation_info) {
     TimingLogger timings("WriteElf", false, false);
     ClearBootImageOption();
-    OatWriter oat_writer(*compiler_options_,
-                         verification_results_.get(),
-                         &timings,
-                         profile_compilation_info);
+    OatWriter oat_writer(*compiler_options_, &timings, profile_compilation_info);
     for (const char* dex_filename : dex_filenames) {
       if (!oat_writer.AddDexFileSource(dex_filename, dex_filename)) {
         return false;
@@ -153,10 +147,7 @@ class OatTest : public CommonCompilerDriverTest {
                 ProfileCompilationInfo* profile_compilation_info = nullptr) {
     TimingLogger timings("WriteElf", false, false);
     ClearBootImageOption();
-    OatWriter oat_writer(*compiler_options_,
-                         verification_results_.get(),
-                         &timings,
-                         profile_compilation_info);
+    OatWriter oat_writer(*compiler_options_, &timings, profile_compilation_info);
     if (!oat_writer.AddDexFileSource(std::move(dex_file_fd), location)) {
       return false;
     }
@@ -200,7 +191,8 @@ class OatTest : public CommonCompilerDriverTest {
     if (!oat_writer.StartRoData(dex_files, oat_rodata, &key_value_store)) {
       return false;
     }
-    oat_writer.Initialize(compiler_driver_.get(), /*image_writer=*/ nullptr, dex_files);
+    oat_writer.Initialize(
+        compiler_driver_.get(), verification_results_.get(), /*image_writer=*/ nullptr, dex_files);
     if (!oat_writer.FinishVdexFile(vdex_file, /*verifier_deps=*/ nullptr)) {
       return false;
     }

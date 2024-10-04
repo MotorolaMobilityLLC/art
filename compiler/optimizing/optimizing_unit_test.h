@@ -647,9 +647,13 @@ class OptimizingUnitTestHelper {
                                           std::initializer_list<HInstruction*> env = {},
                                           uint32_t dex_pc = kNoDexPc) {
     MethodReference method_reference{/* file= */ &graph_->GetDexFile(), /* index= */ method_idx_++};
+    size_t num_64bit_args = std::count_if(args.begin(), args.end(), [](HInstruction* insn) {
+      return DataType::Is64BitType(insn->GetType());
+    });
     HInvokeStaticOrDirect* invoke = new (GetAllocator())
         HInvokeStaticOrDirect(GetAllocator(),
                               args.size(),
+                              /* number_of_out_vregs= */ args.size() + num_64bit_args,
                               return_type,
                               dex_pc,
                               method_reference,

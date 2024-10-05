@@ -134,7 +134,7 @@ void SuperblockCloner::DeepCloneEnvironmentWithRemapping(HInstruction* copy_inst
   if (orig_env->GetParent() != nullptr) {
     DeepCloneEnvironmentWithRemapping(copy_instr, orig_env->GetParent());
   }
-  HEnvironment* copy_env = new (arena_) HEnvironment(arena_, *orig_env, copy_instr);
+  HEnvironment* copy_env = HEnvironment::Create(arena_, *orig_env, copy_instr);
 
   for (size_t i = 0; i < orig_env->Size(); i++) {
     HInstruction* env_input = orig_env->GetInstructionAt(i);

@@ -86,11 +86,11 @@ void PrepareForRegisterAllocation::VisitBoundsCheck(HBoundsCheck* check) {
     ArtMethod* char_at_method = WellKnownClasses::java_lang_String_charAt;
     if (GetGraph()->GetArtMethod() != char_at_method) {
       ArenaAllocator* allocator = GetGraph()->GetAllocator();
-      HEnvironment* environment = new (allocator) HEnvironment(allocator,
-                                                               /* number_of_vregs= */ 0u,
-                                                               char_at_method,
-                                                               /* dex_pc= */ dex::kDexNoIndex,
-                                                               check);
+      HEnvironment* environment = HEnvironment::Create(allocator,
+                                                       /* number_of_vregs= */ 0u,
+                                                       char_at_method,
+                                                       /* dex_pc= */ dex::kDexNoIndex,
+                                                       check);
       check->InsertRawEnvironment(environment);
     }
   }

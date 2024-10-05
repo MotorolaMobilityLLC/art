@@ -1,3 +1,0 @@
-Check for correct interaction of nonmovable allocation, clone and addressOf().
-
-Motivated by b/363849521.

@@ -297,7 +297,7 @@ void HInstructionBuilder::InsertInstructionAtTop(HInstruction* instruction) {
 
 void HInstructionBuilder::InitializeInstruction(HInstruction* instruction) {
   if (instruction->NeedsEnvironment()) {
-    HEnvironment* environment = new (allocator_) HEnvironment(
+    HEnvironment* environment = HEnvironment::Create(
         allocator_,
         current_locals_->size(),
         graph_->GetArtMethod(),

@@ -1142,7 +1142,7 @@ void HEnvironment::CopyFrom(ArrayRef<HInstruction* const> locals) {
   }
 }
 
-void HEnvironment::CopyFrom(HEnvironment* env) {
+void HEnvironment::CopyFrom(const HEnvironment* env) {
   for (size_t i = 0; i < env->Size(); i++) {
     HInstruction* instruction = env->GetInstructionAt(i);
     SetRawEnvAt(i, instruction);
@@ -1174,7 +1174,7 @@ void HEnvironment::CopyFromWithLoopPhiAdjustment(HEnvironment* env,
 }
 
 void HEnvironment::RemoveAsUserOfInput(size_t index) const {
-  const HUserRecord<HEnvironment*>& env_use = vregs_[index];
+  const HUserRecord<HEnvironment*>& env_use = GetVRegs()[index];
   HInstruction* user = env_use.GetInstruction();
   auto before_env_use_node = env_use.GetBeforeUseNode();
   user->env_uses_.erase_after(before_env_use_node);
@@ -1182,7 +1182,7 @@ void HEnvironment::RemoveAsUserOfInput(size_t index) const {
 }
 
 void HEnvironment::ReplaceInput(HInstruction* replacement, size_t index) {
-  const HUserRecord<HEnvironment*>& env_use_record = vregs_[index];
+  const HUserRecord<HEnvironment*>& env_use_record = GetVRegs()[index];
   HInstruction* orig_instr = env_use_record.GetInstruction();
 
   DCHECK(orig_instr != replacement);

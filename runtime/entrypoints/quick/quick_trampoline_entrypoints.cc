@@ -67,8 +67,8 @@
 namespace art HIDDEN {
 
 // Visits the arguments as saved to the stack by a CalleeSaveType::kRefAndArgs callee save frame.
-template <typename Derived>
-class QuickArgumentVisitorBase {
+template <typename FrameInfo>
+class QuickArgumentVisitorImpl {
   // Number of bytes for each out register in the caller method's frame.
   static constexpr size_t kBytesStackArgLocation = 4;
   // Frame size in bytes of a callee-save frame for RefsAndArgs.
@@ -85,23 +85,23 @@ class QuickArgumentVisitorBase {
       RuntimeCalleeSaveFrame::GetReturnPcOffset(CalleeSaveType::kSaveRefsAndArgs);
 
   static size_t GprIndexToGprOffset(uint32_t gpr_index) {
-    return Derived::GprIndexToGprOffsetImpl(gpr_index);
+    return FrameInfo::GprIndexToGprOffsetImpl(gpr_index);
   }
 
   static constexpr bool kSplitPairAcrossRegisterAndStack =
-      Derived::kSplitPairAcrossRegisterAndStack;
-  static constexpr bool kAlignPairRegister = Derived::kAlignPairRegister;
-  static constexpr bool kQuickSoftFloatAbi = Derived::kQuickSoftFloatAbi;
+      FrameInfo::kSplitPairAcrossRegisterAndStack;
+  static constexpr bool kAlignPairRegister = FrameInfo::kAlignPairRegister;
+  static constexpr bool kQuickSoftFloatAbi = FrameInfo::kQuickSoftFloatAbi;
   static constexpr bool kQuickDoubleRegAlignedFloatBackFilled =
-      Derived::kQuickDoubleRegAlignedFloatBackFilled;
-  static constexpr bool kQuickSkipOddFpRegisters = Derived::kQuickSkipOddFpRegisters;
-  static constexpr size_t kNumQuickGprArgs = Derived::kNumQuickGprArgs;
-  static constexpr size_t kNumQuickFprArgs = Derived::kNumQuickFprArgs;
-  static constexpr bool kGprFprLockstep = Derived::kGprFprLockstep;
-  static constexpr bool kNaNBoxing = Derived::kNanBoxing;
+      FrameInfo::kQuickDoubleRegAlignedFloatBackFilled;
+  static constexpr bool kQuickSkipOddFpRegisters = FrameInfo::kQuickSkipOddFpRegisters;
+  static constexpr size_t kNumQuickGprArgs = FrameInfo::kNumQuickGprArgs;
+  static constexpr size_t kNumQuickFprArgs = FrameInfo::kNumQuickFprArgs;
+  static constexpr bool kGprFprLockstep = FrameInfo::kGprFprLockstep;
+  static constexpr bool kNaNBoxing = FrameInfo::kNanBoxing;
 
  public:
-  static constexpr bool NaNBoxing() { return Derived::kNaNBoxing; }
+  static constexpr bool NaNBoxing() { return FrameInfo::kNaNBoxing; }
 
   static StackReference<mirror::Object>* GetThisObjectReference(ArtMethod** sp)
       REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -143,7 +143,7 @@ class QuickArgumentVisitorBase {
     return *reinterpret_cast<uintptr_t*>(GetCallingPcAddr(sp));
   }
 
-  QuickArgumentVisitorBase(ArtMethod** sp, bool is_static, std::string_view shorty)
+  QuickArgumentVisitorImpl(ArtMethod** sp, bool is_static, std::string_view shorty)
       REQUIRES_SHARED(Locks::mutator_lock_)
       : is_static_(is_static),
         shorty_(shorty),
@@ -168,7 +168,7 @@ class QuickArgumentVisitorBase {
     DCHECK_EQ(Runtime::Current()->GetClassLinker()->GetImagePointerSize(), kRuntimePointerSize);
   }
 
-  virtual ~QuickArgumentVisitorBase() {}
+  virtual ~QuickArgumentVisitorImpl() {}
 
   virtual void Visit() = 0;
 
@@ -384,7 +384,7 @@ class QuickArgumentVisitorBase {
   bool is_split_long_or_double_;
 };
 
-class QuickArgumentFrameInfoARM : public QuickArgumentVisitorBase<QuickArgumentFrameInfoARM> {
+class QuickArgumentFrameInfoARM {
  public:
   // The callee save frame is pointed to by SP.
   // | argN       |  |
@@ -416,14 +416,9 @@ class QuickArgumentFrameInfoARM : public QuickArgumentVisitorBase<QuickArgumentF
   static size_t GprIndexToGprOffsetImpl(uint32_t gpr_index) {
     return gpr_index * GetBytesPerGprSpillLocation(kRuntimeISA);
   }
-
-  QuickArgumentFrameInfoARM(ArtMethod** sp,
-                            bool is_static,
-                            std::string_view shorty) REQUIRES_SHARED(Locks::mutator_lock_)
-      : QuickArgumentVisitorBase(sp, is_static, shorty) {}
 };
 
-class QuickArgumentFrameInfoARM64 : public QuickArgumentVisitorBase<QuickArgumentFrameInfoARM64> {
+class QuickArgumentFrameInfoARM64 {
  public:
   // The callee save frame is pointed to by SP.
   // | argN       |  |
@@ -457,15 +452,9 @@ class QuickArgumentFrameInfoARM64 : public QuickArgumentVisitorBase<QuickArgumen
   static size_t GprIndexToGprOffsetImpl(uint32_t gpr_index) {
     return gpr_index * GetBytesPerGprSpillLocation(kRuntimeISA);
   }
-
-  QuickArgumentFrameInfoARM64(ArtMethod** sp,
-                              bool is_static,
-                              std::string_view shorty) REQUIRES_SHARED(Locks::mutator_lock_)
-      : QuickArgumentVisitorBase(sp, is_static, shorty) {}
 };
 
-class QuickArgumentFrameInfoRISCV64 :
-    public QuickArgumentVisitorBase<QuickArgumentFrameInfoRISCV64> {
+class QuickArgumentFrameInfoRISCV64 {
  public:
   // The callee save frame is pointed to by SP.
   // | argN            |  |
@@ -512,14 +501,9 @@ class QuickArgumentFrameInfoRISCV64 :
   static size_t GprIndexToGprOffsetImpl(uint32_t gpr_index) {
     return (gpr_index + 1) * GetBytesPerGprSpillLocation(kRuntimeISA);  // skip S0/X8/FP
   }
-
-  QuickArgumentFrameInfoRISCV64(ArtMethod** sp,
-                                bool is_static,
-                                std::string_view shorty) REQUIRES_SHARED(Locks::mutator_lock_)
-      : QuickArgumentVisitorBase(sp, is_static, shorty) {}
 };
 
-class QuickArgumentFrameInfoX86 : public QuickArgumentVisitorBase<QuickArgumentFrameInfoX86> {
+class QuickArgumentFrameInfoX86 {
  public:
   // The callee save frame is pointed to by SP.
   // | argN        |  |
@@ -551,15 +535,9 @@ class QuickArgumentFrameInfoX86 : public QuickArgumentVisitorBase<QuickArgumentF
   static size_t GprIndexToGprOffsetImpl(uint32_t gpr_index) {
     return gpr_index * GetBytesPerGprSpillLocation(kRuntimeISA);
   }
-
-  QuickArgumentFrameInfoX86(ArtMethod** sp,
-                            bool is_static,
-                            std::string_view shorty) REQUIRES_SHARED(Locks::mutator_lock_)
-      : QuickArgumentVisitorBase(sp, is_static, shorty) {}
 };
 
-class QuickArgumentFrameInfoX86_64 :
-    public QuickArgumentVisitorBase<QuickArgumentFrameInfoX86_64> {
+class QuickArgumentFrameInfoX86_64 {
  public:
   // The callee save frame is pointed to by SP.
   // | argN            |  |
@@ -613,33 +591,28 @@ class QuickArgumentFrameInfoX86_64 :
       UNREACHABLE();
     }
   }
-
-  QuickArgumentFrameInfoX86_64(ArtMethod** sp,
-                               bool is_static,
-                               std::string_view shorty) REQUIRES_SHARED(Locks::mutator_lock_)
-      : QuickArgumentVisitorBase(sp, is_static, shorty) {}
 };
 
 namespace detail {
 
 template <InstructionSet>
-struct QAVSelector;
+struct QAFISelector;
 
 template <>
-struct QAVSelector<InstructionSet::kArm> { using type = QuickArgumentFrameInfoARM; };
+struct QAFISelector<InstructionSet::kArm> { using type = QuickArgumentFrameInfoARM; };
 template <>
-struct QAVSelector<InstructionSet::kArm64> { using type = QuickArgumentFrameInfoARM64; };
+struct QAFISelector<InstructionSet::kArm64> { using type = QuickArgumentFrameInfoARM64; };
 template <>
-struct QAVSelector<InstructionSet::kRiscv64> { using type = QuickArgumentFrameInfoRISCV64; };
+struct QAFISelector<InstructionSet::kRiscv64> { using type = QuickArgumentFrameInfoRISCV64; };
 template <>
-struct QAVSelector<InstructionSet::kX86> { using type = QuickArgumentFrameInfoX86; };
+struct QAFISelector<InstructionSet::kX86> { using type = QuickArgumentFrameInfoX86; };
 template <>
-struct QAVSelector<InstructionSet::kX86_64> { using type = QuickArgumentFrameInfoX86_64; };
+struct QAFISelector<InstructionSet::kX86_64> { using type = QuickArgumentFrameInfoX86_64; };
 
 }  // namespace detail
 
 // TODO(Simulator): Use the quick code ISA instead of kRuntimeISA.
-using QuickArgumentVisitor = detail::QAVSelector<kRuntimeISA>::type;
+using QuickArgumentVisitor = QuickArgumentVisitorImpl<detail::QAFISelector<kRuntimeISA>::type>;
 
 // Returns the 'this' object of a proxy method. This function is only used by StackVisitor. It
 // allows to use the QuickArgumentVisitor constants without moving all the code in its own module.

@@ -382,7 +382,7 @@ class OptimizingUnitTestHelper {
 
     pre_header->AddSuccessor(loop);
     loop->AddSuccessor(loop_exit);  // true successor
-    loop->AddSuccessor(loop);  // fakse successor
+    loop->AddSuccessor(loop);  // false successor
 
     MakeGoto(pre_header);
 

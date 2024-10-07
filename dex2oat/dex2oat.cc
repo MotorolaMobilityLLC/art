@@ -2100,7 +2100,8 @@ class Dex2Oat final {
     for (size_t i = 0, size = oat_files_.size(); i != size; ++i) {
       std::unique_ptr<linker::OatWriter>& oat_writer = oat_writers_[i];
       std::vector<const DexFile*>& dex_files = dex_files_per_oat_file_[i];
-      oat_writer->Initialize(driver_.get(), image_writer_.get(), dex_files);
+      oat_writer->Initialize(
+          driver_.get(), verification_results_.get(), image_writer_.get(), dex_files);
     }
 
     if (!use_existing_vdex_) {
@@ -2648,7 +2649,6 @@ class Dex2Oat final {
       bool do_oat_writer_layout = DoOatLayoutOptimizations();
       oat_writers_.emplace_back(new linker::OatWriter(
           *compiler_options_,
-          verification_results_.get(),
           timings_,
           do_oat_writer_layout ? profile_compilation_info_.get() : nullptr));
     }

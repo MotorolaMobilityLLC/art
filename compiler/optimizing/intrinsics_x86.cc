@@ -2517,8 +2517,10 @@ void CreateUnsafeGetAndUpdateLocations(ArenaAllocator* allocator,
     // to take advantage of XCHG or XADD. Arbitrarily pick EAX.
     locations->SetInAt(3, Location::RegisterLocation(EAX));
     // Only set the `out` register if it's needed. In the void case we can still use EAX in the
-    // same manner as it is used an as `in` register.
-    if (!is_void) {
+    // same manner as it is marked as a temp register.
+    if (is_void) {
+      locations->AddTemp(Location::RegisterLocation(EAX));
+    } else {
       locations->SetOut(Location::RegisterLocation(EAX));
     }
   }
@@ -4296,8 +4298,10 @@ static void CreateVarHandleGetAndSetLocations(HInvoke* invoke, CodeGeneratorX86*
   } else {
     locations->SetInAt(value_index, Location::RegisterLocation(EAX));
     // Only set the `out` register if it's needed. In the void case we can still use EAX in the
-    // same manner as it is used an as `in` register.
-    if (!is_void) {
+    // same manner as it is marked as a temp register.
+    if (is_void) {
+      locations->AddTemp(Location::RegisterLocation(EAX));
+    } else {
       locations->SetOut(Location::RegisterLocation(EAX));
     }
   }
@@ -4680,8 +4684,10 @@ static void CreateVarHandleGetAndAddLocations(HInvoke* invoke, CodeGeneratorX86*
     // xadd updates the register argument with the old value. ByteRegister required for xaddb.
     locations->SetInAt(value_index, Location::RegisterLocation(EAX));
     // Only set the `out` register if it's needed. In the void case we can still use EAX in the
-    // same manner as it is used an as `in` register.
-    if (!is_void) {
+    // same manner as it is marked as a temp register.
+    if (is_void) {
+      locations->AddTemp(Location::RegisterLocation(EAX));
+    } else {
       locations->SetOut(Location::RegisterLocation(EAX));
     }
   }

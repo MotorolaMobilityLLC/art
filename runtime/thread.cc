@@ -952,7 +952,58 @@ void Thread::CreateNativeThread(JNIEnv* env, jobject java_peer, size_t stack_siz
 static void GetThreadStack(pthread_t thread,
                            void** stack_base,
                            size_t* stack_size,
-                           size_t* guard_size);
+                           size_t* guard_size) {
+#if defined(__APPLE__)
+  *stack_size = pthread_get_stacksize_np(thread);
+  void* stack_addr = pthread_get_stackaddr_np(thread);
+
+  // Check whether stack_addr is the base or end of the stack.
+  // (On Mac OS 10.7, it's the end.)
+  int stack_variable;
+  if (stack_addr > &stack_variable) {
+    *stack_base = reinterpret_cast<uint8_t*>(stack_addr) - *stack_size;
+  } else {
+    *stack_base = stack_addr;
+  }
+
+  // This is wrong, but there doesn't seem to be a way to get the actual value on the Mac.
+  pthread_attr_t attributes;
+  CHECK_PTHREAD_CALL(pthread_attr_init, (&attributes), __FUNCTION__);
+  CHECK_PTHREAD_CALL(pthread_attr_getguardsize, (&attributes, guard_size), __FUNCTION__);
+  CHECK_PTHREAD_CALL(pthread_attr_destroy, (&attributes), __FUNCTION__);
+#else
+  pthread_attr_t attributes;
+  CHECK_PTHREAD_CALL(pthread_getattr_np, (thread, &attributes), __FUNCTION__);
+  CHECK_PTHREAD_CALL(pthread_attr_getstack, (&attributes, stack_base, stack_size), __FUNCTION__);
+  CHECK_PTHREAD_CALL(pthread_attr_getguardsize, (&attributes, guard_size), __FUNCTION__);
+  CHECK_PTHREAD_CALL(pthread_attr_destroy, (&attributes), __FUNCTION__);
+
+#if defined(__GLIBC__)
+  // If we're the main thread, check whether we were run with an unlimited stack. In that case,
+  // glibc will have reported a 2GB stack for our 32-bit process, and our stack overflow detection
+  // will be broken because we'll die long before we get close to 2GB.
+  bool is_main_thread = (::art::GetTid() == static_cast<uint32_t>(getpid()));
+  if (is_main_thread) {
+    rlimit stack_limit;
+    if (getrlimit(RLIMIT_STACK, &stack_limit) == -1) {
+      PLOG(FATAL) << "getrlimit(RLIMIT_STACK) failed";
+    }
+    if (stack_limit.rlim_cur == RLIM_INFINITY) {
+      size_t old_stack_size = *stack_size;
+
+      // Use the kernel default limit as our size, and adjust the base to match.
+      *stack_size = 8 * MB;
+      *stack_base = reinterpret_cast<uint8_t*>(*stack_base) + (old_stack_size - *stack_size);
+
+      VLOG(threads) << "Limiting unlimited stack (reported as " << PrettySize(old_stack_size) << ")"
+                    << " to " << PrettySize(*stack_size)
+                    << " with base " << *stack_base;
+    }
+  }
+#endif
+
+#endif
+}
 
 bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_env_ext) {
   // This function does all the initialization that must be run by the native thread it applies to.
@@ -1288,62 +1339,6 @@ void Thread::SetThreadName(const char* name) {
   Dbg::DdmSendThreadNotification(this, CHUNK_TYPE("THNM"));
 }
 
-static void GetThreadStack(pthread_t thread,
-                           void** stack_base,
-                           size_t* stack_size,
-                           size_t* guard_size) {
-#if defined(__APPLE__)
-  *stack_size = pthread_get_stacksize_np(thread);
-  void* stack_addr = pthread_get_stackaddr_np(thread);
-
-  // Check whether stack_addr is the base or end of the stack.
-  // (On Mac OS 10.7, it's the end.)
-  int stack_variable;
-  if (stack_addr > &stack_variable) {
-    *stack_base = reinterpret_cast<uint8_t*>(stack_addr) - *stack_size;
-  } else {
-    *stack_base = stack_addr;
-  }
-
-  // This is wrong, but there doesn't seem to be a way to get the actual value on the Mac.
-  pthread_attr_t attributes;
-  CHECK_PTHREAD_CALL(pthread_attr_init, (&attributes), __FUNCTION__);
-  CHECK_PTHREAD_CALL(pthread_attr_getguardsize, (&attributes, guard_size), __FUNCTION__);
-  CHECK_PTHREAD_CALL(pthread_attr_destroy, (&attributes), __FUNCTION__);
-#else
-  pthread_attr_t attributes;
-  CHECK_PTHREAD_CALL(pthread_getattr_np, (thread, &attributes), __FUNCTION__);
-  CHECK_PTHREAD_CALL(pthread_attr_getstack, (&attributes, stack_base, stack_size), __FUNCTION__);
-  CHECK_PTHREAD_CALL(pthread_attr_getguardsize, (&attributes, guard_size), __FUNCTION__);
-  CHECK_PTHREAD_CALL(pthread_attr_destroy, (&attributes), __FUNCTION__);
-
-#if defined(__GLIBC__)
-  // If we're the main thread, check whether we were run with an unlimited stack. In that case,
-  // glibc will have reported a 2GB stack for our 32-bit process, and our stack overflow detection
-  // will be broken because we'll die long before we get close to 2GB.
-  bool is_main_thread = (::art::GetTid() == static_cast<uint32_t>(getpid()));
-  if (is_main_thread) {
-    rlimit stack_limit;
-    if (getrlimit(RLIMIT_STACK, &stack_limit) == -1) {
-      PLOG(FATAL) << "getrlimit(RLIMIT_STACK) failed";
-    }
-    if (stack_limit.rlim_cur == RLIM_INFINITY) {
-      size_t old_stack_size = *stack_size;
-
-      // Use the kernel default limit as our size, and adjust the base to match.
-      *stack_size = 8 * MB;
-      *stack_base = reinterpret_cast<uint8_t*>(*stack_base) + (old_stack_size - *stack_size);
-
-      VLOG(threads) << "Limiting unlimited stack (reported as " << PrettySize(old_stack_size) << ")"
-                    << " to " << PrettySize(*stack_size)
-                    << " with base " << *stack_base;
-    }
-  }
-#endif
-
-#endif
-}
-
 template <StackType stack_type>
 bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t read_guard_size) {
   ScopedTrace trace("InitStack");
@@ -1382,7 +1377,7 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
     return false;
   }
 
-  std::string stack_type_str = "";
+  const char* stack_type_str = "";
   if constexpr (stack_type == kNativeStackType) {
     stack_type_str = "Native";
   } else if constexpr (stack_type == kQuickStackType) {
@@ -1391,7 +1386,7 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
 
   // This is included in the SIGQUIT output, but it's useful here for thread debugging.
   VLOG(threads) << StringPrintf("%s stack is at %p (%s with %s guard)",
-                                stack_type_str.c_str(),
+                                stack_type_str,
                                 read_stack_base,
                                 PrettySize(read_stack_size).c_str(),
                                 PrettySize(read_guard_size).c_str());
@@ -1410,12 +1405,12 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
     // to install our own region so we need to move the limits
     // of the stack to make room for it.
 
-    SetStackBegin<stack_type>(GetStackBegin<stack_type>() + read_guard_size
-                              + GetStackOverflowProtectedSize());
-    SetStackEnd<stack_type>(GetStackEnd<stack_type>() + read_guard_size
-                            + GetStackOverflowProtectedSize());
-    SetStackSize<stack_type>(GetStackSize<stack_type>() - (read_guard_size
-                             + GetStackOverflowProtectedSize()));
+    SetStackBegin<stack_type>(
+        GetStackBegin<stack_type>() + read_guard_size + GetStackOverflowProtectedSize());
+    SetStackEnd<stack_type>(
+        GetStackEnd<stack_type>() + read_guard_size + GetStackOverflowProtectedSize());
+    SetStackSize<stack_type>(
+        GetStackSize<stack_type>() - (read_guard_size + GetStackOverflowProtectedSize()));
 
     InstallImplicitProtection<stack_type>();
   }

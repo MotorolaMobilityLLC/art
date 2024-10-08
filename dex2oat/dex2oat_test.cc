@@ -1846,10 +1846,10 @@ TEST_F(Dex2oatTest, AppImageResolveStrings) {
   ASSERT_TRUE(odex_file != nullptr);
   // Check the strings in the app image intern table only contain the "startup" strigs.
   {
-    ScopedObjectAccess soa(Thread::Current());
     std::unique_ptr<gc::space::ImageSpace> space = gc::space::ImageSpace::CreateFromAppImage(
         app_image_location.c_str(), odex_file.get(), &error_msg);
     ASSERT_TRUE(space != nullptr) << error_msg;
+    ScopedObjectAccess soa(Thread::Current());
     std::set<std::string> seen;
     InternTable intern_table;
     intern_table.AddImageStringsToTable(

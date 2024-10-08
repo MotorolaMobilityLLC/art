@@ -296,7 +296,6 @@ std::vector<std::unique_ptr<const DexFile>> OatFileManager::OpenDexFilesFromOat(
         if (kEnableRuntimeAppImage && image_space == nullptr && !compilation_enabled) {
           std::string art_file = RuntimeImage::GetRuntimeImagePath(dex_location);
           std::string error_msg;
-          ScopedObjectAccess soa(self);
           image_space = gc::space::ImageSpace::CreateFromAppImage(
               art_file.c_str(), oat_file.get(), &error_msg);
           if (image_space == nullptr) {

@@ -951,7 +951,6 @@ std::unique_ptr<gc::space::ImageSpace> OatFileAssistant::OpenImageSpace(const Oa
     return nullptr;
   }
   std::string error_msg;
-  ScopedObjectAccess soa(Thread::Current());
   std::unique_ptr<gc::space::ImageSpace> ret =
       gc::space::ImageSpace::CreateFromAppImage(art_file.c_str(), oat_file, &error_msg);
   if (ret == nullptr && (VLOG_IS_ON(image) || OS::FileExists(art_file.c_str()))) {

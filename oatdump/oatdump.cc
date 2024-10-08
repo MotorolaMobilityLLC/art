@@ -2544,7 +2544,6 @@ static int DumpImages(Runtime* runtime, OatDumperOptions* options, std::ostream*
   ScopedNullHandle<mirror::ClassLoader> null_class_loader;
   options->class_loader_ = &null_class_loader;
 
-  ScopedObjectAccess soa(Thread::Current());
   if (options->app_image_ != nullptr) {
     if (!options->oat_filename_.has_value()) {
       LOG(ERROR) << "Can not dump app image without app oat file";
@@ -2569,6 +2568,7 @@ static int DumpImages(Runtime* runtime, OatDumperOptions* options, std::ostream*
       return EXIT_FAILURE;
     }
     // Open dex files for the image.
+    ScopedObjectAccess soa(Thread::Current());
     std::vector<std::unique_ptr<const DexFile>> dex_files;
     if (!runtime->GetClassLinker()->OpenImageDexFiles(space.get(), &dex_files, &error_msg)) {
       LOG(ERROR) << "Failed to open app image dex files " << options->app_image_ << " with error "
@@ -2584,6 +2584,7 @@ static int DumpImages(Runtime* runtime, OatDumperOptions* options, std::ostream*
     LOG(ERROR) << "No image spaces";
     return EXIT_FAILURE;
   }
+  ScopedObjectAccess soa(Thread::Current());
   for (gc::space::ImageSpace* image_space : heap->GetBootImageSpaces()) {
     int result = DumpImage(image_space, options, os);
     if (result != EXIT_SUCCESS) {

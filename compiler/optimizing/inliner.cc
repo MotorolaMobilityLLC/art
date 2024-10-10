@@ -28,6 +28,7 @@
 #include "dex/inline_method_analyser.h"
 #include "driver/compiler_options.h"
 #include "driver/dex_compilation_unit.h"
+#include "handle_cache-inl.h"
 #include "instruction_simplifier.h"
 #include "intrinsics.h"
 #include "jit/jit.h"

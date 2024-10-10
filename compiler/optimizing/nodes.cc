@@ -51,13 +51,6 @@ namespace art HIDDEN {
 // double).
 static constexpr bool kEnableFloatingPointStaticEvaluation = (FLT_EVAL_METHOD == 0);
 
-ReferenceTypeInfo::TypeHandle HandleCache::CreateRootHandle(VariableSizedHandleScope* handles,
-                                                            ClassRoot class_root) {
-  // Mutator lock is required for NewHandle and GetClassRoot().
-  ScopedObjectAccess soa(Thread::Current());
-  return handles->NewHandle(GetClassRoot(class_root));
-}
-
 void HGraph::AddBlock(HBasicBlock* block) {
   block->SetBlockId(blocks_.size());
   blocks_.push_back(block);

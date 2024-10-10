@@ -598,11 +598,6 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
   void SetProfilingInfo(ProfilingInfo* info) { profiling_info_ = info; }
   ProfilingInfo* GetProfilingInfo() const { return profiling_info_; }
 
-  HCondition* CreateCondition(IfCondition cond,
-                              HInstruction* lhs,
-                              HInstruction* rhs,
-                              uint32_t dex_pc = kNoDexPc);
-
   ReferenceTypeInfo GetInexactObjectRti() {
     return ReferenceTypeInfo::Create(handle_cache_.GetObjectClassHandle(), /* is_exact= */ false);
   }
@@ -3929,6 +3924,12 @@ class HCondition : public HBinaryOperation {
                          dex_pc) {
     SetPackedField<ComparisonBiasField>(ComparisonBias::kNoBias);
   }
+
+  static HCondition* Create(HGraph* graph,
+                            IfCondition cond,
+                            HInstruction* lhs,
+                            HInstruction* rhs,
+                            uint32_t dex_pc = kNoDexPc);
 
   // For code generation purposes, returns whether this instruction is just before
   // `instruction`, and disregard moves in between.

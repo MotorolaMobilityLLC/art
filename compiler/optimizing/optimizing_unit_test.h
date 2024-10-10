@@ -688,7 +688,7 @@ class OptimizingUnitTestHelper {
                             HInstruction* first,
                             HInstruction* second,
                             uint32_t dex_pc = kNoDexPc) {
-    HCondition* condition = graph_->CreateCondition(cond, first, second, dex_pc);
+    HCondition* condition = HCondition::Create(graph_, cond, first, second, dex_pc);
     AddOrInsertInstruction(block, condition);
     return condition;
   }

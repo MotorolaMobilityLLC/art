@@ -911,7 +911,7 @@ HInstruction* InstructionSimplifierVisitor::InsertOppositeCondition(HInstruction
     HInstruction* lhs = cond->InputAt(0);
     HInstruction* rhs = cond->InputAt(1);
     HInstruction* replacement =
-        GetGraph()->CreateCondition(cond->AsCondition()->GetOppositeCondition(), lhs, rhs);
+        HCondition::Create(GetGraph(), cond->AsCondition()->GetOppositeCondition(), lhs, rhs);
     cursor->GetBlock()->InsertInstructionBefore(replacement, cursor);
     return replacement;
   } else if (cond->IsIntConstant()) {
@@ -1879,7 +1879,7 @@ void InstructionSimplifierVisitor::VisitCondition(HCondition* condition) {
   HInstruction* right = condition->GetRight();
   if (left->IsConstant() && !right->IsConstant()) {
     IfCondition new_cond = GetOppositeConditionForOperandSwap(condition->GetCondition());
-    HCondition* replacement = GetGraph()->CreateCondition(new_cond, right, left);
+    HCondition* replacement = HCondition::Create(GetGraph(), new_cond, right, left);
     block->ReplaceAndRemoveInstructionWith(condition, replacement);
     // If it is a FP condition, we must set the opposite bias.
     if (condition->IsLtBias()) {

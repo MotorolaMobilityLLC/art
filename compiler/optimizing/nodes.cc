@@ -1919,6 +1919,29 @@ std::ostream& operator<<(std::ostream& os, ComparisonBias rhs) {
   }
 }
 
+HCondition* HCondition::Create(HGraph* graph,
+                               IfCondition cond,
+                               HInstruction* lhs,
+                               HInstruction* rhs,
+                               uint32_t dex_pc) {
+  ArenaAllocator* allocator = graph->GetAllocator();
+  switch (cond) {
+    case kCondEQ: return new (allocator) HEqual(lhs, rhs, dex_pc);
+    case kCondNE: return new (allocator) HNotEqual(lhs, rhs, dex_pc);
+    case kCondLT: return new (allocator) HLessThan(lhs, rhs, dex_pc);
+    case kCondLE: return new (allocator) HLessThanOrEqual(lhs, rhs, dex_pc);
+    case kCondGT: return new (allocator) HGreaterThan(lhs, rhs, dex_pc);
+    case kCondGE: return new (allocator) HGreaterThanOrEqual(lhs, rhs, dex_pc);
+    case kCondB:  return new (allocator) HBelow(lhs, rhs, dex_pc);
+    case kCondBE: return new (allocator) HBelowOrEqual(lhs, rhs, dex_pc);
+    case kCondA:  return new (allocator) HAbove(lhs, rhs, dex_pc);
+    case kCondAE: return new (allocator) HAboveOrEqual(lhs, rhs, dex_pc);
+    default:
+      LOG(FATAL) << "Unexpected condition " << cond;
+      UNREACHABLE();
+  }
+}
+
 bool HCondition::IsBeforeWhenDisregardMoves(HInstruction* instruction) const {
   return this == instruction->GetPreviousDisregardingMoves();
 }
@@ -3347,28 +3370,6 @@ HInstruction* ReplaceInstrOrPhiByClone(HInstruction* instr) {
     }
   }
   return clone;
-}
-
-HCondition* HGraph::CreateCondition(IfCondition cond,
-                                    HInstruction* lhs,
-                                    HInstruction* rhs,
-                                    uint32_t dex_pc) {
-  ArenaAllocator* allocator = GetAllocator();
-  switch (cond) {
-    case kCondEQ: return new (allocator) HEqual(lhs, rhs, dex_pc);
-    case kCondNE: return new (allocator) HNotEqual(lhs, rhs, dex_pc);
-    case kCondLT: return new (allocator) HLessThan(lhs, rhs, dex_pc);
-    case kCondLE: return new (allocator) HLessThanOrEqual(lhs, rhs, dex_pc);
-    case kCondGT: return new (allocator) HGreaterThan(lhs, rhs, dex_pc);
-    case kCondGE: return new (allocator) HGreaterThanOrEqual(lhs, rhs, dex_pc);
-    case kCondB:  return new (allocator) HBelow(lhs, rhs, dex_pc);
-    case kCondBE: return new (allocator) HBelowOrEqual(lhs, rhs, dex_pc);
-    case kCondA:  return new (allocator) HAbove(lhs, rhs, dex_pc);
-    case kCondAE: return new (allocator) HAboveOrEqual(lhs, rhs, dex_pc);
-    default:
-      LOG(FATAL) << "Unexpected condition " << cond;
-      UNREACHABLE();
-  }
 }
 
 std::ostream& operator<<(std::ostream& os, const MoveOperands& rhs) {

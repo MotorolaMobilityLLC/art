@@ -54,6 +54,9 @@ class TraceProfiler {
 
   static bool IsTraceProfileInProgress() REQUIRES(Locks::trace_lock_);
 
+  // Allocates a buffer for the specified thread.
+  static void AllocateBuffer(Thread* thread);
+
  private:
   // Dumps the events from all threads into the trace_file.
   static void Dump(std::unique_ptr<File>&& trace_file);

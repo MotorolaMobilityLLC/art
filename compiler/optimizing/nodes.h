@@ -45,7 +45,7 @@
 #include "dex/method_reference.h"
 #include "entrypoints/quick/quick_entrypoints_enum.h"
 #include "handle.h"
-#include "handle_scope.h"
+#include "handle_cache.h"
 #include "intrinsics_enum.h"
 #include "locations.h"
 #include "mirror/class.h"
@@ -197,69 +197,6 @@ class HInstructionList : public ValueObject {
   friend class HBackwardInstructionIterator;
 
   DISALLOW_COPY_AND_ASSIGN(HInstructionList);
-};
-
-class HandleCache {
- public:
-  explicit HandleCache(VariableSizedHandleScope* handles) : handles_(handles) { }
-
-  VariableSizedHandleScope* GetHandles() { return handles_; }
-
-  template <typename T>
-  MutableHandle<T> NewHandle(T* object) REQUIRES_SHARED(Locks::mutator_lock_) {
-    return handles_->NewHandle(object);
-  }
-
-  template <typename T>
-  MutableHandle<T> NewHandle(ObjPtr<T> object) REQUIRES_SHARED(Locks::mutator_lock_) {
-    return handles_->NewHandle(object);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetObjectClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangObject, &object_class_handle_);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetClassClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangClass, &class_class_handle_);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetMethodHandleClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangInvokeMethodHandleImpl, &method_handle_class_handle_);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetMethodTypeClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangInvokeMethodType, &method_type_class_handle_);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetStringClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangString, &string_class_handle_);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetThrowableClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangThrowable, &throwable_class_handle_);
-  }
-
-
- private:
-  inline ReferenceTypeInfo::TypeHandle GetRootHandle(ClassRoot class_root,
-                                                     ReferenceTypeInfo::TypeHandle* cache) {
-    if (UNLIKELY(!ReferenceTypeInfo::IsValidHandle(*cache))) {
-      *cache = CreateRootHandle(handles_, class_root);
-    }
-    return *cache;
-  }
-
-  static ReferenceTypeInfo::TypeHandle CreateRootHandle(VariableSizedHandleScope* handles,
-                                                        ClassRoot class_root);
-
-  VariableSizedHandleScope* handles_;
-
-  ReferenceTypeInfo::TypeHandle object_class_handle_;
-  ReferenceTypeInfo::TypeHandle class_class_handle_;
-  ReferenceTypeInfo::TypeHandle method_handle_class_handle_;
-  ReferenceTypeInfo::TypeHandle method_type_class_handle_;
-  ReferenceTypeInfo::TypeHandle string_class_handle_;
-  ReferenceTypeInfo::TypeHandle throwable_class_handle_;
 };
 
 // Control-flow graph of a method. Contains a list of basic blocks.

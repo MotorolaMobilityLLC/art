@@ -29,6 +29,7 @@
 #include "driver/compiler_options.h"
 #include "driver/dex_compilation_unit.h"
 #include "entrypoints/entrypoint_utils-inl.h"
+#include "handle_cache-inl.h"
 #include "imtable-inl.h"
 #include "intrinsics.h"
 #include "intrinsics_utils.h"

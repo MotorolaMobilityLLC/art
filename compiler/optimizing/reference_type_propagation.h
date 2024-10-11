@@ -26,6 +26,8 @@
 
 namespace art HIDDEN {
 
+class HandleCache;
+
 /**
  * Propagates reference types to instructions.
  */

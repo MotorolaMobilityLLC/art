@@ -691,6 +691,26 @@ void HLoopInformation::Dump(std::ostream& os) {
   }
 }
 
+template <class InstructionType, typename ValueType>
+InstructionType* HGraph::CreateConstant(ValueType value,
+                                        ArenaSafeMap<ValueType, InstructionType*>* cache) {
+  // Try to find an existing constant of the given value.
+  InstructionType* constant = nullptr;
+  auto cached_constant = cache->find(value);
+  if (cached_constant != cache->end()) {
+    constant = cached_constant->second;
+  }
+
+  // If not found or previously deleted, create and cache a new instruction.
+  // Don't bother reviving a previously deleted instruction, for simplicity.
+  if (constant == nullptr || constant->GetBlock() == nullptr) {
+    constant = new (allocator_) InstructionType(value);
+    cache->Overwrite(value, constant);
+    InsertConstant(constant);
+  }
+  return constant;
+}
+
 void HGraph::InsertConstant(HConstant* constant) {
   // New constants are inserted before the SuspendCheck at the bottom of the
   // entry block. Note that this method can be called from the graph builder and
@@ -714,12 +734,12 @@ void HGraph::InsertConstant(HConstant* constant) {
   }
 }
 
-HNullConstant* HGraph::GetNullConstant(uint32_t dex_pc) {
+HNullConstant* HGraph::GetNullConstant() {
   // For simplicity, don't bother reviving the cached null constant if it is
   // not null and not in a block. Otherwise, we need to clear the instruction
   // id and/or any invariants the graph is assuming when adding new instructions.
   if ((cached_null_constant_ == nullptr) || (cached_null_constant_->GetBlock() == nullptr)) {
-    cached_null_constant_ = new (allocator_) HNullConstant(dex_pc);
+    cached_null_constant_ = new (allocator_) HNullConstant();
     cached_null_constant_->SetReferenceTypeInfo(GetInexactObjectRti());
     InsertConstant(cached_null_constant_);
   }
@@ -728,6 +748,22 @@ HNullConstant* HGraph::GetNullConstant(uint32_t dex_pc) {
     DCHECK(cached_null_constant_->GetReferenceTypeInfo().IsValid());
   }
   return cached_null_constant_;
+}
+
+HIntConstant* HGraph::GetIntConstant(int32_t value) {
+  return CreateConstant(value, &cached_int_constants_);
+}
+
+HLongConstant* HGraph::GetLongConstant(int64_t value) {
+  return CreateConstant(value, &cached_long_constants_);
+}
+
+HFloatConstant* HGraph::GetFloatConstant(float value) {
+  return CreateConstant(bit_cast<int32_t, float>(value), &cached_float_constants_);
+}
+
+HDoubleConstant* HGraph::GetDoubleConstant(double value) {
+  return CreateConstant(bit_cast<int64_t, double>(value), &cached_double_constants_);
 }
 
 HCurrentMethod* HGraph::GetCurrentMethod() {
@@ -757,7 +793,7 @@ std::string HGraph::PrettyMethod(bool with_signature) const {
   return dex_file_.PrettyMethod(method_idx_, with_signature);
 }
 
-HConstant* HGraph::GetConstant(DataType::Type type, int64_t value, uint32_t dex_pc) {
+HConstant* HGraph::GetConstant(DataType::Type type, int64_t value) {
   switch (type) {
     case DataType::Type::kBool:
       DCHECK(IsUint<1>(value));
@@ -768,10 +804,10 @@ HConstant* HGraph::GetConstant(DataType::Type type, int64_t value, uint32_t dex_
     case DataType::Type::kInt16:
     case DataType::Type::kInt32:
       DCHECK(IsInt(DataType::Size(type) * kBitsPerByte, value));
-      return GetIntConstant(static_cast<int32_t>(value), dex_pc);
+      return GetIntConstant(static_cast<int32_t>(value));
 
     case DataType::Type::kInt64:
-      return GetLongConstant(value, dex_pc);
+      return GetLongConstant(value);
 
     default:
       LOG(FATAL) << "Unsupported constant type";
@@ -1714,19 +1750,19 @@ HConstant* HTypeConversion::TryStaticEvaluation(HInstruction* input) const {
     int32_t value = input->AsIntConstant()->GetValue();
     switch (GetResultType()) {
       case DataType::Type::kInt8:
-        return graph->GetIntConstant(static_cast<int8_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<int8_t>(value));
       case DataType::Type::kUint8:
-        return graph->GetIntConstant(static_cast<uint8_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<uint8_t>(value));
       case DataType::Type::kInt16:
-        return graph->GetIntConstant(static_cast<int16_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<int16_t>(value));
       case DataType::Type::kUint16:
-        return graph->GetIntConstant(static_cast<uint16_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<uint16_t>(value));
       case DataType::Type::kInt64:
-        return graph->GetLongConstant(static_cast<int64_t>(value), GetDexPc());
+        return graph->GetLongConstant(static_cast<int64_t>(value));
       case DataType::Type::kFloat32:
-        return graph->GetFloatConstant(static_cast<float>(value), GetDexPc());
+        return graph->GetFloatConstant(static_cast<float>(value));
       case DataType::Type::kFloat64:
-        return graph->GetDoubleConstant(static_cast<double>(value), GetDexPc());
+        return graph->GetDoubleConstant(static_cast<double>(value));
       default:
         return nullptr;
     }
@@ -1734,19 +1770,19 @@ HConstant* HTypeConversion::TryStaticEvaluation(HInstruction* input) const {
     int64_t value = input->AsLongConstant()->GetValue();
     switch (GetResultType()) {
       case DataType::Type::kInt8:
-        return graph->GetIntConstant(static_cast<int8_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<int8_t>(value));
       case DataType::Type::kUint8:
-        return graph->GetIntConstant(static_cast<uint8_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<uint8_t>(value));
       case DataType::Type::kInt16:
-        return graph->GetIntConstant(static_cast<int16_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<int16_t>(value));
       case DataType::Type::kUint16:
-        return graph->GetIntConstant(static_cast<uint16_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<uint16_t>(value));
       case DataType::Type::kInt32:
-        return graph->GetIntConstant(static_cast<int32_t>(value), GetDexPc());
+        return graph->GetIntConstant(static_cast<int32_t>(value));
       case DataType::Type::kFloat32:
-        return graph->GetFloatConstant(static_cast<float>(value), GetDexPc());
+        return graph->GetFloatConstant(static_cast<float>(value));
       case DataType::Type::kFloat64:
-        return graph->GetDoubleConstant(static_cast<double>(value), GetDexPc());
+        return graph->GetDoubleConstant(static_cast<double>(value));
       default:
         return nullptr;
     }
@@ -1755,22 +1791,22 @@ HConstant* HTypeConversion::TryStaticEvaluation(HInstruction* input) const {
     switch (GetResultType()) {
       case DataType::Type::kInt32:
         if (std::isnan(value))
-          return graph->GetIntConstant(0, GetDexPc());
+          return graph->GetIntConstant(0);
         if (value >= static_cast<float>(kPrimIntMax))
-          return graph->GetIntConstant(kPrimIntMax, GetDexPc());
+          return graph->GetIntConstant(kPrimIntMax);
         if (value <= kPrimIntMin)
-          return graph->GetIntConstant(kPrimIntMin, GetDexPc());
-        return graph->GetIntConstant(static_cast<int32_t>(value), GetDexPc());
+          return graph->GetIntConstant(kPrimIntMin);
+        return graph->GetIntConstant(static_cast<int32_t>(value));
       case DataType::Type::kInt64:
         if (std::isnan(value))
-          return graph->GetLongConstant(0, GetDexPc());
+          return graph->GetLongConstant(0);
         if (value >= static_cast<float>(kPrimLongMax))
-          return graph->GetLongConstant(kPrimLongMax, GetDexPc());
+          return graph->GetLongConstant(kPrimLongMax);
         if (value <= kPrimLongMin)
-          return graph->GetLongConstant(kPrimLongMin, GetDexPc());
-        return graph->GetLongConstant(static_cast<int64_t>(value), GetDexPc());
+          return graph->GetLongConstant(kPrimLongMin);
+        return graph->GetLongConstant(static_cast<int64_t>(value));
       case DataType::Type::kFloat64:
-        return graph->GetDoubleConstant(static_cast<double>(value), GetDexPc());
+        return graph->GetDoubleConstant(static_cast<double>(value));
       default:
         return nullptr;
     }
@@ -1779,22 +1815,22 @@ HConstant* HTypeConversion::TryStaticEvaluation(HInstruction* input) const {
     switch (GetResultType()) {
       case DataType::Type::kInt32:
         if (std::isnan(value))
-          return graph->GetIntConstant(0, GetDexPc());
+          return graph->GetIntConstant(0);
         if (value >= kPrimIntMax)
-          return graph->GetIntConstant(kPrimIntMax, GetDexPc());
+          return graph->GetIntConstant(kPrimIntMax);
         if (value <= kPrimLongMin)
-          return graph->GetIntConstant(kPrimIntMin, GetDexPc());
-        return graph->GetIntConstant(static_cast<int32_t>(value), GetDexPc());
+          return graph->GetIntConstant(kPrimIntMin);
+        return graph->GetIntConstant(static_cast<int32_t>(value));
       case DataType::Type::kInt64:
         if (std::isnan(value))
-          return graph->GetLongConstant(0, GetDexPc());
+          return graph->GetLongConstant(0);
         if (value >= static_cast<double>(kPrimLongMax))
-          return graph->GetLongConstant(kPrimLongMax, GetDexPc());
+          return graph->GetLongConstant(kPrimLongMax);
         if (value <= kPrimLongMin)
-          return graph->GetLongConstant(kPrimLongMin, GetDexPc());
-        return graph->GetLongConstant(static_cast<int64_t>(value), GetDexPc());
+          return graph->GetLongConstant(kPrimLongMin);
+        return graph->GetLongConstant(static_cast<int64_t>(value));
       case DataType::Type::kFloat32:
-        return graph->GetFloatConstant(static_cast<float>(value), GetDexPc());
+        return graph->GetFloatConstant(static_cast<float>(value));
       default:
         return nullptr;
     }
@@ -2905,19 +2941,15 @@ HInstruction* HGraph::InlineInto(HGraph* outer_graph, HInvoke* invoke) {
     HInstruction* current = it.Current();
     HInstruction* replacement = nullptr;
     if (current->IsNullConstant()) {
-      replacement = outer_graph->GetNullConstant(current->GetDexPc());
+      replacement = outer_graph->GetNullConstant();
     } else if (current->IsIntConstant()) {
-      replacement = outer_graph->GetIntConstant(
-          current->AsIntConstant()->GetValue(), current->GetDexPc());
+      replacement = outer_graph->GetIntConstant(current->AsIntConstant()->GetValue());
     } else if (current->IsLongConstant()) {
-      replacement = outer_graph->GetLongConstant(
-          current->AsLongConstant()->GetValue(), current->GetDexPc());
+      replacement = outer_graph->GetLongConstant(current->AsLongConstant()->GetValue());
     } else if (current->IsFloatConstant()) {
-      replacement = outer_graph->GetFloatConstant(
-          current->AsFloatConstant()->GetValue(), current->GetDexPc());
+      replacement = outer_graph->GetFloatConstant(current->AsFloatConstant()->GetValue());
     } else if (current->IsDoubleConstant()) {
-      replacement = outer_graph->GetDoubleConstant(
-          current->AsDoubleConstant()->GetValue(), current->GetDexPc());
+      replacement = outer_graph->GetDoubleConstant(current->AsDoubleConstant()->GetValue());
     } else if (current->IsParameterValue()) {
       if (kIsDebugBuild &&
           invoke->IsInvokeStaticOrDirect() &&

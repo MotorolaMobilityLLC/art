@@ -45,12 +45,13 @@
 #include "dex/method_reference.h"
 #include "entrypoints/quick/quick_entrypoints_enum.h"
 #include "handle.h"
-#include "handle_scope.h"
+#include "handle_cache.h"
 #include "intrinsics_enum.h"
 #include "locations.h"
 #include "mirror/class.h"
 #include "mirror/method_type.h"
 #include "offsets.h"
+#include "reference_type_info.h"
 
 namespace art HIDDEN {
 
@@ -198,184 +199,6 @@ class HInstructionList : public ValueObject {
   DISALLOW_COPY_AND_ASSIGN(HInstructionList);
 };
 
-class ReferenceTypeInfo : ValueObject {
- public:
-  using TypeHandle = Handle<mirror::Class>;
-
-  static ReferenceTypeInfo Create(TypeHandle type_handle, bool is_exact);
-
-  static ReferenceTypeInfo Create(TypeHandle type_handle) REQUIRES_SHARED(Locks::mutator_lock_) {
-    return Create(type_handle, type_handle->CannotBeAssignedFromOtherTypes());
-  }
-
-  static ReferenceTypeInfo CreateUnchecked(TypeHandle type_handle, bool is_exact) {
-    return ReferenceTypeInfo(type_handle, is_exact);
-  }
-
-  static ReferenceTypeInfo CreateInvalid() { return ReferenceTypeInfo(); }
-
-  static bool IsValidHandle(TypeHandle handle) {
-    return handle.GetReference() != nullptr;
-  }
-
-  bool IsValid() const {
-    return IsValidHandle(type_handle_);
-  }
-
-  bool IsExact() const { return is_exact_; }
-
-  bool IsObjectClass() const REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(IsValid());
-    return GetTypeHandle()->IsObjectClass();
-  }
-
-  bool IsStringClass() const REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(IsValid());
-    return GetTypeHandle()->IsStringClass();
-  }
-
-  bool IsObjectArray() const REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(IsValid());
-    return IsArrayClass() && GetTypeHandle()->GetComponentType()->IsObjectClass();
-  }
-
-  bool IsInterface() const REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(IsValid());
-    return GetTypeHandle()->IsInterface();
-  }
-
-  bool IsArrayClass() const REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(IsValid());
-    return GetTypeHandle()->IsArrayClass();
-  }
-
-  bool IsPrimitiveArrayClass() const REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(IsValid());
-    return GetTypeHandle()->IsPrimitiveArray();
-  }
-
-  bool IsNonPrimitiveArrayClass() const REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(IsValid());
-    return IsArrayClass() && !GetTypeHandle()->IsPrimitiveArray();
-  }
-
-  bool CanArrayHold(ReferenceTypeInfo rti)  const REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(IsValid());
-    if (!IsExact()) return false;
-    if (!IsArrayClass()) return false;
-    return GetTypeHandle()->GetComponentType()->IsAssignableFrom(rti.GetTypeHandle().Get());
-  }
-
-  bool CanArrayHoldValuesOf(ReferenceTypeInfo rti)  const REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(IsValid());
-    if (!IsExact()) return false;
-    if (!IsArrayClass()) return false;
-    if (!rti.IsArrayClass()) return false;
-    return GetTypeHandle()->GetComponentType()->IsAssignableFrom(
-        rti.GetTypeHandle()->GetComponentType());
-  }
-
-  Handle<mirror::Class> GetTypeHandle() const { return type_handle_; }
-
-  bool IsSupertypeOf(ReferenceTypeInfo rti) const REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(IsValid());
-    DCHECK(rti.IsValid());
-    return GetTypeHandle()->IsAssignableFrom(rti.GetTypeHandle().Get());
-  }
-
-  // Returns true if the type information provide the same amount of details.
-  // Note that it does not mean that the instructions have the same actual type
-  // (because the type can be the result of a merge).
-  bool IsEqual(ReferenceTypeInfo rti) const REQUIRES_SHARED(Locks::mutator_lock_) {
-    if (!IsValid() && !rti.IsValid()) {
-      // Invalid types are equal.
-      return true;
-    }
-    if (!IsValid() || !rti.IsValid()) {
-      // One is valid, the other not.
-      return false;
-    }
-    return IsExact() == rti.IsExact()
-        && GetTypeHandle().Get() == rti.GetTypeHandle().Get();
-  }
-
- private:
-  ReferenceTypeInfo() : type_handle_(TypeHandle()), is_exact_(false) {}
-  ReferenceTypeInfo(TypeHandle type_handle, bool is_exact)
-      : type_handle_(type_handle), is_exact_(is_exact) { }
-
-  // The class of the object.
-  TypeHandle type_handle_;
-  // Whether or not the type is exact or a superclass of the actual type.
-  // Whether or not we have any information about this type.
-  bool is_exact_;
-};
-
-std::ostream& operator<<(std::ostream& os, const ReferenceTypeInfo& rhs);
-
-class HandleCache {
- public:
-  explicit HandleCache(VariableSizedHandleScope* handles) : handles_(handles) { }
-
-  VariableSizedHandleScope* GetHandles() { return handles_; }
-
-  template <typename T>
-  MutableHandle<T> NewHandle(T* object) REQUIRES_SHARED(Locks::mutator_lock_) {
-    return handles_->NewHandle(object);
-  }
-
-  template <typename T>
-  MutableHandle<T> NewHandle(ObjPtr<T> object) REQUIRES_SHARED(Locks::mutator_lock_) {
-    return handles_->NewHandle(object);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetObjectClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangObject, &object_class_handle_);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetClassClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangClass, &class_class_handle_);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetMethodHandleClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangInvokeMethodHandleImpl, &method_handle_class_handle_);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetMethodTypeClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangInvokeMethodType, &method_type_class_handle_);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetStringClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangString, &string_class_handle_);
-  }
-
-  ReferenceTypeInfo::TypeHandle GetThrowableClassHandle() {
-    return GetRootHandle(ClassRoot::kJavaLangThrowable, &throwable_class_handle_);
-  }
-
-
- private:
-  inline ReferenceTypeInfo::TypeHandle GetRootHandle(ClassRoot class_root,
-                                                     ReferenceTypeInfo::TypeHandle* cache) {
-    if (UNLIKELY(!ReferenceTypeInfo::IsValidHandle(*cache))) {
-      *cache = CreateRootHandle(handles_, class_root);
-    }
-    return *cache;
-  }
-
-  static ReferenceTypeInfo::TypeHandle CreateRootHandle(VariableSizedHandleScope* handles,
-                                                        ClassRoot class_root);
-
-  VariableSizedHandleScope* handles_;
-
-  ReferenceTypeInfo::TypeHandle object_class_handle_;
-  ReferenceTypeInfo::TypeHandle class_class_handle_;
-  ReferenceTypeInfo::TypeHandle method_handle_class_handle_;
-  ReferenceTypeInfo::TypeHandle method_type_class_handle_;
-  ReferenceTypeInfo::TypeHandle string_class_handle_;
-  ReferenceTypeInfo::TypeHandle throwable_class_handle_;
-};
-
 // Control-flow graph of a method. Contains a list of basic blocks.
 class HGraph : public ArenaObject<kArenaAllocGraph> {
  public:
@@ -398,7 +221,6 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
         linear_order_(allocator->Adapter(kArenaAllocLinearOrder)),
         entry_block_(nullptr),
         exit_block_(nullptr),
-        maximum_number_of_out_vregs_(0),
         number_of_vregs_(0),
         number_of_in_vregs_(0),
         temporaries_vreg_slots_(0),
@@ -550,18 +372,6 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
     current_instruction_id_ = id;
   }
 
-  uint16_t GetMaximumNumberOfOutVRegs() const {
-    return maximum_number_of_out_vregs_;
-  }
-
-  void SetMaximumNumberOfOutVRegs(uint16_t new_value) {
-    maximum_number_of_out_vregs_ = new_value;
-  }
-
-  void UpdateMaximumNumberOfOutVRegs(uint16_t other_value) {
-    maximum_number_of_out_vregs_ = std::max(maximum_number_of_out_vregs_, other_value);
-  }
-
   void UpdateTemporariesVRegSlots(size_t slots) {
     temporaries_vreg_slots_ = std::max(slots, temporaries_vreg_slots_);
   }
@@ -632,25 +442,17 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
   // Returns a constant of the given type and value. If it does not exist
   // already, it is created and inserted into the graph. This method is only for
   // integral types.
-  HConstant* GetConstant(DataType::Type type, int64_t value, uint32_t dex_pc = kNoDexPc);
+  HConstant* GetConstant(DataType::Type type, int64_t value);
 
   // TODO: This is problematic for the consistency of reference type propagation
   // because it can be created anytime after the pass and thus it will be left
   // with an invalid type.
-  HNullConstant* GetNullConstant(uint32_t dex_pc = kNoDexPc);
+  HNullConstant* GetNullConstant();
 
-  HIntConstant* GetIntConstant(int32_t value, uint32_t dex_pc = kNoDexPc) {
-    return CreateConstant(value, &cached_int_constants_, dex_pc);
-  }
-  HLongConstant* GetLongConstant(int64_t value, uint32_t dex_pc = kNoDexPc) {
-    return CreateConstant(value, &cached_long_constants_, dex_pc);
-  }
-  HFloatConstant* GetFloatConstant(float value, uint32_t dex_pc = kNoDexPc) {
-    return CreateConstant(bit_cast<int32_t, float>(value), &cached_float_constants_, dex_pc);
-  }
-  HDoubleConstant* GetDoubleConstant(double value, uint32_t dex_pc = kNoDexPc) {
-    return CreateConstant(bit_cast<int64_t, double>(value), &cached_double_constants_, dex_pc);
-  }
+  HIntConstant* GetIntConstant(int32_t value);
+  HLongConstant* GetLongConstant(int64_t value);
+  HFloatConstant* GetFloatConstant(float value);
+  HDoubleConstant* GetDoubleConstant(double value);
 
   HCurrentMethod* GetCurrentMethod();
 
@@ -733,11 +535,6 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
   void SetProfilingInfo(ProfilingInfo* info) { profiling_info_ = info; }
   ProfilingInfo* GetProfilingInfo() const { return profiling_info_; }
 
-  HCondition* CreateCondition(IfCondition cond,
-                              HInstruction* lhs,
-                              HInstruction* rhs,
-                              uint32_t dex_pc = kNoDexPc);
-
   ReferenceTypeInfo GetInexactObjectRti() {
     return ReferenceTypeInfo::Create(handle_cache_.GetObjectClassHandle(), /* is_exact= */ false);
   }
@@ -755,24 +552,7 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
 
   template <class InstructionType, typename ValueType>
   InstructionType* CreateConstant(ValueType value,
-                                  ArenaSafeMap<ValueType, InstructionType*>* cache,
-                                  uint32_t dex_pc = kNoDexPc) {
-    // Try to find an existing constant of the given value.
-    InstructionType* constant = nullptr;
-    auto cached_constant = cache->find(value);
-    if (cached_constant != cache->end()) {
-      constant = cached_constant->second;
-    }
-
-    // If not found or previously deleted, create and cache a new instruction.
-    // Don't bother reviving a previously deleted instruction, for simplicity.
-    if (constant == nullptr || constant->GetBlock() == nullptr) {
-      constant = new (allocator_) InstructionType(value, dex_pc);
-      cache->Overwrite(value, constant);
-      InsertConstant(constant);
-    }
-    return constant;
-  }
+                                  ArenaSafeMap<ValueType, InstructionType*>* cache);
 
   void InsertConstant(HConstant* instruction);
 
@@ -800,9 +580,6 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
 
   HBasicBlock* entry_block_;
   HBasicBlock* exit_block_;
-
-  // The maximum number of virtual registers arguments passed to a HInvoke in this graph.
-  uint16_t maximum_number_of_out_vregs_;
 
   // The number of virtual registers in this method. Contains the parameters.
   uint16_t number_of_vregs_;
@@ -3315,8 +3092,8 @@ class HGoto final : public HExpression<0> {
 
 class HConstant : public HExpression<0> {
  public:
-  explicit HConstant(InstructionKind kind, DataType::Type type, uint32_t dex_pc = kNoDexPc)
-      : HExpression(kind, type, SideEffects::None(), dex_pc) {
+  explicit HConstant(InstructionKind kind, DataType::Type type)
+      : HExpression(kind, type, SideEffects::None(), kNoDexPc) {
   }
 
   bool CanBeMoved() const override { return true; }
@@ -3357,8 +3134,8 @@ class HNullConstant final : public HConstant {
   DEFAULT_COPY_CONSTRUCTOR(NullConstant);
 
  private:
-  explicit HNullConstant(uint32_t dex_pc = kNoDexPc)
-      : HConstant(kNullConstant, DataType::Type::kReference, dex_pc) {
+  explicit HNullConstant()
+      : HConstant(kNullConstant, DataType::Type::kReference) {
   }
 
   friend class HGraph;
@@ -3397,11 +3174,11 @@ class HIntConstant final : public HConstant {
   DEFAULT_COPY_CONSTRUCTOR(IntConstant);
 
  private:
-  explicit HIntConstant(int32_t value, uint32_t dex_pc = kNoDexPc)
-      : HConstant(kIntConstant, DataType::Type::kInt32, dex_pc), value_(value) {
+  explicit HIntConstant(int32_t value)
+      : HConstant(kIntConstant, DataType::Type::kInt32), value_(value) {
   }
-  explicit HIntConstant(bool value, uint32_t dex_pc = kNoDexPc)
-      : HConstant(kIntConstant, DataType::Type::kInt32, dex_pc),
+  explicit HIntConstant(bool value)
+      : HConstant(kIntConstant, DataType::Type::kInt32),
         value_(value ? 1 : 0) {
   }
 
@@ -3436,8 +3213,8 @@ class HLongConstant final : public HConstant {
   DEFAULT_COPY_CONSTRUCTOR(LongConstant);
 
  private:
-  explicit HLongConstant(int64_t value, uint32_t dex_pc = kNoDexPc)
-      : HConstant(kLongConstant, DataType::Type::kInt64, dex_pc),
+  explicit HLongConstant(int64_t value)
+      : HConstant(kLongConstant, DataType::Type::kInt64),
         value_(value) {
   }
 
@@ -3489,12 +3266,12 @@ class HFloatConstant final : public HConstant {
   DEFAULT_COPY_CONSTRUCTOR(FloatConstant);
 
  private:
-  explicit HFloatConstant(float value, uint32_t dex_pc = kNoDexPc)
-      : HConstant(kFloatConstant, DataType::Type::kFloat32, dex_pc),
+  explicit HFloatConstant(float value)
+      : HConstant(kFloatConstant, DataType::Type::kFloat32),
         value_(value) {
   }
-  explicit HFloatConstant(int32_t value, uint32_t dex_pc = kNoDexPc)
-      : HConstant(kFloatConstant, DataType::Type::kFloat32, dex_pc),
+  explicit HFloatConstant(int32_t value)
+      : HConstant(kFloatConstant, DataType::Type::kFloat32),
         value_(bit_cast<float, int32_t>(value)) {
   }
 
@@ -3546,12 +3323,12 @@ class HDoubleConstant final : public HConstant {
   DEFAULT_COPY_CONSTRUCTOR(DoubleConstant);
 
  private:
-  explicit HDoubleConstant(double value, uint32_t dex_pc = kNoDexPc)
-      : HConstant(kDoubleConstant, DataType::Type::kFloat64, dex_pc),
+  explicit HDoubleConstant(double value)
+      : HConstant(kDoubleConstant, DataType::Type::kFloat64),
         value_(value) {
   }
-  explicit HDoubleConstant(int64_t value, uint32_t dex_pc = kNoDexPc)
-      : HConstant(kDoubleConstant, DataType::Type::kFloat64, dex_pc),
+  explicit HDoubleConstant(int64_t value)
+      : HConstant(kDoubleConstant, DataType::Type::kFloat64),
         value_(bit_cast<double, int64_t>(value)) {
   }
 
@@ -4085,6 +3862,12 @@ class HCondition : public HBinaryOperation {
     SetPackedField<ComparisonBiasField>(ComparisonBias::kNoBias);
   }
 
+  static HCondition* Create(HGraph* graph,
+                            IfCondition cond,
+                            HInstruction* lhs,
+                            HInstruction* rhs,
+                            uint32_t dex_pc = kNoDexPc);
+
   // For code generation purposes, returns whether this instruction is just before
   // `instruction`, and disregard moves in between.
   bool IsBeforeWhenDisregardMoves(HInstruction* instruction) const;
@@ -4150,8 +3933,8 @@ class HCondition : public HBinaryOperation {
   }
 
   // Return an integer constant containing the result of a condition evaluated at compile time.
-  HIntConstant* MakeConstantCondition(bool value, uint32_t dex_pc) const {
-    return GetBlock()->GetGraph()->GetIntConstant(value, dex_pc);
+  HIntConstant* MakeConstantCondition(bool value) const {
+    return GetBlock()->GetGraph()->GetIntConstant(value);
   }
 
   DEFAULT_COPY_CONSTRUCTOR(Condition);
@@ -4168,23 +3951,22 @@ class HEqual final : public HCondition {
 
   HConstant* Evaluate([[maybe_unused]] HNullConstant* x,
                       [[maybe_unused]] HNullConstant* y) const override {
-    return MakeConstantCondition(true, GetDexPc());
+    return MakeConstantCondition(true);
   }
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
   // In the following Evaluate methods, a HCompare instruction has
   // been merged into this HEqual instruction; evaluate it as
   // `Compare(x, y) == 0`.
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0),
-                                 GetDexPc());
+    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
 
   DECLARE_INSTRUCTION(Equal);
@@ -4206,8 +3988,7 @@ class HEqual final : public HCondition {
 
 class HNotEqual final : public HCondition {
  public:
-  HNotEqual(HInstruction* first, HInstruction* second,
-            uint32_t dex_pc = kNoDexPc)
+  HNotEqual(HInstruction* first, HInstruction* second, uint32_t dex_pc = kNoDexPc)
       : HCondition(kNotEqual, first, second, dex_pc) {
   }
 
@@ -4215,22 +3996,22 @@ class HNotEqual final : public HCondition {
 
   HConstant* Evaluate([[maybe_unused]] HNullConstant* x,
                       [[maybe_unused]] HNullConstant* y) const override {
-    return MakeConstantCondition(false, GetDexPc());
+    return MakeConstantCondition(false);
   }
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
   // In the following Evaluate methods, a HCompare instruction has
   // been merged into this HNotEqual instruction; evaluate it as
   // `Compare(x, y) != 0`.
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
 
   DECLARE_INSTRUCTION(NotEqual);
@@ -4252,25 +4033,24 @@ class HNotEqual final : public HCondition {
 
 class HLessThan final : public HCondition {
  public:
-  HLessThan(HInstruction* first, HInstruction* second,
-            uint32_t dex_pc = kNoDexPc)
+  HLessThan(HInstruction* first, HInstruction* second, uint32_t dex_pc = kNoDexPc)
       : HCondition(kLessThan, first, second, dex_pc) {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
   // In the following Evaluate methods, a HCompare instruction has
   // been merged into this HLessThan instruction; evaluate it as
   // `Compare(x, y) < 0`.
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
 
   DECLARE_INSTRUCTION(LessThan);
@@ -4292,25 +4072,24 @@ class HLessThan final : public HCondition {
 
 class HLessThanOrEqual final : public HCondition {
  public:
-  HLessThanOrEqual(HInstruction* first, HInstruction* second,
-                   uint32_t dex_pc = kNoDexPc)
+  HLessThanOrEqual(HInstruction* first, HInstruction* second, uint32_t dex_pc = kNoDexPc)
       : HCondition(kLessThanOrEqual, first, second, dex_pc) {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
   // In the following Evaluate methods, a HCompare instruction has
   // been merged into this HLessThanOrEqual instruction; evaluate it as
   // `Compare(x, y) <= 0`.
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
 
   DECLARE_INSTRUCTION(LessThanOrEqual);
@@ -4337,19 +4116,19 @@ class HGreaterThan final : public HCondition {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
   // In the following Evaluate methods, a HCompare instruction has
   // been merged into this HGreaterThan instruction; evaluate it as
   // `Compare(x, y) > 0`.
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
 
   DECLARE_INSTRUCTION(GreaterThan);
@@ -4376,19 +4155,19 @@ class HGreaterThanOrEqual final : public HCondition {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
   // In the following Evaluate methods, a HCompare instruction has
   // been merged into this HGreaterThanOrEqual instruction; evaluate it as
   // `Compare(x, y) >= 0`.
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(Compare(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0), GetDexPc());
+    return MakeConstantCondition(Compute(CompareFP(x->GetValue(), y->GetValue()), 0));
   }
 
   DECLARE_INSTRUCTION(GreaterThanOrEqual);
@@ -4415,10 +4194,10 @@ class HBelow final : public HCondition {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Below);
@@ -4447,10 +4226,10 @@ class HBelowOrEqual final : public HCondition {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(BelowOrEqual);
@@ -4479,10 +4258,10 @@ class HAbove final : public HCondition {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Above);
@@ -4511,10 +4290,10 @@ class HAboveOrEqual final : public HCondition {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantCondition(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(AboveOrEqual);
@@ -4578,19 +4357,19 @@ class HCompare final : public HBinaryOperation {
     const int32_t value = DataType::IsUnsignedType(GetComparisonType()) ?
         Compute(x->GetValueAsUint64(), y->GetValueAsUint64()) :
         Compute(x->GetValue(), y->GetValue());
-    return MakeConstantComparison(value, GetDexPc());
+    return MakeConstantComparison(value);
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
     const int32_t value = DataType::IsUnsignedType(GetComparisonType()) ?
         Compute(x->GetValueAsUint64(), y->GetValueAsUint64()) :
         Compute(x->GetValue(), y->GetValue());
-    return MakeConstantComparison(value, GetDexPc());
+    return MakeConstantComparison(value);
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return MakeConstantComparison(ComputeFP(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantComparison(ComputeFP(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return MakeConstantComparison(ComputeFP(x->GetValue(), y->GetValue()), GetDexPc());
+    return MakeConstantComparison(ComputeFP(x->GetValue(), y->GetValue()));
   }
 
   bool InstructionDataEquals(const HInstruction* other) const override {
@@ -4633,9 +4412,9 @@ class HCompare final : public HBinaryOperation {
       BitField<DataType::Type, kFieldComparisonType, kFieldComparisonTypeSize>;
 
   // Return an integer constant containing the result of a comparison evaluated at compile time.
-  HIntConstant* MakeConstantComparison(int32_t value, uint32_t dex_pc) const {
+  HIntConstant* MakeConstantComparison(int32_t value) const {
     DCHECK(value == -1 || value == 0 || value == 1) << value;
-    return GetBlock()->GetGraph()->GetIntConstant(value, dex_pc);
+    return GetBlock()->GetGraph()->GetIntConstant(value);
   }
 
   DEFAULT_COPY_CONSTRUCTOR(Compare);
@@ -4807,6 +4586,9 @@ class HInvoke : public HVariableInputSizeInstruction {
   // inputs at the end of their list of inputs.
   uint32_t GetNumberOfArguments() const { return number_of_arguments_; }
 
+  // Return the number of outgoing vregs.
+  uint32_t GetNumberOfOutVRegs() const { return number_of_out_vregs_; }
+
   InvokeType GetInvokeType() const {
     return GetPackedField<InvokeTypeField>();
   }
@@ -4872,6 +4654,7 @@ class HInvoke : public HVariableInputSizeInstruction {
   HInvoke(InstructionKind kind,
           ArenaAllocator* allocator,
           uint32_t number_of_arguments,
+          uint32_t number_of_out_vregs,
           uint32_t number_of_other_inputs,
           DataType::Type return_type,
           uint32_t dex_pc,
@@ -4888,9 +4671,10 @@ class HInvoke : public HVariableInputSizeInstruction {
           allocator,
           number_of_arguments + number_of_other_inputs,
           kArenaAllocInvokeInputs),
-      number_of_arguments_(number_of_arguments),
       method_reference_(method_reference),
       resolved_method_reference_(resolved_method_reference),
+      number_of_arguments_(dchecked_integral_cast<uint16_t>(number_of_arguments)),
+      number_of_out_vregs_(dchecked_integral_cast<uint16_t>(number_of_out_vregs)),
       intrinsic_(Intrinsics::kNone),
       intrinsic_optimizations_(0) {
     SetPackedField<InvokeTypeField>(invoke_type);
@@ -4900,11 +4684,14 @@ class HInvoke : public HVariableInputSizeInstruction {
 
   DEFAULT_COPY_CONSTRUCTOR(Invoke);
 
-  uint32_t number_of_arguments_;
   ArtMethod* resolved_method_;
   const MethodReference method_reference_;
   // Cached values of the resolved method, to avoid needing the mutator lock.
   const MethodReference resolved_method_reference_;
+
+  uint16_t number_of_arguments_;
+  uint16_t number_of_out_vregs_;
+
   Intrinsics intrinsic_;
 
   // A magic word holding optimizations for intrinsics. See intrinsics.h.
@@ -4915,6 +4702,7 @@ class HInvokeUnresolved final : public HInvoke {
  public:
   HInvokeUnresolved(ArenaAllocator* allocator,
                     uint32_t number_of_arguments,
+                    uint32_t number_of_out_vregs,
                     DataType::Type return_type,
                     uint32_t dex_pc,
                     MethodReference method_reference,
@@ -4922,6 +4710,7 @@ class HInvokeUnresolved final : public HInvoke {
       : HInvoke(kInvokeUnresolved,
                 allocator,
                 number_of_arguments,
+                number_of_out_vregs,
                 /* number_of_other_inputs= */ 0u,
                 return_type,
                 dex_pc,
@@ -4944,6 +4733,7 @@ class HInvokePolymorphic final : public HInvoke {
  public:
   HInvokePolymorphic(ArenaAllocator* allocator,
                      uint32_t number_of_arguments,
+                     uint32_t number_of_out_vregs,
                      uint32_t number_of_other_inputs,
                      DataType::Type return_type,
                      uint32_t dex_pc,
@@ -4957,6 +4747,7 @@ class HInvokePolymorphic final : public HInvoke {
       : HInvoke(kInvokePolymorphic,
                 allocator,
                 number_of_arguments,
+                number_of_out_vregs,
                 number_of_other_inputs,
                 return_type,
                 dex_pc,
@@ -4992,6 +4783,7 @@ class HInvokeCustom final : public HInvoke {
  public:
   HInvokeCustom(ArenaAllocator* allocator,
                 uint32_t number_of_arguments,
+                uint32_t number_of_out_vregs,
                 uint32_t call_site_index,
                 DataType::Type return_type,
                 uint32_t dex_pc,
@@ -5000,6 +4792,7 @@ class HInvokeCustom final : public HInvoke {
       : HInvoke(kInvokeCustom,
                 allocator,
                 number_of_arguments,
+                number_of_out_vregs,
                 /* number_of_other_inputs= */ 0u,
                 return_type,
                 dex_pc,
@@ -5047,6 +4840,7 @@ class HInvokeStaticOrDirect final : public HInvoke {
 
   HInvokeStaticOrDirect(ArenaAllocator* allocator,
                         uint32_t number_of_arguments,
+                        uint32_t number_of_out_vregs,
                         DataType::Type return_type,
                         uint32_t dex_pc,
                         MethodReference method_reference,
@@ -5059,6 +4853,7 @@ class HInvokeStaticOrDirect final : public HInvoke {
       : HInvoke(kInvokeStaticOrDirect,
                 allocator,
                 number_of_arguments,
+                number_of_out_vregs,
                 // There is potentially one extra argument for the HCurrentMethod input,
                 // and one other if the clinit check is explicit. These can be removed later.
                 (NeedsCurrentMethodInput(dispatch_info) ? 1u : 0u) +
@@ -5274,6 +5069,7 @@ class HInvokeVirtual final : public HInvoke {
  public:
   HInvokeVirtual(ArenaAllocator* allocator,
                  uint32_t number_of_arguments,
+                 uint32_t number_of_out_vregs,
                  DataType::Type return_type,
                  uint32_t dex_pc,
                  MethodReference method_reference,
@@ -5284,6 +5080,7 @@ class HInvokeVirtual final : public HInvoke {
       : HInvoke(kInvokeVirtual,
                 allocator,
                 number_of_arguments,
+                number_of_out_vregs,
                 0u,
                 return_type,
                 dex_pc,
@@ -5337,6 +5134,7 @@ class HInvokeInterface final : public HInvoke {
  public:
   HInvokeInterface(ArenaAllocator* allocator,
                    uint32_t number_of_arguments,
+                   uint32_t number_of_out_vregs,
                    DataType::Type return_type,
                    uint32_t dex_pc,
                    MethodReference method_reference,
@@ -5348,6 +5146,7 @@ class HInvokeInterface final : public HInvoke {
       : HInvoke(kInvokeInterface,
                 allocator,
                 number_of_arguments + (NeedsCurrentMethod(load_kind) ? 1 : 0),
+                number_of_out_vregs,
                 0u,
                 return_type,
                 dex_pc,
@@ -5408,16 +5207,16 @@ class HNeg final : public HUnaryOperation {
   template <typename T> static T Compute(T x) { return -x; }
 
   HConstant* Evaluate(HIntConstant* x) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue()));
   }
   HConstant* Evaluate(HFloatConstant* x) const override {
-    return GetBlock()->GetGraph()->GetFloatConstant(Compute(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetFloatConstant(Compute(x->GetValue()));
   }
   HConstant* Evaluate(HDoubleConstant* x) const override {
-    return GetBlock()->GetGraph()->GetDoubleConstant(Compute(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetDoubleConstant(Compute(x->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Neg);
@@ -5487,20 +5286,16 @@ class HAdd final : public HBinaryOperation {
   template <typename T> static T Compute(T x, T y) { return x + y; }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return GetBlock()->GetGraph()->GetFloatConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetFloatConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return GetBlock()->GetGraph()->GetDoubleConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetDoubleConstant(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Add);
@@ -5521,20 +5316,16 @@ class HSub final : public HBinaryOperation {
   template <typename T> static T Compute(T x, T y) { return x - y; }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return GetBlock()->GetGraph()->GetFloatConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetFloatConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return GetBlock()->GetGraph()->GetDoubleConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetDoubleConstant(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Sub);
@@ -5557,20 +5348,16 @@ class HMul final : public HBinaryOperation {
   template <typename T> static T Compute(T x, T y) { return x * y; }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return GetBlock()->GetGraph()->GetFloatConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetFloatConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return GetBlock()->GetGraph()->GetDoubleConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetDoubleConstant(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Mul);
@@ -5605,20 +5392,16 @@ class HDiv final : public HBinaryOperation {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        ComputeIntegral(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(ComputeIntegral(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        ComputeIntegral(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(ComputeIntegral(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return GetBlock()->GetGraph()->GetFloatConstant(
-        ComputeFP(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetFloatConstant(ComputeFP(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return GetBlock()->GetGraph()->GetDoubleConstant(
-        ComputeFP(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetDoubleConstant(ComputeFP(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Div);
@@ -5653,20 +5436,16 @@ class HRem final : public HBinaryOperation {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        ComputeIntegral(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(ComputeIntegral(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        ComputeIntegral(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(ComputeIntegral(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HFloatConstant* x, HFloatConstant* y) const override {
-    return GetBlock()->GetGraph()->GetFloatConstant(
-        ComputeFP(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetFloatConstant(ComputeFP(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HDoubleConstant* x, HDoubleConstant* y) const override {
-    return GetBlock()->GetGraph()->GetDoubleConstant(
-        ComputeFP(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetDoubleConstant(ComputeFP(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Rem);
@@ -5691,12 +5470,10 @@ class HMin final : public HBinaryOperation {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        ComputeIntegral(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(ComputeIntegral(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        ComputeIntegral(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(ComputeIntegral(x->GetValue(), y->GetValue()));
   }
   // TODO: Evaluation for floating-point values.
   HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
@@ -5730,12 +5507,10 @@ class HMax final : public HBinaryOperation {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        ComputeIntegral(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(ComputeIntegral(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        ComputeIntegral(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(ComputeIntegral(x->GetValue(), y->GetValue()));
   }
   // TODO: Evaluation for floating-point values.
   HConstant* Evaluate([[maybe_unused]] HFloatConstant* x,
@@ -5774,18 +5549,16 @@ class HAbs final : public HUnaryOperation {
   }
 
   HConstant* Evaluate(HIntConstant* x) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(ComputeIntegral(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(ComputeIntegral(x->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(ComputeIntegral(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(ComputeIntegral(x->GetValue()));
   }
   HConstant* Evaluate(HFloatConstant* x) const override {
-    return GetBlock()->GetGraph()->GetFloatConstant(
-        ComputeFP<float, int32_t>(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetFloatConstant(ComputeFP<float, int32_t>(x->GetValue()));
   }
   HConstant* Evaluate(HDoubleConstant* x) const override {
-    return GetBlock()->GetGraph()->GetDoubleConstant(
-        ComputeFP<double, int64_t>(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetDoubleConstant(ComputeFP<double, int64_t>(x->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Abs);
@@ -5838,11 +5611,11 @@ class HShl final : public HBinaryOperation {
 
   HConstant* Evaluate(HIntConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance), GetDexPc());
+        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance));
   }
   HConstant* Evaluate(HLongConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance), GetDexPc());
+        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance));
   }
 
   DECLARE_INSTRUCTION(Shl);
@@ -5869,11 +5642,11 @@ class HShr final : public HBinaryOperation {
 
   HConstant* Evaluate(HIntConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance), GetDexPc());
+        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance));
   }
   HConstant* Evaluate(HLongConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance), GetDexPc());
+        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance));
   }
 
   DECLARE_INSTRUCTION(Shr);
@@ -5902,11 +5675,11 @@ class HUShr final : public HBinaryOperation {
 
   HConstant* Evaluate(HIntConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance), GetDexPc());
+        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance));
   }
   HConstant* Evaluate(HLongConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance), GetDexPc());
+        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance));
   }
 
   DECLARE_INSTRUCTION(UShr);
@@ -5929,12 +5702,10 @@ class HAnd final : public HBinaryOperation {
   template <typename T> static T Compute(T x, T y) { return x & y; }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(And);
@@ -5957,12 +5728,10 @@ class HOr final : public HBinaryOperation {
   template <typename T> static T Compute(T x, T y) { return x | y; }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Or);
@@ -5985,12 +5754,10 @@ class HXor final : public HBinaryOperation {
   template <typename T> static T Compute(T x, T y) { return x ^ y; }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue(), y->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(x->GetValue(), y->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue(), y->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Xor);
@@ -6020,11 +5787,11 @@ class HRor final : public HBinaryOperation {
 
   HConstant* Evaluate(HIntConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance), GetDexPc());
+        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance));
   }
   HConstant* Evaluate(HLongConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance), GetDexPc());
+        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance));
   }
 
   DECLARE_INSTRUCTION(Ror);
@@ -6045,11 +5812,11 @@ class HRol final : public HBinaryOperation {
 
   HConstant* Evaluate(HIntConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetIntConstant(
-        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance), GetDexPc());
+        Compute(value->GetValue(), distance->GetValue(), kMaxIntShiftDistance));
   }
   HConstant* Evaluate(HLongConstant* value, HIntConstant* distance) const override {
     return GetBlock()->GetGraph()->GetLongConstant(
-        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance), GetDexPc());
+        Compute(value->GetValue(), distance->GetValue(), kMaxLongShiftDistance));
   }
 
   DECLARE_INSTRUCTION(Rol);
@@ -6117,10 +5884,10 @@ class HNot final : public HUnaryOperation {
   template <typename T> static T Compute(T x) { return ~x; }
 
   HConstant* Evaluate(HIntConstant* x) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue()));
   }
   HConstant* Evaluate(HLongConstant* x) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue()));
   }
 
   DECLARE_INSTRUCTION(Not);
@@ -6146,7 +5913,7 @@ class HBooleanNot final : public HUnaryOperation {
   }
 
   HConstant* Evaluate(HIntConstant* x) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue()), GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue()));
   }
 
   DECLARE_INSTRUCTION(BooleanNot);
@@ -7561,6 +7328,7 @@ class HStringBuilderAppend final : public HVariableInputSizeInstruction {
  public:
   HStringBuilderAppend(HIntConstant* format,
                        uint32_t number_of_arguments,
+                       uint32_t number_of_out_vregs,
                        bool has_fp_args,
                        ArenaAllocator* allocator,
                        uint32_t dex_pc)
@@ -7575,7 +7343,8 @@ class HStringBuilderAppend final : public HVariableInputSizeInstruction {
             dex_pc,
             allocator,
             number_of_arguments + /* format */ 1u,
-            kArenaAllocInvokeInputs) {
+            kArenaAllocInvokeInputs),
+        number_of_out_vregs_(number_of_out_vregs) {
     DCHECK_GE(number_of_arguments, 1u);  // There must be something to append.
     SetRawInputAt(FormatIndex(), format);
   }
@@ -7590,6 +7359,9 @@ class HStringBuilderAppend final : public HVariableInputSizeInstruction {
     DCHECK_GE(InputCount(), 1u);
     return InputCount() - 1u;
   }
+
+  // Return the number of outgoing vregs.
+  uint32_t GetNumberOfOutVRegs() const { return number_of_out_vregs_; }
 
   size_t FormatIndex() const {
     return GetNumberOfArguments();
@@ -7609,6 +7381,9 @@ class HStringBuilderAppend final : public HVariableInputSizeInstruction {
 
  protected:
   DEFAULT_COPY_CONSTRUCTOR(StringBuilderAppend);
+
+ private:
+  uint32_t number_of_out_vregs_;
 };
 
 class HUnresolvedInstanceFieldGet final : public HExpression<1> {
@@ -8519,13 +8294,11 @@ class HBitwiseNegatedRight final : public HBinaryOperation {
   }
 
   HConstant* Evaluate(HIntConstant* x, HIntConstant* y) const override {
-    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue(), y->GetValue()),
-                                                  GetDexPc());
+    return GetBlock()->GetGraph()->GetIntConstant(Compute(x->GetValue(), y->GetValue()));
   }
 
   HConstant* Evaluate(HLongConstant* x, HLongConstant* y) const override {
-    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue(), y->GetValue()),
-                                                   GetDexPc());
+    return GetBlock()->GetGraph()->GetLongConstant(Compute(x->GetValue(), y->GetValue()));
   }
 
   InstructionKind GetOpKind() const { return op_kind_; }

@@ -22,7 +22,6 @@
 #include "base/locks.h"
 #include "base/macros.h"
 #include "obj_ptr.h"
-#include "thread.h"
 
 namespace art HIDDEN {
 namespace mirror {
@@ -35,6 +34,7 @@ class ArtMethod;
 class DexFile;
 enum InvokeType : uint32_t;
 class Signature;
+enum class StackType;
 
 // The descriptor of the transaction abort exception.
 constexpr const char kTransactionAbortErrorDescriptor[] = "Ldalvik/system/TransactionAbortError;";

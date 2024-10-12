@@ -561,7 +561,7 @@ class ImageSpace::Loader {
                                                   const OatFile* oat_file,
                                                   ArrayRef<ImageSpace* const> boot_image_spaces,
                                                   /*out*/std::string* error_msg)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
+        REQUIRES(!Locks::mutator_lock_) {
     TimingLogger logger(__PRETTY_FUNCTION__, /*precise=*/ true, VLOG_IS_ON(image));
 
     std::unique_ptr<ImageSpace> space = Init(image_filename,
@@ -633,6 +633,7 @@ class ImageSpace::Loader {
         ArrayRef<ImageSpace* const> old_spaces =
             boot_image_spaces.SubArray(/*pos=*/ boot_image_space_dependencies);
         SafeMap<mirror::String*, mirror::String*> intern_remap;
+        ScopedObjectAccess soa(Thread::Current());
         RemoveInternTableDuplicates(old_spaces, space.get(), &intern_remap);
         if (!intern_remap.empty()) {
           RemapInternedStringDuplicates(intern_remap, space.get());
@@ -659,8 +660,7 @@ class ImageSpace::Loader {
                                           const char* image_location,
                                           TimingLogger* logger,
                                           /*inout*/MemMap* image_reservation,
-                                          /*out*/std::string* error_msg)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
+                                          /*out*/std::string* error_msg) {
     CHECK(image_filename != nullptr);
     CHECK(image_location != nullptr);
 
@@ -690,8 +690,7 @@ class ImageSpace::Loader {
                                           bool allow_direct_mapping,
                                           TimingLogger* logger,
                                           /*inout*/MemMap* image_reservation,
-                                          /*out*/std::string* error_msg)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
+                                          /*out*/std::string* error_msg) {
     CHECK(image_filename != nullptr);
     CHECK(image_location != nullptr);
 
@@ -990,8 +989,7 @@ class ImageSpace::Loader {
                               bool allow_direct_mapping,
                               TimingLogger* logger,
                               /*inout*/MemMap* image_reservation,
-                              /*out*/std::string* error_msg)
-        REQUIRES_SHARED(Locks::mutator_lock_) {
+                              /*out*/std::string* error_msg) {
     TimingLogger::ScopedTiming timing("MapImageFile", logger);
 
     // The runtime might not be available at this point if we're running dex2oat or oatdump, in
@@ -1085,8 +1083,6 @@ class ImageSpace::Loader {
         }
         if (use_parallel) {
           ScopedTrace trace("Waiting for workers");
-          // Go to native since we don't want to suspend while holding the mutator lock.
-          ScopedThreadSuspension sts(Thread::Current(), ThreadState::kNative);
           pool->Wait(self, true, false);
         }
         const uint64_t time = NanoTime() - start;

@@ -28,6 +28,7 @@
 #include "dex/inline_method_analyser.h"
 #include "driver/compiler_options.h"
 #include "driver/dex_compilation_unit.h"
+#include "handle_cache-inl.h"
 #include "instruction_simplifier.h"
 #include "intrinsics.h"
 #include "jit/jit.h"
@@ -919,7 +920,7 @@ void HInliner::AddCHAGuard(HInstruction* invoke_instruction,
   // requested we deoptimize before we execute any code and hence we shouldn't
   // see that case here.
   HInstruction* compare = new (graph_->GetAllocator()) HNotEqual(
-      deopt_flag, graph_->GetIntConstant(0, dex_pc));
+      deopt_flag, graph_->GetIntConstant(0));
   HInstruction* deopt = new (graph_->GetAllocator()) HDeoptimize(
       graph_->GetAllocator(), compare, DeoptimizationKind::kCHA, dex_pc);
 
@@ -1277,11 +1278,9 @@ bool HInliner::TryInlinePolymorphicCallToSameTarget(
 
   HConstant* constant;
   if (type == DataType::Type::kInt64) {
-    constant = graph_->GetLongConstant(
-        reinterpret_cast<intptr_t>(actual_method), invoke_instruction->GetDexPc());
+    constant = graph_->GetLongConstant(reinterpret_cast<intptr_t>(actual_method));
   } else {
-    constant = graph_->GetIntConstant(
-        reinterpret_cast<intptr_t>(actual_method), invoke_instruction->GetDexPc());
+    constant = graph_->GetIntConstant(reinterpret_cast<intptr_t>(actual_method));
   }
 
   HNotEqual* compare = new (graph_->GetAllocator()) HNotEqual(class_table_get, constant);
@@ -1385,6 +1384,7 @@ bool HInliner::TryDevirtualize(HInvoke* invoke_instruction,
   HInvokeStaticOrDirect* new_invoke = new (graph_->GetAllocator()) HInvokeStaticOrDirect(
       graph_->GetAllocator(),
       invoke_instruction->GetNumberOfArguments(),
+      invoke_instruction->GetNumberOfOutVRegs(),
       invoke_instruction->GetType(),
       invoke_instruction->GetDexPc(),
       MethodReference(invoke_instruction->GetMethodReference().dex_file, dex_method_index),
@@ -1604,6 +1604,7 @@ bool HInliner::TryBuildAndInline(HInvoke* invoke_instruction,
     HInvokeVirtual* new_invoke = new (graph_->GetAllocator()) HInvokeVirtual(
         graph_->GetAllocator(),
         invoke_instruction->GetNumberOfArguments(),
+        invoke_instruction->GetNumberOfOutVRegs(),
         invoke_instruction->GetType(),
         invoke_instruction->GetDexPc(),
         invoke_instruction->GetMethodReference(),  // Use existing invoke's method's reference.

@@ -283,15 +283,17 @@ const RegType& RegTypeCache::FromClass(const char* descriptor,
 
 RegTypeCache::RegTypeCache(Thread* self,
                            ClassLinker* class_linker,
+                           ArenaPool* arena_pool,
                            bool can_load_classes,
-                           ScopedArenaAllocator& allocator,
                            bool can_suspend)
-    : entries_(allocator.Adapter(kArenaAllocVerifier)),
-      klass_entries_(allocator.Adapter(kArenaAllocVerifier)),
-      allocator_(allocator),
+    : arena_stack_(arena_pool),
+      allocator_(&arena_stack_),
+      entries_(allocator_.Adapter(kArenaAllocVerifier)),
+      klass_entries_(allocator_.Adapter(kArenaAllocVerifier)),
       handles_(self),
       class_linker_(class_linker),
-      can_load_classes_(can_load_classes) {
+      can_load_classes_(can_load_classes),
+      can_suspend_(can_suspend) {
   DCHECK(can_suspend || !can_load_classes) << "Cannot load classes if suspension is disabled!";
   if (kIsDebugBuild && can_suspend) {
     Thread::Current()->AssertThreadSuspensionIsAllowable(gAborting == 0);

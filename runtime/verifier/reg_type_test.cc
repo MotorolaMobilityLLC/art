@@ -53,11 +53,9 @@ class RegTypeTest : public CommonRuntimeTest {
 
 TEST_F(RegTypeTest, ConstLoHi) {
   // Tests creating primitive types types.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   const RegType& ref_type_const_0 = cache.FromCat1Const(10, true);
   const RegType& ref_type_const_1 = cache.FromCat1Const(10, true);
   const RegType& ref_type_const_2 = cache.FromCat1Const(30, true);
@@ -78,11 +76,9 @@ TEST_F(RegTypeTest, ConstLoHi) {
 }
 
 TEST_F(RegTypeTest, Pairs) {
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   int64_t val = static_cast<int32_t>(1234);
   const RegType& precise_lo = cache.FromCat2ConstLo(static_cast<int32_t>(val), true);
   const RegType& precise_hi = cache.FromCat2ConstHi(static_cast<int32_t>(val >> 32), true);
@@ -105,11 +101,9 @@ TEST_F(RegTypeTest, Pairs) {
 }
 
 TEST_F(RegTypeTest, Primitives) {
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
 
   const RegType& bool_reg_type = cache.Boolean();
   EXPECT_FALSE(bool_reg_type.IsUndefined());
@@ -381,12 +375,10 @@ class RegTypeReferenceTest : public RegTypeTest {};
 TEST_F(RegTypeReferenceTest, JavaLangObjectImprecise) {
   // Tests matching precisions. A reference type that was created precise doesn't
   // match the one that is imprecise.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   const RegType& imprecise_obj = cache.JavaLangObject(false);
   const RegType& precise_obj = cache.JavaLangObject(true);
   const RegType& precise_obj_2 = PreciseJavaLangObjectFromDescriptor(&cache, loader);
@@ -400,12 +392,10 @@ TEST_F(RegTypeReferenceTest, JavaLangObjectImprecise) {
 TEST_F(RegTypeReferenceTest, UnresolvedType) {
   // Tests creating unresolved types. Miss for the first time asking the cache and
   // a hit second time.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   const RegType& ref_type_0 = cache.FromDescriptor(loader, "Ljava/lang/DoesNotExist;");
   EXPECT_TRUE(ref_type_0.IsUnresolvedReference());
   EXPECT_TRUE(ref_type_0.IsNonZeroReferenceTypes());
@@ -420,12 +410,10 @@ TEST_F(RegTypeReferenceTest, UnresolvedType) {
 
 TEST_F(RegTypeReferenceTest, UnresolvedUnintializedType) {
   // Tests creating types uninitialized types from unresolved types.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   const RegType& ref_type_0 = cache.FromDescriptor(loader, "Ljava/lang/DoesNotExist;");
   EXPECT_TRUE(ref_type_0.IsUnresolvedReference());
   const RegType& ref_type = cache.FromDescriptor(loader, "Ljava/lang/DoesNotExist;");
@@ -446,12 +434,10 @@ TEST_F(RegTypeReferenceTest, UnresolvedUnintializedType) {
 
 TEST_F(RegTypeReferenceTest, Dump) {
   // Tests types for proper Dump messages.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   const RegType& unresolved_ref = cache.FromDescriptor(loader, "Ljava/lang/DoesNotExist;");
   const RegType& unresolved_ref_another =
       cache.FromDescriptor(loader, "Ljava/lang/DoesNotExistEither;");
@@ -477,12 +463,10 @@ TEST_F(RegTypeReferenceTest, JavalangString) {
   // Add a class to the cache then look for the same class and make sure it is  a
   // Hit the second time. Then check for the same effect when using
   // The JavaLangObject method instead of FromDescriptor. String class is final.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   const RegType& ref_type = cache.JavaLangString();
   const RegType& ref_type_2 = cache.JavaLangString();
   const RegType& ref_type_3 = cache.FromDescriptor(loader, "Ljava/lang/String;");
@@ -501,12 +485,10 @@ TEST_F(RegTypeReferenceTest, JavalangObject) {
   // Add a class to the cache then look for the same class and make sure it is  a
   // Hit the second time. Then I am checking for the same effect when using
   // The JavaLangObject method instead of FromDescriptor. Object Class in not final.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   const RegType& ref_type = cache.JavaLangObject(true);
   const RegType& ref_type_2 = cache.JavaLangObject(true);
   const RegType& ref_type_3 = PreciseJavaLangObjectFromDescriptor(&cache, loader);
@@ -519,11 +501,9 @@ TEST_F(RegTypeReferenceTest, Merging) {
   // Tests merging logic
   // String and object , LUB is object.
   ScopedObjectAccess soa(Thread::Current());
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache_new(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache_new(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   const RegType& string = cache_new.JavaLangString();
   const RegType& Object = cache_new.JavaLangObject(true);
   EXPECT_TRUE(string.Merge(Object, &cache_new, /* verifier= */ nullptr).IsJavaLangObject());
@@ -545,11 +525,9 @@ TEST_F(RegTypeReferenceTest, Merging) {
 
 TEST_F(RegTypeTest, MergingFloat) {
   // Testing merging logic with float and float constants.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache_new(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache_new(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
 
   constexpr int32_t kTestConstantValue = 10;
   const RegType& float_type = cache_new.Float();
@@ -579,11 +557,9 @@ TEST_F(RegTypeTest, MergingFloat) {
 
 TEST_F(RegTypeTest, MergingLong) {
   // Testing merging logic with long and long constants.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache_new(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache_new(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
 
   constexpr int32_t kTestConstantValue = 10;
   const RegType& long_lo_type = cache_new.LongLo();
@@ -640,11 +616,9 @@ TEST_F(RegTypeTest, MergingLong) {
 
 TEST_F(RegTypeTest, MergingDouble) {
   // Testing merging logic with double and double constants.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache_new(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache_new(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
 
   constexpr int32_t kTestConstantValue = 10;
   const RegType& double_lo_type = cache_new.DoubleLo();
@@ -752,15 +726,13 @@ TEST_F(RegTypeTest, MergeSemiLatticeRef) {
   //                                 |
   //                                 0
 
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
 
   ScopedDisableMovingGC no_gc(soa.Self());
 
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
 
   const RegType& conflict = cache.Conflict();
   const RegType& zero = cache.Zero();
@@ -1081,11 +1053,9 @@ TEST_F(RegTypeTest, MergeSemiLatticeRef) {
 
 TEST_F(RegTypeTest, ConstPrecision) {
   // Tests creating primitive types types.
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
-  RegTypeCache cache_new(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache_new(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   const RegType& imprecise_const = cache_new.FromCat1Const(10, false);
   const RegType& precise_const = cache_new.FromCat1Const(10, true);
 
@@ -1110,8 +1080,7 @@ TEST_F(RegTypeOOMTest, ClassJoinOOM) {
 
   // Tests that we don't abort with OOMs.
 
-  ArenaStack stack(Runtime::Current()->GetArenaPool());
-  ScopedArenaAllocator allocator(&stack);
+  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
 
   ScopedDisableMovingGC no_gc(soa.Self());
@@ -1125,8 +1094,7 @@ TEST_F(RegTypeOOMTest, ClassJoinOOM) {
   constexpr const char* kNumberArrayFive = "[[[[[Ljava/lang/Number;";
 
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache(
-      soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+  RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
   const RegType& int_array_array = cache.FromDescriptor(loader, kIntArrayFive);
   ASSERT_TRUE(int_array_array.HasClass());
   const RegType& float_array_array = cache.FromDescriptor(loader, kFloatArrayFive);
@@ -1148,8 +1116,7 @@ TEST_F(RegTypeOOMTest, ClassJoinOOM) {
 class RegTypeClassJoinTest : public RegTypeTest {
  protected:
   void TestClassJoin(const char* in1, const char* in2, const char* out) {
-    ArenaStack stack(Runtime::Current()->GetArenaPool());
-    ScopedArenaAllocator allocator(&stack);
+    ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
 
     ScopedObjectAccess soa(Thread::Current());
     jobject jclass_loader = LoadDex("Interfaces");
@@ -1166,8 +1133,7 @@ class RegTypeClassJoinTest : public RegTypeTest {
 
     ScopedDisableMovingGC no_gc(soa.Self());
 
-    RegTypeCache cache(
-        soa.Self(), Runtime::Current()->GetClassLinker(), /* can_load_classes= */ true, allocator);
+    RegTypeCache cache(soa.Self(), Runtime::Current()->GetClassLinker(), arena_pool);
     const RegType& c1_reg_type = *cache.InsertClass(in1, c1.Get(), false);
     const RegType& c2_reg_type = *cache.InsertClass(in2, c2.Get(), false);
 

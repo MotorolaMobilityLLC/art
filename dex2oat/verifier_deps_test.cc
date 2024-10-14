@@ -37,6 +37,7 @@
 #include "thread.h"
 #include "utils/atomic_dex_ref_map-inl.h"
 #include "verifier/method_verifier-inl.h"
+#include "verifier/reg_type_cache.h"
 
 namespace art {
 namespace verifier {
@@ -161,8 +162,10 @@ class VerifierDepsTest : public CommonCompilerDriverTest {
               method.GetInvokeType(class_def->access_flags_));
       CHECK(resolved_method != nullptr);
       if (method_name == resolved_method->GetName()) {
+        RegTypeCache reg_types(soa.Self(), class_linker_, Runtime::Current()->GetArenaPool());
         std::unique_ptr<MethodVerifier> verifier(
             MethodVerifier::CreateVerifier(soa.Self(),
+                                           &reg_types,
                                            callbacks_->GetVerifierDeps(),
                                            primary_dex_file_,
                                            dex_cache_handle,
@@ -171,9 +174,7 @@ class VerifierDepsTest : public CommonCompilerDriverTest {
                                            method.GetCodeItem(),
                                            method.GetIndex(),
                                            method.GetAccessFlags(),
-                                           /* can_load_classes= */ true,
-                                           /* verify to dump */ false,
-                                           /* allow_thread_suspension= */ true,
+                                           /* verify_to_dump= */ false,
                                            /* api_level= */ 0));
         verifier->Verify();
         soa.Self()->SetVerifierDeps(nullptr);

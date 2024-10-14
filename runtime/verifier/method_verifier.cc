@@ -56,6 +56,7 @@
 #include "mirror/var_handle.h"
 #include "obj_ptr-inl.h"
 #include "reg_type-inl.h"
+#include "reg_type_cache.h"
 #include "register_line-inl.h"
 #include "runtime.h"
 #include "scoped_newline.h"
@@ -129,14 +130,12 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
 
  private:
   MethodVerifier(Thread* self,
-                 ClassLinker* class_linker,
                  ArenaPool* arena_pool,
+                 RegTypeCache* reg_types,
                  VerifierDeps* verifier_deps,
                  const DexFile* dex_file,
                  const dex::CodeItem* code_item,
                  uint32_t method_idx,
-                 bool can_load_classes,
-                 bool allow_thread_suspension,
                  bool aot_mode,
                  Handle<mirror::DexCache> dex_cache,
                  Handle<mirror::ClassLoader> class_loader,
@@ -145,15 +144,13 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
                  bool verify_to_dump,
                  uint32_t api_level) REQUIRES_SHARED(Locks::mutator_lock_)
      : art::verifier::MethodVerifier(self,
-                                     class_linker,
                                      arena_pool,
+                                     reg_types,
                                      verifier_deps,
                                      dex_file,
                                      class_def,
                                      code_item,
                                      method_idx,
-                                     can_load_classes,
-                                     allow_thread_suspension,
                                      aot_mode),
        method_access_flags_(access_flags),
        return_type_(nullptr),
@@ -163,7 +160,7 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
        interesting_dex_pc_(-1),
        monitor_enter_dex_pcs_(nullptr),
        verify_to_dump_(verify_to_dump),
-       allow_thread_suspension_(allow_thread_suspension),
+       allow_thread_suspension_(reg_types->CanSuspend()),
        is_constructor_(false),
        api_level_(api_level == 0 ? std::numeric_limits<uint32_t>::max() : api_level) {
   }
@@ -4879,30 +4876,31 @@ bool MethodVerifier<kVerifierDebug>::PotentiallyMarkRuntimeThrow() {
 }  // namespace
 }  // namespace impl
 
+inline ClassLinker* MethodVerifier::GetClassLinker() const {
+  return reg_types_.GetClassLinker();
+}
+
 MethodVerifier::MethodVerifier(Thread* self,
-                               ClassLinker* class_linker,
                                ArenaPool* arena_pool,
+                               RegTypeCache* reg_types,
                                VerifierDeps* verifier_deps,
                                const DexFile* dex_file,
                                const dex::ClassDef& class_def,
                                const dex::CodeItem* code_item,
                                uint32_t dex_method_idx,
-                               bool can_load_classes,
-                               bool allow_thread_suspension,
                                bool aot_mode)
     : self_(self),
       arena_stack_(arena_pool),
       allocator_(&arena_stack_),
-      reg_types_(self, class_linker, can_load_classes, allocator_, allow_thread_suspension),
+      reg_types_(*reg_types),
       reg_table_(allocator_),
       work_insn_idx_(dex::kDexNoIndex),
       dex_method_idx_(dex_method_idx),
       dex_file_(dex_file),
       class_def_(class_def),
       code_item_accessor_(*dex_file, code_item),
-      // TODO: make it designated initialization when we compile as C++20.
-      flags_({false, false}),
-      const_flags_({aot_mode, can_load_classes}),
+      flags_{ .have_pending_hard_failure_ = false, .have_pending_runtime_throw_failure_ = false },
+      const_flags_{ .aot_mode_ = aot_mode, .can_load_classes_ = reg_types->CanLoadClasses() },
       encountered_failure_types_(0),
       verifier_deps_(verifier_deps),
       link_(nullptr) {
@@ -4913,8 +4911,8 @@ MethodVerifier::~MethodVerifier() {
 }
 
 MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
-                                                         ClassLinker* class_linker,
                                                          ArenaPool* arena_pool,
+                                                         RegTypeCache* reg_types,
                                                          VerifierDeps* verifier_deps,
                                                          uint32_t method_idx,
                                                          const DexFile* dex_file,
@@ -4929,8 +4927,8 @@ MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
                                                          std::string* hard_failure_msg) {
   if (VLOG_IS_ON(verifier_debug)) {
     return VerifyMethod<true>(self,
-                              class_linker,
                               arena_pool,
+                              reg_types,
                               verifier_deps,
                               method_idx,
                               dex_file,
@@ -4945,8 +4943,8 @@ MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
                               hard_failure_msg);
   } else {
     return VerifyMethod<false>(self,
-                               class_linker,
                                arena_pool,
+                               reg_types,
                                verifier_deps,
                                method_idx,
                                dex_file,
@@ -4981,8 +4979,8 @@ static inline bool CanRuntimeHandleVerificationFailure(uint32_t encountered_fail
 
 template <bool kVerifierDebug>
 MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
-                                                         ClassLinker* class_linker,
                                                          ArenaPool* arena_pool,
+                                                         RegTypeCache* reg_types,
                                                          VerifierDeps* verifier_deps,
                                                          uint32_t method_idx,
                                                          const DexFile* dex_file,
@@ -4999,20 +4997,18 @@ MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
   uint64_t start_ns = kTimeVerifyMethod ? NanoTime() : 0;
 
   impl::MethodVerifier<kVerifierDebug> verifier(self,
-                                                class_linker,
                                                 arena_pool,
+                                                reg_types,
                                                 verifier_deps,
                                                 dex_file,
                                                 code_item,
                                                 method_idx,
-                                                /* can_load_classes= */ true,
-                                                /* allow_thread_suspension= */ true,
                                                 aot_mode,
                                                 dex_cache,
                                                 class_loader,
                                                 class_def,
                                                 method_access_flags,
-                                                /* verify to dump */ false,
+                                                /* verify_to_dump= */ false,
                                                 api_level);
   if (verifier.Verify()) {
     // Verification completed, however failures may be pending that didn't cause the verification
@@ -5105,21 +5101,21 @@ MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
 
 MethodVerifier* MethodVerifier::CalculateVerificationInfo(
       Thread* self,
+      RegTypeCache* reg_types,
       ArtMethod* method,
       Handle<mirror::DexCache> dex_cache,
       Handle<mirror::ClassLoader> class_loader,
       uint32_t dex_pc) {
+  Runtime* runtime = Runtime::Current();
   std::unique_ptr<impl::MethodVerifier<false>> verifier(
       new impl::MethodVerifier<false>(self,
-                                      Runtime::Current()->GetClassLinker(),
-                                      Runtime::Current()->GetArenaPool(),
+                                      runtime->GetArenaPool(),
+                                      reg_types,
                                       /* verifier_deps= */ nullptr,
                                       method->GetDexFile(),
                                       method->GetCodeItem(),
                                       method->GetDexMethodIndex(),
-                                      /* can_load_classes= */ false,
-                                      /* allow_thread_suspension= */ false,
-                                      Runtime::Current()->IsAotCompiler(),
+                                      runtime->IsAotCompiler(),
                                       dex_cache,
                                       class_loader,
                                       *method->GetDeclaringClass()->GetClassDef(),
@@ -5128,7 +5124,7 @@ MethodVerifier* MethodVerifier::CalculateVerificationInfo(
                                       // Just use the verifier at the current skd-version.
                                       // This might affect what soft-verifier errors are reported.
                                       // Callers can then filter out relevant errors if needed.
-                                      Runtime::Current()->GetTargetSdkVersion()));
+                                      runtime->GetTargetSdkVersion()));
   verifier->interesting_dex_pc_ = dex_pc;
   verifier->Verify();
   if (VLOG_IS_ON(verifier)) {
@@ -5143,44 +5139,42 @@ MethodVerifier* MethodVerifier::CalculateVerificationInfo(
   }
 }
 
-MethodVerifier* MethodVerifier::VerifyMethodAndDump(Thread* self,
-                                                    VariableIndentationOutputStream* vios,
-                                                    uint32_t dex_method_idx,
-                                                    const DexFile* dex_file,
-                                                    Handle<mirror::DexCache> dex_cache,
-                                                    Handle<mirror::ClassLoader> class_loader,
-                                                    const dex::ClassDef& class_def,
-                                                    const dex::CodeItem* code_item,
-                                                    uint32_t method_access_flags,
-                                                    uint32_t api_level) {
-  impl::MethodVerifier<false>* verifier = new impl::MethodVerifier<false>(
+void MethodVerifier::VerifyMethodAndDump(Thread* self,
+                                         VariableIndentationOutputStream* vios,
+                                         uint32_t dex_method_idx,
+                                         const DexFile* dex_file,
+                                         Handle<mirror::DexCache> dex_cache,
+                                         Handle<mirror::ClassLoader> class_loader,
+                                         const dex::ClassDef& class_def,
+                                         const dex::CodeItem* code_item,
+                                         uint32_t method_access_flags,
+                                         uint32_t api_level) {
+  Runtime* runtime = Runtime::Current();
+  ClassLinker* class_linker = runtime->GetClassLinker();
+  ArenaPool* arena_pool = runtime->GetArenaPool();
+  RegTypeCache reg_types(self, class_linker, arena_pool);
+  impl::MethodVerifier<false> verifier(
       self,
-      Runtime::Current()->GetClassLinker(),
-      Runtime::Current()->GetArenaPool(),
+      arena_pool,
+      &reg_types,
       /* verifier_deps= */ nullptr,
       dex_file,
       code_item,
       dex_method_idx,
-      /* can_load_classes= */ true,
-      /* allow_thread_suspension= */ true,
-      Runtime::Current()->IsAotCompiler(),
+      runtime->IsAotCompiler(),
       dex_cache,
       class_loader,
       class_def,
       method_access_flags,
       /* verify_to_dump= */ true,
       api_level);
-  verifier->Verify();
-  verifier->DumpFailures(vios->Stream());
-  vios->Stream() << verifier->info_messages_.str();
-  // Only dump and return if no hard failures. Otherwise the verifier may be not fully initialized
+  verifier.Verify();
+  verifier.DumpFailures(vios->Stream());
+  vios->Stream() << verifier.info_messages_.str();
+  // Only dump if no hard failures. Otherwise the verifier may be not fully initialized
   // and querying any info is dangerous/can abort.
-  if (verifier->flags_.have_pending_hard_failure_) {
-    delete verifier;
-    return nullptr;
-  } else {
-    verifier->Dump(vios);
-    return verifier;
+  if (!verifier.flags_.have_pending_hard_failure_) {
+    verifier.Dump(vios);
   }
 }
 
@@ -5189,19 +5183,23 @@ void MethodVerifier::FindLocksAtDexPc(
     uint32_t dex_pc,
     std::vector<MethodVerifier::DexLockInfo>* monitor_enter_dex_pcs,
     uint32_t api_level) {
-  StackHandleScope<2> hs(Thread::Current());
+  Thread* self = Thread::Current();
+  StackHandleScope<2> hs(self);
   Handle<mirror::DexCache> dex_cache(hs.NewHandle(m->GetDexCache()));
   Handle<mirror::ClassLoader> class_loader(hs.NewHandle(m->GetClassLoader()));
-  impl::MethodVerifier<false> verifier(hs.Self(),
-                                       Runtime::Current()->GetClassLinker(),
-                                       Runtime::Current()->GetArenaPool(),
+  Runtime* runtime = Runtime::Current();
+  ClassLinker* class_linker = runtime->GetClassLinker();
+  ArenaPool* arena_pool = runtime->GetArenaPool();
+  RegTypeCache reg_types(
+      self, class_linker, arena_pool, /* can_load_classes= */ false, /* can_suspend= */ false);
+  impl::MethodVerifier<false> verifier(self,
+                                       arena_pool,
+                                       &reg_types,
                                        /* verifier_deps= */ nullptr,
                                        m->GetDexFile(),
                                        m->GetCodeItem(),
                                        m->GetDexMethodIndex(),
-                                       /* can_load_classes= */ false,
-                                       /* allow_thread_suspension= */ false,
-                                       Runtime::Current()->IsAotCompiler(),
+                                       runtime->IsAotCompiler(),
                                        dex_cache,
                                        class_loader,
                                        m->GetClassDef(),
@@ -5214,6 +5212,7 @@ void MethodVerifier::FindLocksAtDexPc(
 }
 
 MethodVerifier* MethodVerifier::CreateVerifier(Thread* self,
+                                               RegTypeCache* reg_types,
                                                VerifierDeps* verifier_deps,
                                                const DexFile* dex_file,
                                                Handle<mirror::DexCache> dex_cache,
@@ -5222,19 +5221,15 @@ MethodVerifier* MethodVerifier::CreateVerifier(Thread* self,
                                                const dex::CodeItem* code_item,
                                                uint32_t method_idx,
                                                uint32_t access_flags,
-                                               bool can_load_classes,
                                                bool verify_to_dump,
-                                               bool allow_thread_suspension,
                                                uint32_t api_level) {
   return new impl::MethodVerifier<false>(self,
-                                         Runtime::Current()->GetClassLinker(),
                                          Runtime::Current()->GetArenaPool(),
+                                         reg_types,
                                          verifier_deps,
                                          dex_file,
                                          code_item,
                                          method_idx,
-                                         can_load_classes,
-                                         allow_thread_suspension,
                                          Runtime::Current()->IsAotCompiler(),
                                          dex_cache,
                                          class_loader,

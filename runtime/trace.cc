@@ -967,6 +967,9 @@ void Trace::FlushThreadBuffer(Thread* self) {
   // Check if we still need to flush inside the trace_lock_. If we are stopping tracing it is
   // possible we already deleted the trace and flushed the buffer too.
   if (the_trace_ == nullptr) {
+    if (art_flags::always_enable_profile_code()) {
+      TraceProfiler::ReleaseThreadBuffer(self);
+    }
     DCHECK_EQ(self->GetMethodTraceBuffer(), nullptr);
     return;
   }

@@ -111,6 +111,7 @@
 #include "thread-inl.h"
 #include "thread_list.h"
 #include "trace.h"
+#include "trace_profile.h"
 #include "verify_object.h"
 #include "well_known_classes-inl.h"
 
@@ -1118,6 +1119,7 @@ Thread* Thread::Attach(const char* thread_name,
     self->Dump(LOG_STREAM(INFO));
   }
 
+  TraceProfiler::AllocateBuffer(self);
   if (should_run_callbacks) {
     ScopedObjectAccess soa(self);
     runtime->GetRuntimeCallbacks()->ThreadStart(self);

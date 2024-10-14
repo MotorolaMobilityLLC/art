@@ -48,6 +48,22 @@ static constexpr size_t kAlwaysOnTraceHeaderSize = 8;
 
 bool TraceProfiler::profile_in_progress_ = false;
 
+void TraceProfiler::AllocateBuffer(Thread* thread) {
+  if (!art_flags::always_enable_profile_code()) {
+    return;
+  }
+
+  Thread* self = Thread::Current();
+  MutexLock mu(self, *Locks::trace_lock_);
+  if (!profile_in_progress_) {
+    return;
+  }
+
+  auto buffer = new uintptr_t[kAlwaysOnTraceBufSize];
+  memset(buffer, 0, kAlwaysOnTraceBufSize * sizeof(uintptr_t));
+  thread->SetMethodTraceBuffer(buffer, kAlwaysOnTraceBufSize);
+}
+
 void TraceProfiler::Start() {
   if (!art_flags::always_enable_profile_code()) {
     LOG(ERROR) << "Feature not supported. Please build with ART_ALWAYS_ENABLE_PROFILE_CODE.";
@@ -112,8 +128,8 @@ uint8_t* TraceProfiler::DumpBuffer(uint32_t thread_id,
 
   int num_records = 0;
   uintptr_t prev_method_action_encoding = 0;
-  for (size_t i = 0; i < kAlwaysOnTraceBufSize; i++) {
-    uintptr_t method_action_encoding = method_trace_entries[num_records];
+  for (size_t i = kAlwaysOnTraceBufSize - 1; i > 0; i-=1) {
+    uintptr_t method_action_encoding = method_trace_entries[i];
     // 0 value indicates the rest of the entries are empty.
     if (method_action_encoding == 0) {
       break;
@@ -197,6 +213,16 @@ void TraceProfiler::Dump(std::unique_ptr<File>&& trace_file) {
     memset(method_trace_entries, 0, kAlwaysOnTraceBufSize * sizeof(uintptr_t));
     // Reset the current pointer.
     thread->SetMethodTraceBufferCurrentEntry(kAlwaysOnTraceBufSize);
+  }
+
+  // Write any remaining data to file and close the file.
+  if (curr_buffer_ptr != buffer_ptr) {
+    if (!trace_file->WriteFully(buffer_ptr, curr_buffer_ptr - buffer_ptr)) {
+      PLOG(WARNING) << "Failed streaming a tracing event.";
+    }
+  }
+  if (!trace_file->Close()) {
+    PLOG(WARNING) << "Failed to close file.";
   }
 }
 

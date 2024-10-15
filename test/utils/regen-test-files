@@ -238,7 +238,6 @@ known_failing_tests = frozenset([
 # removing them from this set (in order to promote them to
 # presubmits).
 postsubmit_only_tests = frozenset([
-    "057-math-intrinsics",
     "858-checker-unsafe",
     "859-checker-var-handles-intrinsics",
 ])

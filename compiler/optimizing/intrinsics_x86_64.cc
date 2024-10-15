@@ -4733,7 +4733,6 @@ static void GenerateVarHandleGetAndOp(HInvoke* invoke,
   Location rax_loc = Location::RegisterLocation(RAX);
   DCHECK_IMPLIES(!is_void, locations->Out().Equals(rax_loc));
   CpuRegister temp = temp_loc.AsRegister<CpuRegister>();
-  CpuRegister rax = rax_loc.AsRegister<CpuRegister>();
   bool is64Bit = DataType::Is64BitType(type);
 
   NearLabel retry;

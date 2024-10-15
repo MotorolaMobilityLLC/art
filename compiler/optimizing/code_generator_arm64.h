@@ -130,6 +130,8 @@ const vixl::aarch64::CPURegList callee_saved_fp_registers(vixl::aarch64::CPURegi
                                                           vixl::aarch64::d15.GetCode());
 Location ARM64ReturnLocation(DataType::Type return_type);
 
+vixl::aarch64::Condition ARM64PCondition(HVecPredToBoolean::PCondKind cond);
+
 #define UNIMPLEMENTED_INTRINSIC_LIST_ARM64(V) \
   V(MathSignumFloat)                          \
   V(MathSignumDouble)                         \

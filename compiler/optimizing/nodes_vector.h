@@ -1529,6 +1529,11 @@ class HVecPredNot final : public HVecPredSetOperation {
   DEFAULT_COPY_CONSTRUCTOR(VecPredNot);
 };
 
+// Return the number of elements of the given type that will fit into a vector of given size.
+inline size_t GetNumberOfElementsInVector(size_t vector_size_in_bytes, DataType::Type type) {
+  return vector_size_in_bytes / DataType::Size(type);
+}
+
 }  // namespace art
 
 #endif  // ART_COMPILER_OPTIMIZING_NODES_VECTOR_H_

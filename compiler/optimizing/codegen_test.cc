@@ -932,6 +932,50 @@ TEST_F(CodegenTest, ARM64FrameSizeNoSIMD) {
   EXPECT_EQ(codegen.GetFpuSpillSize(), kExpectedFPSpillSize);
 }
 
+// This test checks that the result of the VecPredToBoolean instruction doesn't depend on
+// conditional flags that can be updated by other instructions. For example:
+//
+//   VecPredWhile p0, opa, opb
+//   Below opb, opa
+//   VecPredToBoolean p0
+//
+// where Below updates conditions flags after VecPredWhile.
+TEST_F(CodegenTest, ARM64SvePredicateToBoolean) {
+  std::unique_ptr<CompilerOptions> compiler_options =
+      CommonCompilerTest::CreateCompilerOptions(InstructionSet::kArm64, "default", "sve");
+  for (int i = 0; i < 2; i++) {
+    for (int j = 0; j < 2; j++) {
+      HBasicBlock* block = InitEntryMainExitGraph();
+      TestCodeGeneratorARM64 codegen(graph_, *compiler_options);
+      if (!codegen.SupportsPredicatedSIMD()) {
+        GTEST_SKIP() << "Predicated SIMD is not supported.";
+      }
+
+      HInstruction *opa = graph_->GetIntConstant(i);
+      HInstruction *opb = graph_->GetIntConstant(j);
+      HVecPredWhile *pred_while = MakeVecPredWhile(block,
+                                                  opa,
+                                                  opb,
+                                                  HVecPredWhile::CondKind::kLO,
+                                                  DataType::Type::kInt32);
+      // Update condition flags by using Below instruction.
+      MakeCondition(block, IfCondition::kCondB, opb, opa);
+      HVecPredToBoolean *boolean = MakeVecPredToBoolean(block,
+                                                        pred_while,
+                                                        HVecPredToBoolean::PCondKind::kNFirst,
+                                                        DataType::Type::kInt32);
+      MakeReturn(block, boolean);
+
+      graph_->SetHasPredicatedSIMD(true);
+      graph_->BuildDominatorTree();
+
+      if (CanExecute(codegen)) {
+        RunCode(&codegen, graph_, [](HGraph*) {}, true, i >= j);
+      }
+    }
+  }
+}
+
 #endif
 
 }  // namespace art

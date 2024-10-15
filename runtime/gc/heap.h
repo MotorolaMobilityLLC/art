@@ -237,7 +237,7 @@ class Heap {
        bool gc_stress_mode,
        bool measure_gc_performance,
        bool use_homogeneous_space_compaction,
-       bool use_generational_cc,
+       bool use_generational_gc,
        uint64_t min_interval_homogeneous_space_compaction_by_oom,
        bool dump_region_info_before_gc,
        bool dump_region_info_after_gc);
@@ -570,9 +570,7 @@ class Heap {
     return num_bytes_allocated_.fetch_add(bytes, std::memory_order_relaxed);
   }
 
-  bool GetUseGenerationalCC() const {
-    return use_generational_cc_;
-  }
+  bool GetUseGenerational() const { return use_generational_gc_; }
 
   // Returns the number of objects currently allocated.
   size_t GetObjectsAllocated() const
@@ -828,7 +826,7 @@ class Heap {
     DCHECK(gUseReadBarrier);
     collector::ConcurrentCopying* active_collector =
             active_concurrent_copying_collector_.load(std::memory_order_relaxed);
-    if (use_generational_cc_) {
+    if (use_generational_gc_) {
       DCHECK((active_collector == concurrent_copying_collector_) ||
              (active_collector == young_concurrent_copying_collector_))
               << "active_concurrent_copying_collector: " << active_collector
@@ -1051,6 +1049,8 @@ class Heap {
   double CalculateGcWeightedAllocatedBytes(uint64_t gc_last_process_cpu_time_ns,
                                            uint64_t current_process_cpu_time) const;
 
+  // Called only from the constructor.
+  void CreateGarbageCollectors(bool measure_gc_performance);
   // Create a mem map with a preferred base address.
   static MemMap MapAnonymousPreferredAddress(const char* name,
                                              uint8_t* request_begin,
@@ -1641,10 +1641,15 @@ class Heap {
 
   std::vector<collector::GarbageCollector*> garbage_collectors_;
   collector::SemiSpace* semi_space_collector_;
-  collector::MarkCompact* mark_compact_;
   Atomic<collector::ConcurrentCopying*> active_concurrent_copying_collector_;
-  collector::ConcurrentCopying* young_concurrent_copying_collector_;
-  collector::ConcurrentCopying* concurrent_copying_collector_;
+  union {
+    collector::ConcurrentCopying* young_concurrent_copying_collector_;
+    collector::YoungMarkCompact* young_mark_compact_;
+  };
+  union {
+    collector::ConcurrentCopying* concurrent_copying_collector_;
+    collector::MarkCompact* mark_compact_;
+  };
 
   const bool is_running_on_memory_tool_;
   const bool use_tlab_;
@@ -1693,7 +1698,7 @@ class Heap {
   // like Concurrent Copying (CC) or Concurrent Mark Compact (CMC) collectors,
   // i.e. use sticky-bit for minor collections and full heap for major collections.
   // Set in Heap constructor.
-  const bool use_generational_cc_;
+  const bool use_generational_gc_;
 
   // True if the currently running collection has made some thread wait.
   bool running_collection_is_blocking_ GUARDED_BY(gc_complete_lock_);

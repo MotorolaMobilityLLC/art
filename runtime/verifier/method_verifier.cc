@@ -2857,32 +2857,18 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                        inst->Opcode() == Instruction::INVOKE_SUPER_RANGE);
       MethodType type = is_super ? METHOD_SUPER : METHOD_VIRTUAL;
       ArtMethod* called_method = VerifyInvocationArgs(inst, type, is_range);
-      const RegType* return_type = nullptr;
-      if (called_method != nullptr) {
-        ObjPtr<mirror::Class> return_type_class = CanLoadClasses()
-            ? called_method->ResolveReturnType()
-            : called_method->LookupResolvedReturnType();
-        if (return_type_class != nullptr) {
-          return_type = &FromClass(called_method->GetReturnTypeDescriptor(),
-                                   return_type_class,
-                                   return_type_class->CannotBeAssignedFromOtherTypes());
-        } else {
-          DCHECK_IMPLIES(CanLoadClasses(), self_->IsExceptionPending());
-          self_->ClearException();
-        }
-      }
-      if (return_type == nullptr) {
-        uint32_t method_idx = GetMethodIdxOfInvoke(inst);
-        const dex::MethodId& method_id = dex_file_->GetMethodId(method_idx);
-        dex::TypeIndex return_type_idx =
-            dex_file_->GetProtoId(method_id.proto_idx_).return_type_idx_;
-        const char* descriptor = dex_file_->GetTypeDescriptor(return_type_idx);
-        return_type = &reg_types_.FromDescriptor(class_loader_, descriptor);
-      }
-      if (!return_type->IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, *return_type);
+      uint32_t method_idx = (is_range) ? inst->VRegB_3rc() : inst->VRegB_35c();
+      const dex::MethodId& method_id = dex_file_->GetMethodId(method_idx);
+      dex::TypeIndex return_type_idx =
+          dex_file_->GetProtoId(method_id.proto_idx_).return_type_idx_;
+      const char* return_type_descriptor = dex_file_->GetTypeDescriptor(return_type_idx);
+      DCHECK_IMPLIES(called_method != nullptr,
+                     called_method->GetReturnTypeDescriptorView() == return_type_descriptor);
+      const RegType& return_type = reg_types_.FromDescriptor(class_loader_, return_type_descriptor);
+      if (!return_type.IsLowHalf()) {
+        work_line_->SetResultRegisterType(this, return_type);
       } else {
-        work_line_->SetResultRegisterTypeWide(*return_type, return_type->HighHalf(&reg_types_));
+        work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
       just_set_result = true;
       break;
@@ -2891,31 +2877,16 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::INVOKE_DIRECT_RANGE: {
       bool is_range = (inst->Opcode() == Instruction::INVOKE_DIRECT_RANGE);
       ArtMethod* called_method = VerifyInvocationArgs(inst, METHOD_DIRECT, is_range);
-      const char* return_type_descriptor;
-      bool is_constructor;
-      const RegType* return_type = nullptr;
-      if (called_method == nullptr) {
-        uint32_t method_idx = (is_range) ? inst->VRegB_3rc() : inst->VRegB_35c();
-        const dex::MethodId& method_id = dex_file_->GetMethodId(method_idx);
-        is_constructor = dex_file_->GetStringView(method_id.name_idx_) == "<init>";
-        dex::TypeIndex return_type_idx =
-            dex_file_->GetProtoId(method_id.proto_idx_).return_type_idx_;
-        return_type_descriptor =  dex_file_->GetTypeDescriptor(return_type_idx);
-      } else {
-        is_constructor = called_method->IsConstructor();
-        return_type_descriptor = called_method->GetReturnTypeDescriptor();
-        ObjPtr<mirror::Class> return_type_class = CanLoadClasses()
-            ? called_method->ResolveReturnType()
-            : called_method->LookupResolvedReturnType();
-        if (return_type_class != nullptr) {
-          return_type = &FromClass(return_type_descriptor,
-                                   return_type_class,
-                                   return_type_class->CannotBeAssignedFromOtherTypes());
-        } else {
-          DCHECK_IMPLIES(CanLoadClasses(), self_->IsExceptionPending());
-          self_->ClearException();
-        }
-      }
+      uint32_t method_idx = (is_range) ? inst->VRegB_3rc() : inst->VRegB_35c();
+      const dex::MethodId& method_id = dex_file_->GetMethodId(method_idx);
+      dex::TypeIndex return_type_idx =
+          dex_file_->GetProtoId(method_id.proto_idx_).return_type_idx_;
+      const char* return_type_descriptor =  dex_file_->GetTypeDescriptor(return_type_idx);
+      DCHECK_IMPLIES(called_method != nullptr,
+                     called_method->GetReturnTypeDescriptorView() == return_type_descriptor);
+      bool is_constructor = (called_method != nullptr)
+          ? called_method->IsConstructor()
+          : dex_file_->GetStringView(method_id.name_idx_) == "<init>";
       if (is_constructor) {
         /*
          * Some additional checks when calling a constructor. We know from the invocation arg check
@@ -2956,13 +2927,11 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
          */
         work_line_->MarkRefsAsInitialized(this, this_type);
       }
-      if (return_type == nullptr) {
-        return_type = &reg_types_.FromDescriptor(class_loader_, return_type_descriptor);
-      }
-      if (!return_type->IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, *return_type);
+      const RegType& return_type = reg_types_.FromDescriptor(class_loader_, return_type_descriptor);
+      if (!return_type.IsLowHalf()) {
+        work_line_->SetResultRegisterType(this, return_type);
       } else {
-        work_line_->SetResultRegisterTypeWide(*return_type, return_type->HighHalf(&reg_types_));
+        work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
       just_set_result = true;
       break;
@@ -4696,7 +4665,6 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
       }
     }
   }
-  const RegType* field_type = nullptr;
   if (field != nullptr) {
     if (kAccType == FieldAccessType::kAccPut) {
       if (field->IsFinal() && field->GetDeclaringClass() != GetDeclaringClass().GetClass()) {
@@ -4704,17 +4672,6 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
                                         << " from other class " << GetDeclaringClass();
         // Keep hunting for possible hard fails.
       }
-    }
-
-    ObjPtr<mirror::Class> field_type_class =
-        CanLoadClasses() ? field->ResolveType() : field->LookupResolvedType();
-    if (field_type_class != nullptr) {
-      field_type = &FromClass(field->GetTypeDescriptor(),
-                              field_type_class,
-                              field_type_class->CannotBeAssignedFromOtherTypes());
-    } else {
-      DCHECK_IMPLIES(CanLoadClasses(), self_->IsExceptionPending());
-      self_->ClearException();
     }
   } else if (IsSdkVersionSetAndAtLeast(api_level_, SdkVersion::kP)) {
     // If we don't have the field (it seems we failed resolution) and this is a PUT, we need to
@@ -4741,37 +4698,34 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
       }
     }
   }
-  if (field_type == nullptr) {
-    const dex::FieldId& field_id = dex_file_->GetFieldId(field_idx);
-    const char* descriptor = dex_file_->GetFieldTypeDescriptor(field_id);
-    field_type = &reg_types_.FromDescriptor(class_loader_, descriptor);
-  }
-  DCHECK(field_type != nullptr);
+  const dex::FieldId& field_id = dex_file_->GetFieldId(field_idx);
+  const char* type_descriptor = dex_file_->GetFieldTypeDescriptor(field_id);
+  const RegType& field_type = reg_types_.FromDescriptor(class_loader_, type_descriptor);
   const uint32_t vregA = (is_static) ? inst->VRegA_21c() : inst->VRegA_22c();
   static_assert(kAccType == FieldAccessType::kAccPut || kAccType == FieldAccessType::kAccGet,
                 "Unexpected third access type");
   if (kAccType == FieldAccessType::kAccPut) {
     // sput or iput.
     if (is_primitive) {
-      VerifyPrimitivePut(*field_type, insn_type, vregA);
+      VerifyPrimitivePut(field_type, insn_type, vregA);
     } else {
       DCHECK(insn_type.IsJavaLangObject());
-      if (!insn_type.IsAssignableFrom(*field_type, this)) {
-        DCHECK(!field_type->IsReferenceTypes());
+      if (!insn_type.IsAssignableFrom(field_type, this)) {
+        DCHECK(!field_type.IsReferenceTypes());
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "expected field " << ArtField::PrettyField(field)
                                           << " to be compatible with type '" << insn_type
-                                          << "' but found type '" << *field_type
+                                          << "' but found type '" << field_type
                                           << "' in put-object";
         return;
       }
-      work_line_->VerifyRegisterType(this, vregA, *field_type);
+      work_line_->VerifyRegisterType(this, vregA, field_type);
     }
   } else if (kAccType == FieldAccessType::kAccGet) {
     // sget or iget.
     if (is_primitive) {
-      if (field_type->Equals(insn_type) ||
-          (field_type->IsFloat() && insn_type.IsInteger()) ||
-          (field_type->IsDouble() && insn_type.IsLong())) {
+      if (field_type.Equals(insn_type) ||
+          (field_type.IsFloat() && insn_type.IsInteger()) ||
+          (field_type.IsDouble() && insn_type.IsLong())) {
         // expected that read is of the correct primitive type or that int reads are reading
         // floats or long reads are reading doubles
       } else {
@@ -4780,24 +4734,24 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
         // compile time
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "expected field " << ArtField::PrettyField(field)
                                           << " to be of type '" << insn_type
-                                          << "' but found type '" << *field_type << "' in get";
+                                          << "' but found type '" << field_type << "' in get";
         return;
       }
     } else {
       DCHECK(insn_type.IsJavaLangObject());
-      if (!insn_type.IsAssignableFrom(*field_type, this)) {
-        DCHECK(!field_type->IsReferenceTypes());
+      if (!insn_type.IsAssignableFrom(field_type, this)) {
+        DCHECK(!field_type.IsReferenceTypes());
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "expected field " << ArtField::PrettyField(field)
                                           << " to be compatible with type '" << insn_type
-                                          << "' but found type '" << *field_type
+                                          << "' but found type '" << field_type
                                           << "' in get-object";
         return;
       }
     }
-    if (!field_type->IsLowHalf()) {
-      work_line_->SetRegisterType<LockOp::kClear>(vregA, *field_type);
+    if (!field_type.IsLowHalf()) {
+      work_line_->SetRegisterType<LockOp::kClear>(vregA, field_type);
     } else {
-      work_line_->SetRegisterTypeWide(vregA, *field_type, field_type->HighHalf(&reg_types_));
+      work_line_->SetRegisterTypeWide(vregA, field_type, field_type.HighHalf(&reg_types_));
     }
   } else {
     LOG(FATAL) << "Unexpected case.";

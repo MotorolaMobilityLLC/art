@@ -171,9 +171,6 @@ class MethodVerifier {
     return (encountered_failure_types_ & VERIFY_ERROR_RUNTIME_THROW) != 0;
   }
 
-  virtual const RegType& ResolveCheckedClass(dex::TypeIndex class_idx)
-      REQUIRES_SHARED(Locks::mutator_lock_) = 0;
-
   uint32_t GetEncounteredFailureTypes() const {
     return encountered_failure_types_;
   }

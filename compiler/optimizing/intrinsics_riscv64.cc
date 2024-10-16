@@ -2331,6 +2331,15 @@ static void CreateUnsafeGetLocations(ArenaAllocator* allocator,
                     (can_call ? Location::kOutputOverlap : Location::kNoOutputOverlap));
 }
 
+static void CreateUnsafeGetAbsoluteLocations(ArenaAllocator* allocator,
+                                             HInvoke* invoke) {
+  LocationSummary* locations =
+      new (allocator) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
+  locations->SetInAt(0, Location::NoLocation());        // Unused receiver.
+  locations->SetInAt(1, Location::RequiresRegister());
+  locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
+}
+
 static void GenUnsafeGet(HInvoke* invoke,
                          CodeGeneratorRISCV64* codegen,
                          std::memory_order order,
@@ -2383,12 +2392,47 @@ static void GenUnsafeGet(HInvoke* invoke,
   }
 }
 
+static void GenUnsafeGetAbsolute(HInvoke* invoke,
+                                 CodeGeneratorRISCV64* codegen,
+                                 std::memory_order order,
+                                 DataType::Type type) {
+  DCHECK((type == DataType::Type::kInt8) ||
+         (type == DataType::Type::kInt32) ||
+         (type == DataType::Type::kInt64));
+  LocationSummary* locations = invoke->GetLocations();
+  Location address_loc = locations->InAt(1);
+  XRegister address = address_loc.AsRegister<XRegister>();
+  Location out_loc = locations->Out();
+
+  bool seq_cst_barrier = order == std::memory_order_seq_cst;
+  bool acquire_barrier = seq_cst_barrier || order == std::memory_order_acquire;
+  DCHECK(acquire_barrier || order == std::memory_order_relaxed);
+
+  if (seq_cst_barrier) {
+    codegen->GenerateMemoryBarrier(MemBarrierKind::kAnyAny);
+  }
+
+  codegen->GetInstructionVisitor()->Load(out_loc, address, /*offset=*/ 0, type);
+
+  if (acquire_barrier) {
+    codegen->GenerateMemoryBarrier(MemBarrierKind::kLoadAny);
+  }
+}
+
 void IntrinsicLocationsBuilderRISCV64::VisitUnsafeGet(HInvoke* invoke) {
   VisitJdkUnsafeGet(invoke);
 }
 
+void IntrinsicLocationsBuilderRISCV64::VisitUnsafeGetAbsolute(HInvoke* invoke) {
+  VisitJdkUnsafeGetAbsolute(invoke);
+}
+
 void IntrinsicCodeGeneratorRISCV64::VisitUnsafeGet(HInvoke* invoke) {
   VisitJdkUnsafeGet(invoke);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitUnsafeGetAbsolute(HInvoke* invoke) {
+  VisitJdkUnsafeGetAbsolute(invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitUnsafeGetVolatile(HInvoke* invoke) {
@@ -2443,8 +2487,16 @@ void IntrinsicLocationsBuilderRISCV64::VisitJdkUnsafeGet(HInvoke* invoke) {
   CreateUnsafeGetLocations(allocator_, invoke, codegen_);
 }
 
+void IntrinsicLocationsBuilderRISCV64::VisitJdkUnsafeGetAbsolute(HInvoke* invoke) {
+  CreateUnsafeGetAbsoluteLocations(allocator_, invoke);
+}
+
 void IntrinsicCodeGeneratorRISCV64::VisitJdkUnsafeGet(HInvoke* invoke) {
   GenUnsafeGet(invoke, codegen_, std::memory_order_relaxed, DataType::Type::kInt32);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitJdkUnsafeGetAbsolute(HInvoke* invoke) {
+  GenUnsafeGetAbsolute(invoke, codegen_, std::memory_order_relaxed, DataType::Type::kInt32);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitJdkUnsafeGetAcquire(HInvoke* invoke) {
@@ -2531,6 +2583,14 @@ static void CreateUnsafePutLocations(ArenaAllocator* allocator, HInvoke* invoke)
   }
 }
 
+static void CreateUnsafePutAbsoluteLocations(ArenaAllocator* allocator, HInvoke* invoke) {
+  LocationSummary* locations =
+      new (allocator) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
+  locations->SetInAt(0, Location::NoLocation());        // Unused receiver.
+  locations->SetInAt(1, Location::RequiresRegister());
+  locations->SetInAt(2, Location::RequiresRegister());
+}
+
 static void GenUnsafePut(HInvoke* invoke,
                          CodeGeneratorRISCV64* codegen,
                          std::memory_order order,
@@ -2559,12 +2619,32 @@ static void GenUnsafePut(HInvoke* invoke,
   }
 }
 
+static void GenUnsafePutAbsolute(HInvoke* invoke,
+                                 CodeGeneratorRISCV64* codegen,
+                                 std::memory_order order,
+                                 DataType::Type type) {
+  Riscv64Assembler* assembler = codegen->GetAssembler();
+  LocationSummary* locations = invoke->GetLocations();
+  XRegister address = locations->InAt(1).AsRegister<XRegister>();
+  Location value = locations->InAt(2);
+
+  GenerateSet(codegen, order, value, address, /*offset=*/ 0, type);
+}
+
 void IntrinsicLocationsBuilderRISCV64::VisitUnsafePut(HInvoke* invoke) {
   VisitJdkUnsafePut(invoke);
 }
 
+void IntrinsicLocationsBuilderRISCV64::VisitUnsafePutAbsolute(HInvoke* invoke) {
+  VisitJdkUnsafePutAbsolute(invoke);
+}
+
 void IntrinsicCodeGeneratorRISCV64::VisitUnsafePut(HInvoke* invoke) {
   VisitJdkUnsafePut(invoke);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitUnsafePutAbsolute(HInvoke* invoke) {
+  VisitJdkUnsafePutAbsolute(invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitUnsafePutOrdered(HInvoke* invoke) {
@@ -2643,8 +2723,16 @@ void IntrinsicLocationsBuilderRISCV64::VisitJdkUnsafePut(HInvoke* invoke) {
   CreateUnsafePutLocations(allocator_, invoke);
 }
 
+void IntrinsicLocationsBuilderRISCV64::VisitJdkUnsafePutAbsolute(HInvoke* invoke) {
+  CreateUnsafePutAbsoluteLocations(allocator_, invoke);
+}
+
 void IntrinsicCodeGeneratorRISCV64::VisitJdkUnsafePut(HInvoke* invoke) {
   GenUnsafePut(invoke, codegen_, std::memory_order_relaxed, DataType::Type::kInt32);
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitJdkUnsafePutAbsolute(HInvoke* invoke) {
+  GenUnsafePutAbsolute(invoke, codegen_, std::memory_order_relaxed, DataType::Type::kInt32);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitJdkUnsafePutOrdered(HInvoke* invoke) {

@@ -125,14 +125,6 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
     return IsConstructor() && !IsStatic();
   }
 
-  const RegType& ResolveCheckedClass(dex::TypeIndex class_idx) override
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(!HasFailures());
-    const RegType& result = ResolveClass<CheckAccess::kYes>(class_idx);
-    DCHECK(!HasFailures());
-    return result;
-  }
-
   void FindLocksAtDexPc() REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:

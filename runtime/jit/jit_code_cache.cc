@@ -366,12 +366,12 @@ bool JitCodeCache::WaitForPotentialCollectionToComplete(Thread* self) {
 }
 
 static uintptr_t FromCodeToAllocation(const void* code) {
-  size_t alignment = GetInstructionSetCodeAlignment(kRuntimeISA);
+  size_t alignment = GetInstructionSetCodeAlignment(kRuntimeQuickCodeISA);
   return reinterpret_cast<uintptr_t>(code) - RoundUp(sizeof(OatQuickMethodHeader), alignment);
 }
 
 static const void* FromAllocationToCode(const uint8_t* alloc) {
-  size_t alignment = GetInstructionSetCodeAlignment(kRuntimeISA);
+  size_t alignment = GetInstructionSetCodeAlignment(kRuntimeQuickCodeISA);
   return reinterpret_cast<const void*>(alloc + RoundUp(sizeof(OatQuickMethodHeader), alignment));
 }
 
@@ -530,7 +530,8 @@ void JitCodeCache::FreeAllMethodHeaders(
       }
     });
     ForEachNativeDebugSymbol([&](const void* addr, size_t, const char* name) {
-      addr = AlignDown(addr, GetInstructionSetInstructionAlignment(kRuntimeISA));  // Thumb-bit.
+      addr = AlignDown(addr,
+                       GetInstructionSetInstructionAlignment(kRuntimeQuickCodeISA));  // Thumb-bit.
       bool res = debug_info.emplace(addr).second;
       CHECK(res) << "Duplicate debug info: " << addr << " " << name;
       CHECK_EQ(compiled_methods.count(addr), 1u) << "Extra debug info: " << addr << " " << name;
@@ -1370,7 +1371,7 @@ void JitCodeCache::DoCollection(Thread* self) {
 }
 
 OatQuickMethodHeader* JitCodeCache::LookupMethodHeader(uintptr_t pc, ArtMethod* method) {
-  static_assert(kRuntimeISA != InstructionSet::kThumb2, "kThumb2 cannot be a runtime ISA");
+  static_assert(kRuntimeQuickCodeISA != InstructionSet::kThumb2, "kThumb2 cannot be a runtime ISA");
   const void* pc_ptr = reinterpret_cast<const void*>(pc);
   if (!ContainsPc(pc_ptr)) {
     return nullptr;

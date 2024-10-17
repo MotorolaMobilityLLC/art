@@ -219,7 +219,7 @@ std::vector<std::unique_ptr<const DexFile>> OatFileManager::OpenDexFilesFromOat(
                  << "Are you using the deprecated DexFile APIs?";
   } else if (context != nullptr) {
     auto oat_file_assistant = std::make_unique<OatFileAssistant>(dex_location,
-                                                                 kRuntimeISA,
+                                                                 kRuntimeQuickCodeISA,
                                                                  context.get(),
                                                                  runtime->GetOatFilesExecutable(),
                                                                  only_use_system_oat_files_);
@@ -368,7 +368,7 @@ std::vector<std::unique_ptr<const DexFile>> OatFileManager::OpenDexFilesFromOat(
           // file as non-executable.
           auto nonexecutable_oat_file_assistant =
               std::make_unique<OatFileAssistant>(dex_location,
-                                                 kRuntimeISA,
+                                                 kRuntimeQuickCodeISA,
                                                  context.get(),
                                                  /*load_executable=*/false,
                                                  only_use_system_oat_files_);
@@ -547,7 +547,7 @@ std::vector<std::unique_ptr<const DexFile>> OatFileManager::OpenDexFilesFromOat_
   std::string dex_location;
   std::string vdex_path;
   bool has_vdex = OatFileAssistant::AnonymousDexVdexLocation(dex_headers,
-                                                             kRuntimeISA,
+                                                             kRuntimeQuickCodeISA,
                                                              &dex_location,
                                                              &vdex_path);
 
@@ -838,7 +838,7 @@ void OatFileManager::RunBackgroundVerification(const std::vector<const DexFile*>
   std::string error_msg;
   std::string odex_filename;
   if (!OatFileAssistant::DexLocationToOdexFilename(dex_location,
-                                                   kRuntimeISA,
+                                                   kRuntimeQuickCodeISA,
                                                    &odex_filename,
                                                    &error_msg)) {
     LOG(WARNING) << "Could not get odex filename for " << dex_location << ": " << error_msg;

@@ -35,7 +35,7 @@ namespace art HIDDEN {
 namespace interpreter {
 
 bool IsNterpSupported() {
-  switch (kRuntimeISA) {
+  switch (kRuntimeQuickCodeISA) {
     case InstructionSet::kArm:
     case InstructionSet::kThumb2:
     case InstructionSet::kArm64:

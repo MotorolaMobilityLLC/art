@@ -95,7 +95,7 @@ extern "C" JNIEXPORT bool JNICALL Java_Main_hasVdexFile(JNIEnv*,
   std::string odex_filename;
   std::string error_msg;
   if (!OatFileAssistant::DexLocationToOdexFilename(dex_location,
-                                                   kRuntimeISA,
+                                                   kRuntimeQuickCodeISA,
                                                    &odex_filename,
                                                    &error_msg)) {
     LOG(WARNING) << "Could not get odex filename for " << dex_location << ": " << error_msg;

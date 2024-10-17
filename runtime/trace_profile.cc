@@ -16,10 +16,13 @@
 
 #include "trace_profile.h"
 
+#include "android-base/stringprintf.h"
+#include "art_method-inl.h"
 #include "base/leb128.h"
 #include "base/mutex.h"
 #include "base/unix_file/fd_file.h"
 #include "com_android_art_flags.h"
+#include "dex/descriptors_names.h"
 #include "runtime.h"
 #include "thread-current-inl.h"
 #include "thread.h"
@@ -29,6 +32,8 @@
 namespace art_flags = com::android::art::flags;
 
 namespace art HIDDEN {
+
+using android::base::StringPrintf;
 
 // This specifies the maximum number of bits we need for encoding one entry. Each entry just
 // consists of a SLEB encoded value of method and action encodig which is a maximum of
@@ -40,6 +45,8 @@ static constexpr size_t kMaxBytesPerTraceEntry = sizeof(uintptr_t);
 // each entry. To avoid overflow, we ensure that there are at least kMinBufSizeForEncodedData
 // bytes free space in the buffer.
 static constexpr size_t kMinBufSizeForEncodedData = kAlwaysOnTraceBufSize * kMaxBytesPerTraceEntry;
+
+static constexpr size_t kProfileMagicValue = 0x4C4F4D54;
 
 // TODO(mythria): 10 is a randomly chosen value. Tune it if required.
 static constexpr size_t kBufSizeForEncodedData = kMinBufSizeForEncodedData * 10;
@@ -128,6 +135,7 @@ uint8_t* TraceProfiler::DumpBuffer(uint32_t thread_id,
 
   int num_records = 0;
   uintptr_t prev_method_action_encoding = 0;
+  int prev_action = -1;
   for (size_t i = kAlwaysOnTraceBufSize - 1; i > 0; i-=1) {
     uintptr_t method_action_encoding = method_trace_entries[i];
     // 0 value indicates the rest of the entries are empty.
@@ -135,13 +143,27 @@ uint8_t* TraceProfiler::DumpBuffer(uint32_t thread_id,
       break;
     }
 
-    int64_t method_diff = method_action_encoding - prev_method_action_encoding;
-    curr_buffer_ptr = EncodeSignedLeb128(curr_buffer_ptr, method_diff);
+    int action = method_action_encoding & ~kMaskTraceAction;
+    int64_t diff;
+    if (action == TraceAction::kTraceMethodEnter) {
+      diff = method_action_encoding - prev_method_action_encoding;
 
-    ArtMethod* method = reinterpret_cast<ArtMethod*>(method_action_encoding & kMaskTraceAction);
-    methods.insert(method);
+      ArtMethod* method = reinterpret_cast<ArtMethod*>(method_action_encoding & kMaskTraceAction);
+      methods.insert(method);
+    } else {
+      // On a method exit, we don't record the information about method. We just need a 1 in the
+      // lsb and the method information can be derived from the last method that entered. To keep
+      // the encoded value small just add the smallest value to make the lsb one.
+      if (prev_action == TraceAction::kTraceMethodExit) {
+        diff = 0;
+      } else {
+        diff = 1;
+      }
+    }
+    curr_buffer_ptr = EncodeSignedLeb128(curr_buffer_ptr, diff);
     num_records++;
     prev_method_action_encoding = method_action_encoding;
+    prev_action = action;
   }
 
   // Fill in header information:
@@ -164,6 +186,14 @@ void TraceProfiler::Dump(int fd) {
   Dump(std::move(trace_file));
 }
 
+std::string TraceProfiler::GetMethodInfoLine(ArtMethod* method) {
+  return StringPrintf("%s\t%s\t%s\t%s\n",
+                      PrettyDescriptor(method->GetDeclaringClassDescriptor()).c_str(),
+                      method->GetName(),
+                      method->GetSignature().ToString().c_str(),
+                      method->GetDeclaringClassSourceFile());
+}
+
 void TraceProfiler::Dump(const char* filename) {
   if (!art_flags::always_enable_profile_code()) {
     LOG(ERROR) << "Feature not supported. Please build with ART_ALWAYS_ENABLE_PROFILE_CODE.";
@@ -182,21 +212,32 @@ void TraceProfiler::Dump(const char* filename) {
 void TraceProfiler::Dump(std::unique_ptr<File>&& trace_file) {
   Thread* self = Thread::Current();
   std::unordered_set<ArtMethod*> traced_methods;
+  std::unordered_map<size_t, std::string> traced_threads;
   MutexLock mu(self, *Locks::trace_lock_);
   if (!profile_in_progress_) {
     LOG(ERROR) << "No Profile in progress. Nothing to dump.";
     return;
   }
 
-  ScopedSuspendAll ssa(__FUNCTION__);
-  MutexLock tl(self, *Locks::thread_list_lock_);
   uint8_t* buffer_ptr = new uint8_t[kBufSizeForEncodedData];
   uint8_t* curr_buffer_ptr = buffer_ptr;
+
+  // Add a header for the trace: 4-bits of magic value and 2-bits for the version.
+  Append4LE(curr_buffer_ptr, kProfileMagicValue);
+  Append2LE(curr_buffer_ptr + 4, /*trace_version=*/ 1);
+  curr_buffer_ptr += 6;
+
+  ScopedSuspendAll ssa(__FUNCTION__);
+  MutexLock tl(self, *Locks::thread_list_lock_);
   for (Thread* thread : Runtime::Current()->GetThreadList()->GetList()) {
     auto method_trace_entries = thread->GetMethodTraceBuffer();
     if (method_trace_entries == nullptr) {
       continue;
     }
+
+    std::string thread_name;
+    thread->GetThreadName(thread_name);
+    traced_threads.emplace(thread->GetThreadId(), thread_name);
 
     size_t offset = curr_buffer_ptr - buffer_ptr;
     if (offset >= kMinBufSizeForEncodedData) {
@@ -221,6 +262,28 @@ void TraceProfiler::Dump(std::unique_ptr<File>&& trace_file) {
       PLOG(WARNING) << "Failed streaming a tracing event.";
     }
   }
+
+  std::ostringstream os;
+  // Dump data about thread information.
+  os << "\n*threads\n";
+  for (const auto& it : traced_threads) {
+    os << it.first << "\t" << it.second << "\n";
+  }
+
+  // Dump data about method information.
+  os << "*methods\n";
+  for (ArtMethod* method : traced_methods) {
+    uint64_t method_id = reinterpret_cast<uint64_t>(method);
+    os << method_id << "\t" << GetMethodInfoLine(method);
+  }
+
+  os << "*end";
+
+  std::string info = os.str();
+  if (!trace_file->WriteFully(info.c_str(), info.length())) {
+    PLOG(WARNING) << "Failed writing information to file";
+  }
+
   if (!trace_file->Close()) {
     PLOG(WARNING) << "Failed to close file.";
   }

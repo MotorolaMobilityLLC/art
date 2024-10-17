@@ -539,7 +539,6 @@ java_defaults {
     },
     test_suites: [
         "general-tests",
-        "mts-art",
     ],
     host_required: [
         "art-run-test-checker",

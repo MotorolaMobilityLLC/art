@@ -1050,8 +1050,7 @@ void UnstartedRuntime::UnstartedSystemNanoTime(Thread* self, ShadowFrame*, JValu
   // We don't want `System.nanoTime` to be called at compile time because `java.util.Random`'s
   // default constructor uses `nanoTime` to initialize seed and having it set during compile time
   // makes that `java.util.Random` instance deterministic for given system image.
-  self->ThrowNewException("Ljava/lang/IllegalStateException;",
-                          "Should not be called by UnstartedRuntime");
+  AbortTransactionOrFail(self, "Should not be called by UnstartedRuntime");
 }
 
 static std::string GetImmediateCaller(ShadowFrame* shadow_frame)

@@ -2623,7 +2623,6 @@ static void GenUnsafePutAbsolute(HInvoke* invoke,
                                  CodeGeneratorRISCV64* codegen,
                                  std::memory_order order,
                                  DataType::Type type) {
-  Riscv64Assembler* assembler = codegen->GetAssembler();
   LocationSummary* locations = invoke->GetLocations();
   XRegister address = locations->InAt(1).AsRegister<XRegister>();
   Location value = locations->InAt(2);

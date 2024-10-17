@@ -239,6 +239,8 @@ known_failing_tests = frozenset([
 # presubmits).
 postsubmit_only_tests = frozenset([
     "057-math-intrinsics",
+    "858-checker-unsafe",
+    "859-checker-var-handles-intrinsics",
 ])
 
 known_failing_on_hwasan_tests = frozenset([

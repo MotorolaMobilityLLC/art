@@ -262,7 +262,7 @@ def add_builder(name,
     if arch == "riscv":
       product = "riscv64"
 
-    dimensions = {"os": "Android" if mode == "target" else "Linux"}
+    dimensions = {"os": "Android" if mode == "target" else "Ubuntu"}
     if mode == "target":
       if not cc:
         # Request devices running Android 24Q3 (`AP1A` builds) for
@@ -278,14 +278,8 @@ def add_builder(name,
         # This avoids allocating `userfaultfd` devices for tests that don't need it.
         dimensions |= {"device_os": "S"}
     elif mode == "host":
-      if name:
-        dimensions |= {"os": "Ubuntu-20"}
-      else:
-        # Test the new host builders with new ubuntu.
-        dimensions |= {"os": "Ubuntu-22"}
-        dimensions |= {"cores": "8"}
+      dimensions |= {"cores": "8"}
     elif mode == "qemu":
-      dimensions |= {"os": "Ubuntu-22"}
       dimensions |= {"cores": "16"}
 
     testrunner_args = ['--verbose', '--host'] if mode == 'host' else ['--target', '--verbose']

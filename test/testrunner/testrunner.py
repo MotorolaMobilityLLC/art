@@ -568,10 +568,6 @@ def run_tests(tests):
       if address_size == '64':
         args_test += ['--64']
 
-      # b/36039166: Note that the path lengths must kept reasonably short.
-      temp_path = tempfile.mkdtemp(dir=env.ART_HOST_TEST_DIR)
-      args_test = ['--temp-path', temp_path] + args_test
-
       # Run the run-test script using the prebuilt python.
       python3_bin = env.ANDROID_BUILD_TOP + "/prebuilts/build-tools/path/linux-x86/python3"
       run_test_sh = env.ANDROID_BUILD_TOP + '/art/test/run-test'

@@ -51,7 +51,7 @@ struct ContextSelector<InstructionSet::kX86_64> { using type = x86_64::X86_64Con
 
 template <InstructionSet Isa>
 using RuntimeContextTypeArch = typename detail::ContextSelector<Isa>::type;
-using RuntimeContextType = RuntimeContextTypeArch<kRuntimeISA>;
+using RuntimeContextType = RuntimeContextTypeArch<kRuntimeQuickCodeISA>;
 
 }  // namespace art
 

@@ -432,7 +432,7 @@ OsrData* Jit::PrepareForOsr(ArtMethod* method, uint32_t dex_pc, uint32_t* vregs)
       }
     }
 
-    osr_data->native_pc = stack_map.GetNativePcOffset(kRuntimeISA) +
+    osr_data->native_pc = stack_map.GetNativePcOffset(kRuntimeQuickCodeISA) +
         osr_method->GetEntryPoint();
     VLOG(jit) << "Jumping to "
               << method_name

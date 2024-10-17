@@ -199,7 +199,12 @@ const RegType& RegTypeCache::From(Handle<mirror::ClassLoader> loader, const char
     RegType* entry;
     // Create an imprecise type if we can't tell for a fact that it is precise.
     if (klass->CannotBeAssignedFromOtherTypes()) {
-      DCHECK_IMPLIES(klass->IsAbstract(), klass->IsArrayClass());
+      // Note: The class can be abstract. Array classes are marked as abstract (and
+      // final) whether they can be assigned from other classes or not. Additionally,
+      // we can encounter a class that's both `abstract` and `final` and this shall
+      // not result in verification failures when referencing it in some contexts
+      // even though such class shall be marked as erroneous during verification.
+      DCHECK(klass->IsFinal());
       DCHECK(!klass->IsInterface());
       entry = new (&allocator_) PreciseReferenceType(handles_.NewHandle(klass),
                                                      AddString(sv_descriptor),

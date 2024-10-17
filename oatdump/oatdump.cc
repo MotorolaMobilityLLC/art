@@ -1180,14 +1180,14 @@ class OatDumper {
       hs.reset(new StackHandleScope<1>(Thread::Current()));
       vios->Stream() << "VERIFIER TYPE ANALYSIS:\n";
       ScopedIndentation indent2(vios);
-      verifier.reset(DumpVerifier(vios,
-                                  soa,
-                                  hs.get(),
-                                  dex_method_idx,
-                                  &dex_file,
-                                  class_def,
-                                  code_item,
-                                  method_access_flags));
+      DumpVerifier(vios,
+                   soa,
+                   hs.get(),
+                   dex_method_idx,
+                   &dex_file,
+                   class_def,
+                   code_item,
+                   method_access_flags);
     }
     {
       vios->Stream() << "OatMethodOffsets ";
@@ -1493,14 +1493,14 @@ class OatDumper {
            code_item_accessor.HasCodeItem();
   }
 
-  verifier::MethodVerifier* DumpVerifier(VariableIndentationOutputStream* vios,
-                                         ScopedObjectAccess& soa,
-                                         StackHandleScope<1>* hs,
-                                         uint32_t dex_method_idx,
-                                         const DexFile* dex_file,
-                                         const dex::ClassDef& class_def,
-                                         const dex::CodeItem* code_item,
-                                         uint32_t method_access_flags)
+  void DumpVerifier(VariableIndentationOutputStream* vios,
+                    ScopedObjectAccess& soa,
+                    StackHandleScope<1>* hs,
+                    uint32_t dex_method_idx,
+                    const DexFile* dex_file,
+                    const dex::ClassDef& class_def,
+                    const dex::CodeItem* code_item,
+                    uint32_t method_access_flags)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     if ((method_access_flags & kAccNative) == 0) {
       Runtime* const runtime = Runtime::Current();
@@ -1512,9 +1512,9 @@ class OatDumper {
           dex_method_idx, dex_cache, *options_.class_loader_);
       if (method == nullptr) {
         soa.Self()->ClearException();
-        return nullptr;
+        return;
       }
-      return verifier::MethodVerifier::VerifyMethodAndDump(
+      verifier::MethodVerifier::VerifyMethodAndDump(
           soa.Self(),
           vios,
           dex_method_idx,
@@ -1526,8 +1526,6 @@ class OatDumper {
           method_access_flags,
           /* api_level= */ 0);
     }
-
-    return nullptr;
   }
 
   void DumpCode(VariableIndentationOutputStream* vios,

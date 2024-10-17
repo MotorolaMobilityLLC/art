@@ -79,6 +79,7 @@
 #include "ti_phase.h"
 #include "verifier/register_line-inl.h"
 #include "verifier/reg_type-inl.h"
+#include "verifier/reg_type_cache.h"
 #include "verifier/method_verifier-inl.h"
 
 namespace openjdkjvmti {
@@ -637,9 +638,16 @@ class CommonLocalVariableClosure : public art::Closure {
     art::StackHandleScope<2> hs(art::Thread::Current());
     art::Handle<art::mirror::DexCache> dex_cache(hs.NewHandle(method->GetDexCache()));
     art::Handle<art::mirror::ClassLoader> class_loader(hs.NewHandle(method->GetClassLoader()));
+    art::Thread* self = art::Thread::Current();
+    art::Runtime* runtime = art::Runtime::Current();
+    art::ClassLinker* class_linker = runtime->GetClassLinker();
+    art::ArenaPool* arena_pool = runtime->GetArenaPool();
+    art::verifier::RegTypeCache reg_types(
+        self, class_linker, arena_pool, /* can_load_classes= */ false, /* can_suspend= */ false);
     std::unique_ptr<art::verifier::MethodVerifier> verifier(
         art::verifier::MethodVerifier::CalculateVerificationInfo(
-            art::Thread::Current(),
+            self,
+            &reg_types,
             method,
             dex_cache,
             class_loader,

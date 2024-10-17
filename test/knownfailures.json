@@ -1,11 +1,5 @@
 [
     {
-        "tests": "153-reference-stress",
-        "description": ["Disable 153-reference-stress temporarily until a fix",
-                        "arrives."],
-        "bug": "http://b/33389022"
-    },
-    {
         "tests": "626-checker-arm64-scratch-register",
         "description": ["Disable 626-checker until we assses whether to keep it"]
     },

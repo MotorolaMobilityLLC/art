@@ -1281,7 +1281,7 @@ class ImageSpace::Loader {
       // Nothing to fix up.
       return true;
     }
-    ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
+
     // TODO: Assert that the app image does not contain any Method, Constructor,
     // FieldVarHandle or StaticFieldVarHandle. These require extra relocation
     // for the `ArtMethod*` and `ArtField*` pointers they contain.
@@ -1303,7 +1303,10 @@ class ImageSpace::Loader {
                                                         image_header->GetImageSize()));
       {
         TimingLogger::ScopedTiming timing("Fixup classes", &logger);
-        ObjPtr<mirror::Class> class_class = [&]() NO_THREAD_SAFETY_ANALYSIS {
+        const auto& class_table_section = image_header->GetClassTableSection();
+        if (class_table_section.Size() > 0u) {
+          ScopedObjectAccess soa(Thread::Current());
+          ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
           ObjPtr<mirror::ObjectArray<mirror::Object>> image_roots = app_image_objects.ToDest(
               image_header->GetImageRoots<kWithoutReadBarrier>().Ptr());
           int32_t class_roots_index = enum_cast<int32_t>(ImageHeader::kClassRoots);
@@ -1312,11 +1315,8 @@ class ImageSpace::Loader {
               ObjPtr<mirror::ObjectArray<mirror::Class>>::DownCast(boot_image.ToDest(
                   image_roots->GetWithoutChecks<kVerifyNone,
                                                 kWithoutReadBarrier>(class_roots_index).Ptr()));
-          return GetClassRoot<mirror::Class, kWithoutReadBarrier>(class_roots);
-        }();
-        const auto& class_table_section = image_header->GetClassTableSection();
-        if (class_table_section.Size() > 0u) {
-          ScopedObjectAccess soa(Thread::Current());
+          ObjPtr<mirror::Class> class_class =
+              GetClassRoot<mirror::Class, kWithoutReadBarrier>(class_roots);
           ClassTableVisitor class_table_visitor(forward_object);
           size_t read_count = 0u;
           const uint8_t* data = target_base + class_table_section.Offset();
@@ -1366,6 +1366,7 @@ class ImageSpace::Loader {
       // probably not required).
       TimingLogger::ScopedTiming timing("Fixup objects", &logger);
       ScopedObjectAccess soa(Thread::Current());
+      ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
       // Need to update the image to be at the target base.
       uintptr_t objects_begin = reinterpret_cast<uintptr_t>(target_base + objects_section.Offset());
       uintptr_t objects_end = reinterpret_cast<uintptr_t>(target_base + objects_section.End());
@@ -1391,6 +1392,7 @@ class ImageSpace::Loader {
     {
       // Only touches objects in the app image, no need for mutator lock.
       TimingLogger::ScopedTiming timing("Fixup methods", &logger);
+      ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
       image_header->VisitPackedArtMethods([&](ArtMethod& method) NO_THREAD_SAFETY_ANALYSIS {
         // TODO: Consider a separate visitor for runtime vs normal methods.
         if (UNLIKELY(method.IsRuntimeMethod())) {
@@ -1422,6 +1424,7 @@ class ImageSpace::Loader {
       {
         // Only touches objects in the app image, no need for mutator lock.
         TimingLogger::ScopedTiming timing("Fixup fields", &logger);
+        ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
         image_header->VisitPackedArtFields([&](ArtField& field) NO_THREAD_SAFETY_ANALYSIS {
           patch_object_visitor.template PatchGcRoot</*kMayBeNull=*/ false>(
               &field.DeclaringClassRoot());
@@ -1429,10 +1432,12 @@ class ImageSpace::Loader {
       }
       {
         TimingLogger::ScopedTiming timing("Fixup imt", &logger);
+        ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
         image_header->VisitPackedImTables(forward_metadata, target_base, kPointerSize);
       }
       {
         TimingLogger::ScopedTiming timing("Fixup conflict tables", &logger);
+        ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
         image_header->VisitPackedImtConflictTables(forward_metadata, target_base, kPointerSize);
       }
       // Fix up the intern table.
@@ -1440,6 +1445,7 @@ class ImageSpace::Loader {
       if (intern_table_section.Size() > 0u) {
         TimingLogger::ScopedTiming timing("Fixup intern table", &logger);
         ScopedObjectAccess soa(Thread::Current());
+        ScopedDebugDisallowReadBarriers sddrb(Thread::Current());
         // Fixup the pointers in the newly written intern table to contain image addresses.
         InternTable temp_intern_table;
         // Note that we require that ReadFromMemory does not make an internal copy of the elements

@@ -15,6 +15,7 @@
 # limitations under the License.
 
 import os, sys, glob, re, shutil, subprocess, shlex, resource, atexit
+import urllib.parse
 
 import default_run as default_run_module
 
@@ -896,6 +897,19 @@ if True:
 
   print(f"{test_dir}: Create runner script...")
   runner = create_runner_script()
+
+  # Script debugging feature - just export the runner script into a directory,
+  # so that it can be compared before/after runner script refactoring.
+  save_runner_dir = os.environ.get("RUN_TEST_DEBUG__SAVE_RUNNER_DIR")
+  if save_runner_dir:
+    name = urllib.parse.quote(" ".join(sys.argv[1:]), safe=' ')
+    dst = Path(save_runner_dir) / TEST_NAME / name
+    os.makedirs(dst.parent, exist_ok=True)
+    txt = runner.read_text()
+    txt = txt.replace(Path(tmp_dir).name, "${TMP_DIR}")  # Make it deterministic.
+    txt = re.sub('\[run-test:\d+\]', '[run-test:(line-number)]', txt)
+    dst.write_text(txt)
+    sys.exit(0)
 
   print(f"{test_dir}: Run...")
   if target_mode == "yes":

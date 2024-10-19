@@ -1046,6 +1046,13 @@ void UnstartedRuntime::UnstartedSystemGetPropertyWithDefault(
   GetSystemProperty(self, shadow_frame, result, arg_offset, true);
 }
 
+void UnstartedRuntime::UnstartedSystemNanoTime(Thread* self, ShadowFrame*, JValue*, size_t) {
+  // We don't want `System.nanoTime` to be called at compile time because `java.util.Random`'s
+  // default constructor uses `nanoTime` to initialize seed and having it set during compile time
+  // makes that `java.util.Random` instance deterministic for given system image.
+  AbortTransactionOrFail(self, "Should not be called by UnstartedRuntime");
+}
+
 static std::string GetImmediateCaller(ShadowFrame* shadow_frame)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   if (shadow_frame->GetLink() == nullptr) {

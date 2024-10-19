@@ -130,6 +130,8 @@ const vixl::aarch64::CPURegList callee_saved_fp_registers(vixl::aarch64::CPURegi
                                                           vixl::aarch64::d15.GetCode());
 Location ARM64ReturnLocation(DataType::Type return_type);
 
+vixl::aarch64::Condition ARM64PCondition(HVecPredToBoolean::PCondKind cond);
+
 #define UNIMPLEMENTED_INTRINSIC_LIST_ARM64(V) \
   V(MathSignumFloat)                          \
   V(MathSignumDouble)                         \
@@ -183,16 +185,34 @@ class SlowPathCodeARM64 : public SlowPathCode {
 
 class JumpTableARM64 : public DeletableArenaObject<kArenaAllocSwitchTable> {
  public:
+  using VIXLInt32Literal = vixl::aarch64::Literal<int32_t>;
+
   explicit JumpTableARM64(HPackedSwitch* switch_instr)
-    : switch_instr_(switch_instr), table_start_() {}
+      : switch_instr_(switch_instr),
+        table_start_(),
+        jump_targets_(switch_instr->GetAllocator()->Adapter(kArenaAllocCodeGenerator)) {
+      uint32_t num_entries = switch_instr_->GetNumEntries();
+      for (uint32_t i = 0; i < num_entries; i++) {
+        VIXLInt32Literal* lit = new VIXLInt32Literal(0);
+        jump_targets_.emplace_back(lit);
+      }
+    }
 
   vixl::aarch64::Label* GetTableStartLabel() { return &table_start_; }
 
+  // Emits the jump table into the code buffer; jump target offsets are not yet known.
   void EmitTable(CodeGeneratorARM64* codegen);
+
+  // Updates the offsets in the jump table, to be used when the jump targets basic blocks
+  // addresses are resolved.
+  void FixTable(CodeGeneratorARM64* codegen);
 
  private:
   HPackedSwitch* const switch_instr_;
   vixl::aarch64::Label table_start_;
+
+  // Contains literals for the switch's jump targets.
+  ArenaVector<std::unique_ptr<VIXLInt32Literal>> jump_targets_;
 
   DISALLOW_COPY_AND_ASSIGN(JumpTableARM64);
 };
@@ -1144,7 +1164,7 @@ class CodeGeneratorARM64 : public CodeGenerator {
                                            vixl::aarch64::Label* adrp_label,
                                            ArenaDeque<PcRelativePatchInfo>* patches);
 
-  void EmitJumpTables();
+  void FixJumpTables();
 
   template <linker::LinkerPatch (*Factory)(size_t, const DexFile*, uint32_t, uint32_t)>
   static void EmitPcRelativeLinkerPatches(const ArenaDeque<PcRelativePatchInfo>& infos,

@@ -58,7 +58,7 @@ static ::std::vector<CodegenTargetConfig> GetTargetConfigs() {
   };
 
   for (const CodegenTargetConfig& test_config : test_config_candidates) {
-    if (CanExecute(test_config.GetInstructionSet())) {
+    if (CanExecuteISA(test_config.GetInstructionSet())) {
       v.push_back(test_config);
     }
   }

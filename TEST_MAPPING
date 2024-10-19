@@ -143,6 +143,9 @@
       "name": "art-run-test-055-enum-performance"
     },
     {
+      "name": "art-run-test-057-math-intrinsics"
+    },
+    {
       "name": "art-run-test-058-enum-order"
     },
     {
@@ -1611,6 +1614,9 @@
     },
     {
       "name": "art-run-test-055-enum-performance[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-057-math-intrinsics[com.google.android.art.apex]"
     },
     {
       "name": "art-run-test-058-enum-order[com.google.android.art.apex]"
@@ -3098,6 +3104,9 @@
       "name": "art-run-test-055-enum-performance"
     },
     {
+      "name": "art-run-test-057-math-intrinsics"
+    },
+    {
       "name": "art-run-test-058-enum-order"
     },
     {
@@ -4570,6 +4579,9 @@
       "name": "art-run-test-055-enum-performance"
     },
     {
+      "name": "art-run-test-057-math-intrinsics"
+    },
+    {
       "name": "art-run-test-058-enum-order"
     },
     {
@@ -5891,7 +5903,10 @@
   ],
   "postsubmit": [
     {
-      "name": "art-run-test-057-math-intrinsics"
+      "name": "art-run-test-858-checker-unsafe"
+    },
+    {
+      "name": "art-run-test-859-checker-var-handles-intrinsics"
     },
     {
       "name": "art_standalone_dex2oat_cts_tests"

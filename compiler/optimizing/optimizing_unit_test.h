@@ -382,7 +382,7 @@ class OptimizingUnitTestHelper {
 
     pre_header->AddSuccessor(loop);
     loop->AddSuccessor(loop_exit);  // true successor
-    loop->AddSuccessor(loop);  // fakse successor
+    loop->AddSuccessor(loop);  // false successor
 
     MakeGoto(pre_header);
 
@@ -632,13 +632,52 @@ class OptimizingUnitTestHelper {
                           HInstruction* index,
                           HInstruction* value,
                           DataType::Type packed_type,
-                          size_t vector_length = 4,
+                          size_t vector_size_in_bytes = kDefaultTestVectorSize,
                           uint32_t dex_pc = kNoDexPc) {
+    size_t num_of_elements = GetNumberOfElementsInVector(vector_size_in_bytes, packed_type);
     SideEffects side_effects = SideEffects::ArrayWriteOfType(packed_type);
     HVecStore* vec_store = new (GetAllocator()) HVecStore(
-        GetAllocator(), base, index, value, packed_type, side_effects, vector_length, dex_pc);
+        GetAllocator(), base, index, value, packed_type, side_effects, num_of_elements, dex_pc);
     AddOrInsertInstruction(block, vec_store);
     return vec_store;
+  }
+
+  HVecPredToBoolean* MakeVecPredToBoolean(HBasicBlock* block,
+                                          HInstruction* input,
+                                          HVecPredToBoolean::PCondKind pred_cond,
+                                          DataType::Type packed_type,
+                                          size_t vector_size_in_bytes = kDefaultTestVectorSize,
+                                          uint32_t dex_pc = kNoDexPc) {
+    size_t num_of_elements = GetNumberOfElementsInVector(vector_size_in_bytes, packed_type);
+    HVecPredToBoolean* vec_pred_to_boolean = new (GetAllocator()) HVecPredToBoolean(
+        GetAllocator(),
+        input,
+        pred_cond,
+        packed_type,
+        num_of_elements,
+        dex_pc);
+    AddOrInsertInstruction(block, vec_pred_to_boolean);
+    return vec_pred_to_boolean;
+  }
+
+  HVecPredWhile* MakeVecPredWhile(HBasicBlock* block,
+                                  HInstruction* left,
+                                  HInstruction* right,
+                                  HVecPredWhile::CondKind cond,
+                                  DataType::Type packed_type,
+                                  size_t vector_size_in_bytes = kDefaultTestVectorSize,
+                                  uint32_t dex_pc = kNoDexPc) {
+    size_t num_of_elements = GetNumberOfElementsInVector(vector_size_in_bytes, packed_type);
+    HVecPredWhile* vec_pred_while = new (GetAllocator()) HVecPredWhile(
+        GetAllocator(),
+        left,
+        right,
+        cond,
+        packed_type,
+        num_of_elements,
+        dex_pc);
+    AddOrInsertInstruction(block, vec_pred_while);
+    return vec_pred_while;
   }
 
   HInvokeStaticOrDirect* MakeInvokeStatic(HBasicBlock* block,
@@ -835,6 +874,10 @@ class OptimizingUnitTestHelper {
   size_t param_count_ = 0;
   size_t class_idx_ = 42;
   uint32_t method_idx_ = 100;
+
+  // The default size of vectors to use for tests, in bytes. 16 bytes (128 bits) is used as it is
+  // commonly the smallest size of vector used in vector extensions.
+  static constexpr size_t kDefaultTestVectorSize = 16;
 
   ScopedNullHandle<mirror::Class> null_klass_;
 };

@@ -377,7 +377,7 @@ void CodeGenerator::Compile() {
     RecordCatchBlockInfo();
   }
 
-  // Finalize instructions in assember;
+  // Finalize instructions in the assembler.
   Finalize();
 
   GetStackMapStream()->EndMethod(GetAssembler()->CodeSize());

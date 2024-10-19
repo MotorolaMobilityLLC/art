@@ -1143,7 +1143,7 @@ class RuntimeImageHelper {
     std::unique_ptr<const InstructionSetFeatures> isa_features =
         InstructionSetFeatures::FromCppDefines();
     std::unique_ptr<OatHeader> oat_header(
-        OatHeader::Create(kRuntimeISA,
+        OatHeader::Create(kRuntimeQuickCodeISA,
                           isa_features.get(),
                           number_of_dex_files,
                           &key_value_store));
@@ -1856,7 +1856,7 @@ std::string RuntimeImage::GetRuntimeImagePath(const std::string& app_data_dir,
 std::string RuntimeImage::GetRuntimeImagePath(const std::string& dex_location) {
   return GetRuntimeImagePath(Runtime::Current()->GetProcessDataDirectory(),
                              dex_location,
-                             GetInstructionSetString(kRuntimeISA));
+                             GetInstructionSetString(kRuntimeQuickCodeISA));
 }
 
 static bool EnsureDirectoryExists(const std::string& directory, std::string* error_msg) {

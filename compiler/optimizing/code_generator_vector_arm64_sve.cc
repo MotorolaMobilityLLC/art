@@ -1335,10 +1335,10 @@ void InstructionCodeGeneratorARM64Sve::VisitVecPredToBoolean(HVecPredToBoolean* 
   // Instruction is not predicated, see nodes_vector.h
   DCHECK(!instruction->IsPredicated());
   Register reg = OutputRegister(instruction);
-  // Currently VecPredToBoolean is only used as part of vectorized loop check condition
-  // evaluation.
-  DCHECK(instruction->GetPCondKind() == HVecPredToBoolean::PCondKind::kNFirst);
-  __ Cset(reg, pl);
+  HInstruction *input = instruction->InputAt(0);
+  const PRegister output_p_reg = GetVecPredSetFixedOutPReg(input->AsVecPredSetOperation());
+  __ Ptest(output_p_reg, output_p_reg.VnB());
+  __ Cset(reg, ARM64PCondition(instruction->GetPCondKind()));
 }
 
 Location InstructionCodeGeneratorARM64Sve::AllocateSIMDScratchLocation(

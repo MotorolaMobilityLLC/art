@@ -599,14 +599,14 @@ inline void Thread::SetStackSize<StackType::kHardware>(size_t new_stack_size) {
 
 inline uint8_t* Thread::GetStackEndForInterpreter(bool implicit_overflow_check) const {
   uint8_t* end = GetStackEnd<kNativeStackType>() + (implicit_overflow_check
-      ? GetStackOverflowReservedBytes(kRuntimeISA)
+      ? GetStackOverflowReservedBytes(kRuntimeQuickCodeISA)
           : 0);
   if (kIsDebugBuild) {
     // In a debuggable build, but especially under ASAN, the access-checks interpreter has a
     // potentially humongous stack size. We don't want to take too much of the stack regularly,
     // so do not increase the regular reserved size (for compiled code etc) and only report the
     // virtually smaller stack to the interpreter here.
-    end += GetStackOverflowReservedBytes(kRuntimeISA);
+    end += GetStackOverflowReservedBytes(kRuntimeQuickCodeISA);
   }
   return end;
 }
@@ -616,7 +616,7 @@ inline void Thread::ResetDefaultStackEnd() {
   // Our stacks grow down, so we want stack_end_ to be near there, but reserving enough room
   // to throw a StackOverflowError.
   SetStackEnd<stack_type>(
-              GetStackBegin<stack_type>() + GetStackOverflowReservedBytes(kRuntimeISA));
+      GetStackBegin<stack_type>() + GetStackOverflowReservedBytes(kRuntimeQuickCodeISA));
 }
 
 template <StackType stack_type>
@@ -626,7 +626,7 @@ inline void Thread::SetStackEndForStackOverflow()
   if (GetStackEnd<stack_type>() == GetStackBegin<stack_type>()) {
     // However, we seem to have already extended to use the full stack.
     LOG(ERROR) << "Need to increase kStackOverflowReservedBytes (currently "
-               << GetStackOverflowReservedBytes(kRuntimeISA) << ")?";
+               << GetStackOverflowReservedBytes(kRuntimeQuickCodeISA) << ")?";
     DumpStack(LOG_STREAM(ERROR));
     LOG(FATAL) << "Recursive stack overflow.";
   }

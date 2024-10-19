@@ -199,7 +199,12 @@ const RegType& RegTypeCache::From(Handle<mirror::ClassLoader> loader, const char
     RegType* entry;
     // Create an imprecise type if we can't tell for a fact that it is precise.
     if (klass->CannotBeAssignedFromOtherTypes()) {
-      DCHECK_IMPLIES(klass->IsAbstract(), klass->IsArrayClass());
+      // Note: The class can be abstract. Array classes are marked as abstract (and
+      // final) whether they can be assigned from other classes or not. Additionally,
+      // we can encounter a class that's both `abstract` and `final` and this shall
+      // not result in verification failures when referencing it in some contexts
+      // even though such class shall be marked as erroneous during verification.
+      DCHECK(klass->IsFinal());
       DCHECK(!klass->IsInterface());
       entry = new (&allocator_) PreciseReferenceType(handles_.NewHandle(klass),
                                                      AddString(sv_descriptor),
@@ -283,15 +288,17 @@ const RegType& RegTypeCache::FromClass(const char* descriptor,
 
 RegTypeCache::RegTypeCache(Thread* self,
                            ClassLinker* class_linker,
+                           ArenaPool* arena_pool,
                            bool can_load_classes,
-                           ScopedArenaAllocator& allocator,
                            bool can_suspend)
-    : entries_(allocator.Adapter(kArenaAllocVerifier)),
-      klass_entries_(allocator.Adapter(kArenaAllocVerifier)),
-      allocator_(allocator),
+    : arena_stack_(arena_pool),
+      allocator_(&arena_stack_),
+      entries_(allocator_.Adapter(kArenaAllocVerifier)),
+      klass_entries_(allocator_.Adapter(kArenaAllocVerifier)),
       handles_(self),
       class_linker_(class_linker),
-      can_load_classes_(can_load_classes) {
+      can_load_classes_(can_load_classes),
+      can_suspend_(can_suspend) {
   DCHECK(can_suspend || !can_load_classes) << "Cannot load classes if suspension is disabled!";
   if (kIsDebugBuild && can_suspend) {
     Thread::Current()->AssertThreadSuspensionIsAllowable(gAborting == 0);

@@ -111,6 +111,7 @@
 #include "thread-inl.h"
 #include "thread_list.h"
 #include "trace.h"
+#include "trace_profile.h"
 #include "verify_object.h"
 #include "well_known_classes-inl.h"
 
@@ -137,7 +138,8 @@ using android::base::StringPrintf;
 bool Thread::is_started_ = false;
 pthread_key_t Thread::pthread_key_self_;
 ConditionVariable* Thread::resume_cond_ = nullptr;
-const size_t Thread::kStackOverflowImplicitCheckSize = GetStackOverflowReservedBytes(kRuntimeISA);
+const size_t Thread::kStackOverflowImplicitCheckSize =
+    GetStackOverflowReservedBytes(kRuntimeQuickCodeISA);
 bool (*Thread::is_sensitive_thread_hook_)() = nullptr;
 Thread* Thread::jit_sensitive_thread_ = nullptr;
 std::atomic<Mutex*> Thread::cp_placeholder_mutex_(nullptr);
@@ -716,12 +718,12 @@ static size_t FixStackSize(size_t stack_size) {
     // If we are going to use implicit stack checks, allocate space for the protected
     // region at the bottom of the stack.
     stack_size += Thread::kStackOverflowImplicitCheckSize +
-        GetStackOverflowReservedBytes(kRuntimeISA);
+        GetStackOverflowReservedBytes(kRuntimeQuickCodeISA);
   } else {
     // It's likely that callers are trying to ensure they have at least a certain amount of
     // stack space, so we should add our reserved space on top of what they requested, rather
     // than implicitly take it away from them.
-    stack_size += GetStackOverflowReservedBytes(kRuntimeISA);
+    stack_size += GetStackOverflowReservedBytes(kRuntimeQuickCodeISA);
   }
 
   // Some systems require the stack size to be a multiple of the system page size, so round up.
@@ -1118,6 +1120,7 @@ Thread* Thread::Attach(const char* thread_name,
     self->Dump(LOG_STREAM(INFO));
   }
 
+  TraceProfiler::AllocateBuffer(self);
   if (should_run_callbacks) {
     ScopedObjectAccess soa(self);
     runtime->GetRuntimeCallbacks()->ThreadStart(self);
@@ -1367,7 +1370,7 @@ bool Thread::InitStack(uint8_t* read_stack_base, size_t read_stack_size, size_t 
   DCHECK_ALIGNED_PARAM(static_cast<size_t>(GetStackOverflowProtectedSize()),
                        static_cast<int32_t>(gPageSize));
   size_t min_stack = GetStackOverflowProtectedSize() +
-      RoundUp(GetStackOverflowReservedBytes(kRuntimeISA) + 4 * KB, gPageSize);
+      RoundUp(GetStackOverflowReservedBytes(kRuntimeQuickCodeISA) + 4 * KB, gPageSize);
   if (read_stack_size <= min_stack) {
     // Note, as we know the stack is small, avoid operations that could use a lot of stack.
     LogHelper::LogLineLowStack(__PRETTY_FUNCTION__,

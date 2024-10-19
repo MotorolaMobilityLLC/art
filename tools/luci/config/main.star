@@ -262,7 +262,7 @@ def add_builder(name,
     if arch == "riscv":
       product = "riscv64"
 
-    dimensions = {"os": "Android" if mode == "target" else "Linux"}
+    dimensions = {"os": "Android" if mode == "target" else "Ubuntu"}
     if mode == "target":
       if not cc:
         # Request devices running Android 24Q3 (`AP1A` builds) for
@@ -278,14 +278,8 @@ def add_builder(name,
         # This avoids allocating `userfaultfd` devices for tests that don't need it.
         dimensions |= {"device_os": "S"}
     elif mode == "host":
-      if name:
-        dimensions |= {"os": "Ubuntu-20"}
-      else:
-        # Test the new host builders with new ubuntu.
-        dimensions |= {"os": "Ubuntu-22"}
-        dimensions |= {"cores": "8"}
+      dimensions |= {"cores": "8"}
     elif mode == "qemu":
-      dimensions |= {"os": "Ubuntu-22"}
       dimensions |= {"cores": "16"}
 
     testrunner_args = ['--verbose', '--host'] if mode == 'host' else ['--target', '--verbose']
@@ -317,37 +311,39 @@ def add_builder(name,
                properties={k:v for k, v in properties.items() if v},
                hidden=hidden)
 
-add_builder("angler-armv7-debug", 'target', 'arm', 32, debug=True)
-add_builder("angler-armv7-non-gen-cc", 'target', 'arm', 32, debug=True, cc=False, gen_cc=False)
-add_builder("angler-armv7-ndebug", 'target', 'arm', 32)
-add_builder("angler-armv8-debug", 'target', 'arm', 64, debug=True)
-add_builder("angler-armv8-non-gen-cc", 'target', 'arm', 64, debug=True, cc=False, gen_cc=False)
-add_builder("angler-armv8-ndebug", 'target', 'arm', 64)
-add_builder("bullhead-armv7-gcstress-ndebug", 'target', 'arm', 32, gcstress=True)
-add_builder("bullhead-armv8-gcstress-debug", 'target', 'arm', 64, debug=True, gcstress=True)
-add_builder("bullhead-armv8-gcstress-ndebug", 'target', 'arm', 64, gcstress=True)
-add_builder("walleye-armv7-poison-debug", 'target', 'arm', 32, debug=True, heap_poisoning=True)
-add_builder("walleye-armv8-poison-debug", 'target', 'arm', 64, debug=True, heap_poisoning=True)
-add_builder("walleye-armv8-poison-ndebug", 'target', 'arm', 64, heap_poisoning=True)
-add_builder("host-x86-cms", 'host', 'x86', 32, debug=True, cc=False, gen_cc=False)
-add_builder("host-x86-debug", 'host', 'x86', 32, debug=True)
-add_builder("host-x86-ndebug", 'host', 'x86', 32)
-add_builder("host-x86-gcstress-debug", 'host', 'x86', 32, debug=True, gcstress=True)
-add_builder("host-x86-poison-debug", 'host', 'x86', 32, debug=True, heap_poisoning=True)
-add_builder("host-x86_64-cms", 'host', 'x86', 64, cc=False, debug=True, gen_cc=False)
-add_builder("host-x86_64-debug", 'host', 'x86', 64, debug=True)
-add_builder("host-x86_64-non-gen-cc", 'host', 'x86', 64, debug=True, gen_cc=False)
-add_builder("host-x86_64-ndebug", 'host', 'x86', 64)
-add_builder("host-x86_64-poison-debug", 'host', 'x86', 64, debug=True, heap_poisoning=True)
-add_builder("qemu-armv8-ndebug", 'qemu', 'arm', 64)
-add_builder("qemu-riscv64-ndebug", 'qemu', 'riscv', 64)
-
 def add_builders():
+  add_builder("angler-armv7-debug", 'target', 'arm', 32, debug=True)
+  add_builder("angler-armv7-non-gen-cc", 'target', 'arm', 32, debug=True, cc=False, gen_cc=False)
+  add_builder("angler-armv7-ndebug", 'target', 'arm', 32)
+  add_builder("angler-armv8-debug", 'target', 'arm', 64, debug=True)
+  add_builder("angler-armv8-non-gen-cc", 'target', 'arm', 64, debug=True, cc=False, gen_cc=False)
+  add_builder("angler-armv8-ndebug", 'target', 'arm', 64)
+  add_builder("bullhead-armv7-gcstress-ndebug", 'target', 'arm', 32, gcstress=True)
+  add_builder("bullhead-armv8-gcstress-debug", 'target', 'arm', 64, debug=True, gcstress=True)
+  add_builder("bullhead-armv8-gcstress-ndebug", 'target', 'arm', 64, gcstress=True)
+  add_builder("walleye-armv7-poison-debug", 'target', 'arm', 32, debug=True, heap_poisoning=True)
+  add_builder("walleye-armv8-poison-debug", 'target', 'arm', 64, debug=True, heap_poisoning=True)
+  add_builder("walleye-armv8-poison-ndebug", 'target', 'arm', 64, heap_poisoning=True)
   for bitness in [32, 64]:
-    add_builder('', 'target', 'arm', bitness, debug=True, heap_poisoning=True)
-    add_builder('', 'target', 'arm', bitness, heap_poisoning=True)
+    for debug in [True, False]:
+      add_builder('', 'target', 'arm', bitness, debug, gcstress=True)
+      add_builder('', 'target', 'arm', bitness, debug, heap_poisoning=True)
+  add_builder("host-x86-cms", 'host', 'x86', 32, debug=True, cc=False, gen_cc=False)
+  add_builder("host-x86-debug", 'host', 'x86', 32, debug=True)
+  add_builder("host-x86-ndebug", 'host', 'x86', 32)
+  add_builder("host-x86-gcstress-debug", 'host', 'x86', 32, debug=True, gcstress=True)
+  add_builder("host-x86-poison-debug", 'host', 'x86', 32, debug=True, heap_poisoning=True)
+  for bitness in [32, 64]:
     add_builder('', 'host', 'x86', bitness, debug=True)
-    add_builder('', 'host', 'x86', bitness)
+    add_builder('', 'host', 'x86', bitness, debug=False)
+    add_builder('', 'host', 'x86', bitness, debug=True, gcstress=True)
     add_builder('', 'host', 'x86', bitness, debug=True, heap_poisoning=True)
+  add_builder("host-x86_64-cms", 'host', 'x86', 64, cc=False, debug=True, gen_cc=False)
+  add_builder("host-x86_64-debug", 'host', 'x86', 64, debug=True)
+  add_builder("host-x86_64-non-gen-cc", 'host', 'x86', 64, debug=True, gen_cc=False)
+  add_builder("host-x86_64-ndebug", 'host', 'x86', 64)
+  add_builder("host-x86_64-poison-debug", 'host', 'x86', 64, debug=True, heap_poisoning=True)
+  add_builder("qemu-armv8-ndebug", 'qemu', 'arm', 64)
+  add_builder("qemu-riscv64-ndebug", 'qemu', 'riscv', 64)
 
 add_builders()

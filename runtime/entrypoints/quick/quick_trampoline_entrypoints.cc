@@ -182,10 +182,11 @@ class QuickArgumentVisitorImpl {
       if (UNLIKELY((type == Primitive::kPrimDouble) || (type == Primitive::kPrimFloat))) {
         if (type == Primitive::kPrimDouble && kQuickDoubleRegAlignedFloatBackFilled) {
           if (fpr_double_index_ + 2 < kNumQuickFprArgs + 1) {
-            return fpr_args_ + (fpr_double_index_ * GetBytesPerFprSpillLocation(kRuntimeISA));
+            return fpr_args_ +
+                   (fpr_double_index_ * GetBytesPerFprSpillLocation(kRuntimeQuickCodeISA));
           }
         } else if (fpr_index_ + 1 < kNumQuickFprArgs + 1) {
-          return fpr_args_ + (fpr_index_ * GetBytesPerFprSpillLocation(kRuntimeISA));
+          return fpr_args_ + (fpr_index_ * GetBytesPerFprSpillLocation(kRuntimeQuickCodeISA));
         }
         return stack_args_ + (stack_index_ * kBytesStackArgLocation);
       }
@@ -197,8 +198,8 @@ class QuickArgumentVisitorImpl {
   }
 
   bool IsSplitLongOrDouble() const {
-    if ((GetBytesPerGprSpillLocation(kRuntimeISA) == 4) ||
-        (GetBytesPerFprSpillLocation(kRuntimeISA) == 4)) {
+    if ((GetBytesPerGprSpillLocation(kRuntimeQuickCodeISA) == 4) ||
+        (GetBytesPerFprSpillLocation(kRuntimeQuickCodeISA) == 4)) {
       return is_split_long_or_double_;
     } else {
       return false;  // An optimization for when GPR and FPRs are 64bit.
@@ -304,7 +305,7 @@ class QuickArgumentVisitorImpl {
               // even-numbered registers by skipping R1 and using R2 instead.
               IncGprIndex();
             }
-            is_split_long_or_double_ = (GetBytesPerGprSpillLocation(kRuntimeISA) == 4) &&
+            is_split_long_or_double_ = (GetBytesPerGprSpillLocation(kRuntimeQuickCodeISA) == 4) &&
                 ((gpr_index_ + 1) == kNumQuickGprArgs);
             if (!kSplitPairAcrossRegisterAndStack && is_split_long_or_double_) {
               // We don't want to split this. Pass over this register.
@@ -320,14 +321,14 @@ class QuickArgumentVisitorImpl {
             }
             if (gpr_index_ < kNumQuickGprArgs) {
               IncGprIndex();
-              if (GetBytesPerGprSpillLocation(kRuntimeISA) == 4) {
+              if (GetBytesPerGprSpillLocation(kRuntimeQuickCodeISA) == 4) {
                 if (gpr_index_ < kNumQuickGprArgs) {
                   IncGprIndex();
                 }
               }
             }
           } else {
-            is_split_long_or_double_ = (GetBytesPerFprSpillLocation(kRuntimeISA) == 4) &&
+            is_split_long_or_double_ = (GetBytesPerFprSpillLocation(kRuntimeQuickCodeISA) == 4) &&
                 ((fpr_index_ + 1) == kNumQuickFprArgs) && !kQuickDoubleRegAlignedFloatBackFilled;
             Visit();
             if (kBytesStackArgLocation == 4) {
@@ -346,7 +347,7 @@ class QuickArgumentVisitorImpl {
               }
             } else if (fpr_index_ + 1 < kNumQuickFprArgs + 1) {
               IncFprIndex();
-              if (GetBytesPerFprSpillLocation(kRuntimeISA) == 4) {
+              if (GetBytesPerFprSpillLocation(kRuntimeQuickCodeISA) == 4) {
                 if (fpr_index_ + 1 < kNumQuickFprArgs + 1) {
                   IncFprIndex();
                 }
@@ -414,7 +415,7 @@ class QuickArgumentFrameInfoARM {
   static constexpr bool kGprFprLockstep = false;
   static constexpr bool kNaNBoxing = false;
   static size_t GprIndexToGprOffsetImpl(uint32_t gpr_index) {
-    return gpr_index * GetBytesPerGprSpillLocation(kRuntimeISA);
+    return gpr_index * GetBytesPerGprSpillLocation(InstructionSet::kArm);
   }
 };
 
@@ -450,7 +451,7 @@ class QuickArgumentFrameInfoARM64 {
   static constexpr bool kGprFprLockstep = false;
   static constexpr bool kNaNBoxing = false;
   static size_t GprIndexToGprOffsetImpl(uint32_t gpr_index) {
-    return gpr_index * GetBytesPerGprSpillLocation(kRuntimeISA);
+    return gpr_index * GetBytesPerGprSpillLocation(InstructionSet::kArm64);
   }
 };
 
@@ -499,7 +500,8 @@ class QuickArgumentFrameInfoRISCV64 {
   static constexpr bool kGprFprLockstep = false;
   static constexpr bool kNaNBoxing = true;
   static size_t GprIndexToGprOffsetImpl(uint32_t gpr_index) {
-    return (gpr_index + 1) * GetBytesPerGprSpillLocation(kRuntimeISA);  // skip S0/X8/FP
+    // skip S0/X8/FP
+    return (gpr_index + 1) * GetBytesPerGprSpillLocation(InstructionSet::kRiscv64);
   }
 };
 
@@ -533,7 +535,7 @@ class QuickArgumentFrameInfoX86 {
   static constexpr bool kGprFprLockstep = false;
   static constexpr bool kNaNBoxing = false;
   static size_t GprIndexToGprOffsetImpl(uint32_t gpr_index) {
-    return gpr_index * GetBytesPerGprSpillLocation(kRuntimeISA);
+    return gpr_index * GetBytesPerGprSpillLocation(InstructionSet::kX86);
   }
 };
 
@@ -580,12 +582,13 @@ class QuickArgumentFrameInfoX86_64 {
   static constexpr bool kGprFprLockstep = false;
   static constexpr bool kNaNBoxing = false;
   static size_t GprIndexToGprOffsetImpl(uint32_t gpr_index) {
+    static constexpr size_t kBytesPerSpill = GetBytesPerGprSpillLocation(InstructionSet::kX86_64);
     switch (gpr_index) {
-      case 0: return (4 * GetBytesPerGprSpillLocation(kRuntimeISA));
-      case 1: return (1 * GetBytesPerGprSpillLocation(kRuntimeISA));
-      case 2: return (0 * GetBytesPerGprSpillLocation(kRuntimeISA));
-      case 3: return (5 * GetBytesPerGprSpillLocation(kRuntimeISA));
-      case 4: return (6 * GetBytesPerGprSpillLocation(kRuntimeISA));
+      case 0: return (4 * kBytesPerSpill);
+      case 1: return (1 * kBytesPerSpill);
+      case 2: return (0 * kBytesPerSpill);
+      case 3: return (5 * kBytesPerSpill);
+      case 4: return (6 * kBytesPerSpill);
       default:
       LOG(FATAL) << "Unexpected GPR index: " << gpr_index;
       UNREACHABLE();
@@ -611,8 +614,8 @@ struct QAFISelector<InstructionSet::kX86_64> { using type = QuickArgumentFrameIn
 
 }  // namespace detail
 
-// TODO(Simulator): Use the quick code ISA instead of kRuntimeISA.
-using QuickArgumentVisitor = QuickArgumentVisitorImpl<detail::QAFISelector<kRuntimeISA>::type>;
+using QuickArgumentVisitor =
+    QuickArgumentVisitorImpl<detail::QAFISelector<kRuntimeQuickCodeISA>::type>;
 
 // Returns the 'this' object of a proxy method. This function is only used by StackVisitor. It
 // allows to use the QuickArgumentVisitor constants without moving all the code in its own module.

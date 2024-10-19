@@ -266,7 +266,7 @@ static void UpdateEntryPoints(ArtMethod* method, const void* new_code)
     jit::Jit* jit = Runtime::Current()->GetJit();
     if (jit != nullptr && jit->GetCodeCache()->ContainsPc(new_code)) {
       // Ensure we always have the thumb entrypoint for JIT on arm32.
-      if (kRuntimeISA == InstructionSet::kArm) {
+      if (kRuntimeQuickCodeISA == InstructionSet::kArm) {
         CHECK_EQ(reinterpret_cast<uintptr_t>(new_code) & 1, 1u);
       }
     }

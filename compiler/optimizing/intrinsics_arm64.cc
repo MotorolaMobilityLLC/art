@@ -1110,7 +1110,6 @@ static void GenUnsafePutAbsolute(HInvoke* invoke,
                                  bool is_ordered,
                                  CodeGeneratorARM64* codegen) {
   LocationSummary* locations = invoke->GetLocations();
-  MacroAssembler* masm = codegen->GetVIXLAssembler();
 
   static constexpr int kAddressIndex = 1;
   static constexpr int kValueIndex = 2;

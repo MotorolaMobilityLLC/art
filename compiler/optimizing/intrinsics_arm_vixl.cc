@@ -3167,8 +3167,6 @@ static void GenUnsafePutAbsolute(HInvoke* invoke,
                                  std::memory_order order,
                                  bool atomic,
                                  CodeGeneratorARMVIXL* codegen) {
-  ArmVIXLAssembler* assembler = codegen->GetAssembler();
-
   LocationSummary* locations = invoke->GetLocations();
   vixl32::Register address = LowRegisterFrom(locations->InAt(1));  // Long offset, lo part only.
   Location value = locations->InAt(2);

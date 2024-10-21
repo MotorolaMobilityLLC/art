@@ -187,19 +187,19 @@ if True:
   lib = "libartd.so"
   testlib = "arttestd"
   run_args = []
-  run_checker = "no"
+  run_checker = False
 
-  quiet = "no"
-  debuggable = "no"
-  prebuild_mode = "yes"
-  target_mode = "yes"
-  dev_mode = "no"
-  create_runner = "no"
-  update_mode = "no"
-  debug_mode = "no"
-  relocate = "no"
+  quiet = False
+  debuggable = False
+  prebuild_mode = True
+  target_mode = True
+  dev_mode = False
+  create_runner = False
+  update_mode = False
+  debug_mode = False
+  relocate = False
   runtime = "art"
-  usage = "no"
+  usage = False
   suffix64 = ""
   trace = "false"
   trace_stream = "false"
@@ -211,11 +211,11 @@ if True:
   jvmti_step_stress = "false"
   jvmti_redefine_stress = "false"
   strace = "false"
-  always_clean = "no"
-  never_clean = "no"
-  have_image = "yes"
+  always_clean = False
+  never_clean = False
+  have_image = True
   android_root = "/system"
-  bisection_search = "no"
+  bisection_search = False
   timeout = ""
   suspend_timeout = "500000"
   run_optimizing = "false"
@@ -413,12 +413,12 @@ if True:
 
   if True:
     if args.host:
-      target_mode = "no"
+      target_mode = False
       DEX_LOCATION = tmp_dir
       run_args += ["--host"]
       os.environ["RUN_MODE"] = "host"
     if args.quiet:
-      quiet = "yes"
+      quiet = True
     if args.use_java_home:
       JAVA_HOME = os.environ.get("JAVA_HOME")
       if JAVA_HOME:
@@ -426,12 +426,12 @@ if True:
         export("JAVAC", f"{JAVA_HOME}/bin/javac -g")
       else:
         error("Passed --use-java-home without JAVA_HOME variable set!")
-        usage = "yes"
+        usage = True
     if args.jvm:
-      target_mode = "no"
+      target_mode = False
       DEX_LOCATION = tmp_dir
       runtime = "jvm"
-      prebuild_mode = "no"
+      prebuild_mode = False
       run_args += ["--jvm"]
     if args.O:
       lib = "libart.so"
@@ -441,22 +441,22 @@ if True:
       lib = "libdvm.so"
       runtime = "dalvik"
     if args.no_image:
-      have_image = "no"
+      have_image = False
     if args.relocate:
-      relocate = "yes"
+      relocate = True
     if args.no_relocate:
-      relocate = "no"
+      relocate = False
     if args.prebuild:
       run_args += ["--prebuild"]
-      prebuild_mode = "yes"
+      prebuild_mode = True
     if args.strip_dex:
       run_args += ["--strip-dex"]
     if args.debuggable:
       run_args += ["-Xcompiler-option --debuggable"]
-      debuggable = "yes"
+      debuggable = True
     if args.no_prebuild:
       run_args += ["--no-prebuild"]
-      prebuild_mode = "no"
+      prebuild_mode = False
     if args.gcverify:
       basic_verify = "true"
       gc_verify = "true"
@@ -502,19 +502,19 @@ if True:
       dump_cfg_path = args.dump_cfg
     if args.gdb:
       run_args += ["--gdb"]
-      dev_mode = "yes"
+      dev_mode = True
     if args.gdb_dex2oat:
       run_args += ["--gdb-dex2oat"]
-      dev_mode = "yes"
+      dev_mode = True
     if args.gdbserver_bin:
       run_args += [f'--gdbserver-bin "{args.gdbserver_bin}"']
     if args.gdbserver_port:
       run_args += [f'--gdbserver-port "{args.gdbserver_port}"']
     if args.gdbserver:
       run_args += ["--gdbserver"]
-      dev_mode = "yes"
+      dev_mode = True
     if args.strace:
-      strace = "yes"
+      strace = True
       run_args += [
           f'--invoke-with=strace --invoke-with=-o --invoke-with="{tmp_dir}/{strace_output}"'
       ]
@@ -548,11 +548,11 @@ if True:
       run_args += [f'--invoke-with "{what}"' for what in args.invoke_with]
     if args.create_runner:
       run_args += ["--create-runner --dry-run"]
-      dev_mode = "yes"
-      never_clean = "yes"
-      create_runner = "yes"
+      dev_mode = True
+      never_clean = True
+      create_runner = True
     if args.dev:
-      dev_mode = "yes"
+      dev_mode = True
     if args.chroot:
       chroot = args.chroot
       run_args += [f'--chroot "{args.chroot}"']
@@ -566,7 +566,7 @@ if True:
     if args.android_tzdata_root:
       run_args += [f'--android-tzdata-root "{args.android_tzdata_root}"']
     if args.update:
-      update_mode = "yes"
+      update_mode = True
     if args.is64bit:
       run_args += ["--64"]
       suffix64 = "64"
@@ -574,7 +574,7 @@ if True:
       # soong linux_bionic builds are 64bit only.
       run_args += ["--bionic --host --64"]
       suffix64 = "64"
-      target_mode = "no"
+      target_mode = False
       DEX_LOCATION = tmp_dir
       host_lib_root = f"{OUT_DIR}/soong/host/linux_bionic-x86"
     if args.timeout:
@@ -584,15 +584,15 @@ if True:
     if args.stream:
       trace_stream = "true"
     if args.always_clean:
-      always_clean = "yes"
+      always_clean = True
     if args.never_clean:
-      never_clean = "yes"
+      never_clean = True
     if args.dex2oat_swap:
       run_args += ["--dex2oat-swap"]
     if args.instruction_set_features:
       run_args += [f'--instruction-set-features "{args.instruction_set_features}"']
     if args.bisection_search:
-      bisection_search = "yes"
+      bisection_search = True
     if args.vdex:
       run_args += ["--vdex"]
     if args.dm:
@@ -681,9 +681,9 @@ if True:
     else:
       return "x86"
 
-  if target_mode == "no":
+  if not target_mode:
     if runtime == "jvm":
-      if prebuild_mode == "yes":
+      if prebuild_mode:
         error("--prebuild with --jvm is unsupported")
         sys.exit(1)
     else:
@@ -697,14 +697,14 @@ if True:
 
   ANDROID_PRODUCT_OUT = os.environ.get("ANDROID_PRODUCT_OUT")
   if runtime == "dalvik":
-    if target_mode == "no":
+    if not target_mode:
       framework = f"{ANDROID_PRODUCT_OUT}/system/framework"
       bpath = f"{framework}/core-icu4j.jar:{framework}/core-libart.jar:{framework}/core-oj.jar:{framework}/conscrypt.jar:{framework}/okhttp.jar:{framework}/bouncycastle.jar:{framework}/ext.jar"
       run_args += [f'--boot --runtime-option "-Xbootclasspath:{bpath}"']
     else:
       pass  # defaults to using target BOOTCLASSPATH
   elif runtime == "art":
-    if target_mode == "no":
+    if not target_mode:
       host_arch_name = guess_host_arch_name()
       run_args += [
           f'--boot "{ANDROID_HOST_OUT}/apex/art_boot_images/javalib/boot.art"'
@@ -722,7 +722,7 @@ if True:
           f'--runtime-option "-Djava.library.path=/data/nativetest{suffix64}/art/{target_arch_name}"'
       ]
       run_args += ['--boot "/system/framework/art_boot_images/boot.art"']
-    if relocate == "yes":
+    if relocate:
       run_args += ["--relocate"]
     else:
       run_args += ["--no-relocate"]
@@ -732,30 +732,30 @@ if True:
         f'--runtime-option "-Djava.library.path={ANDROID_HOST_OUT}/lib64:{ANDROID_HOST_OUT}/nativetest64"'
     ]
 
-  if have_image == "no":
+  if not have_image:
     if runtime != "art":
       error("--no-image is only supported on the art runtime")
       sys.exit(1)
     run_args += ["--no-image"]
 
-  if create_runner == "yes" and target_mode == "yes":
+  if create_runner and target_mode:
     error("--create-runner does not function for non --host tests")
-    usage = "yes"
+    usage = True
 
-  if dev_mode == "yes" and update_mode == "yes":
+  if dev_mode and update_mode:
     error("--dev and --update are mutually exclusive")
-    usage = "yes"
+    usage = True
 
-  if dev_mode == "yes" and quiet == "yes":
+  if dev_mode and quiet:
     error("--dev and --quiet are mutually exclusive")
-    usage = "yes"
+    usage = True
 
-  if bisection_search == "yes" and prebuild_mode == "yes":
+  if bisection_search and prebuild_mode:
     error("--bisection-search and --prebuild are mutually exclusive")
-    usage = "yes"
+    usage = True
 
 # TODO: Chroot-based bisection search is not supported yet (see below); implement it.
-  if bisection_search == "yes" and chroot:
+  if bisection_search and chroot:
     error("--chroot with --bisection-search is unsupported")
     sys.exit(1)
 
@@ -770,7 +770,7 @@ if True:
       test_dir = td2[0]
     else:
       error(f"{test_dir}: no such test directory")
-      usage = "yes"
+      usage = True
 
   os.chdir(test_dir)
   test_dir = os.getcwd()
@@ -785,17 +785,17 @@ if True:
   if re.match("[0-9]+-checker-", TEST_NAME) or dump_cfg == "true":
     if runtime == "art" and run_optimizing == "true":
       # In no-prebuild or no-image mode, the compiler only quickens so disable the checker.
-      if prebuild_mode == "yes":
-        run_checker = "yes"
+      if prebuild_mode:
+        run_checker = True
 
-        if target_mode == "no":
+        if not target_mode:
           cfg_output_dir = tmp_dir
           checker_args = f"--arch={host_arch_name.upper()}"
         else:
           cfg_output_dir = DEX_LOCATION
           checker_args = f"--arch={target_arch_name.upper()}"
 
-        if debuggable == "yes":
+        if debuggable:
           checker_args += " --debuggable"
 
         run_args += [
@@ -814,7 +814,7 @@ if True:
   m = re.match("[0-9]*([0-9][0-9])-.*", TEST_NAME)
   assert m, "Can not find test number in " + TEST_NAME
   SHARD = "HiddenApi" if "hiddenapi" in TEST_NAME else m.group(1)
-  if target_mode == "yes":
+  if target_mode:
     zip_file = f"{ANDROID_HOST_OUT}/etc/art/art-run-test-target-data-shard{SHARD}.zip"
     zip_entry = f"target/{TEST_NAME}/"
   elif runtime == "jvm":
@@ -830,24 +830,24 @@ if True:
     entry.rename(Path(tmp_dir) / entry.name)
 
   def clean_up(passed: bool):
-    if always_clean == "yes" or (passed and never_clean == "no"):
+    if always_clean or (passed and not never_clean):
       os.chdir(oldwd)
       shutil.rmtree(tmp_dir)
-      if target_mode == "yes":
+      if target_mode:
         if ON_VM:
           run(f"{SSH_CMD} \"rm -rf {chroot_dex_location}\"")
         else:
           run(f"adb shell rm -rf {chroot_dex_location}")
       print(f"{TEST_NAME} files deleted from host" +
-            (" and from target" if target_mode == "yes" else ""))
+            (" and from target" if target_mode else ""))
     else:
       print(f"{TEST_NAME} files left in {tmp_dir} on host" +
-            (f" and in {chroot_dex_location} on target" if target_mode == "yes" else ""))
+            (f" and in {chroot_dex_location} on target" if target_mode else ""))
     atexit.unregister(clean_up)
   # TODO: Run this in global try-finally once the script is more refactored.
   atexit.register(clean_up, passed=False)
 
-  ctx = RunTestContext(Path(tmp_dir), target_mode == "yes", chroot, DEX_LOCATION, TEST_NAME)
+  ctx = RunTestContext(Path(tmp_dir), target_mode, chroot, DEX_LOCATION, TEST_NAME)
   td_info = f"{test_dir}/{info}"
   for td_file in [td_info, ctx.expected_stdout, ctx.expected_stderr]:
     assert os.access(td_file, os.R_OK)
@@ -880,7 +880,7 @@ if True:
   def do_dump_cfg():
     assert run_optimizing == "true", ("The CFG can be dumped only in"
                                       " optimizing mode")
-    if target_mode == "yes":
+    if target_mode:
       if ON_VM:
         run(f'{SCP_CMD} "{SSH_USER}@${SSH_HOST}:{CHROOT}/{cfg_output_dir}/'
             f'{cfg_output} {dump_cfg_path}"')
@@ -912,7 +912,7 @@ if True:
     sys.exit(0)
 
   print(f"{test_dir}: Run...")
-  if target_mode == "yes":
+  if target_mode:
     # Prepare the on-device test directory
     if ON_VM:
       run(f"{SSH_CMD} 'rm -rf {chroot_dex_location} && mkdir -p {chroot_dex_location}'")
@@ -956,7 +956,7 @@ if True:
   # NB: There is no exit code or return value.
   # Failing tests just raise python exception.
   os.chdir(tmp_dir)
-  if update_mode == "yes":
+  if update_mode:
     for src, dst in [(test_stdout, os.path.join(test_dir, ctx.expected_stdout.name)),
                      (test_stderr, os.path.join(test_dir, ctx.expected_stderr.name))]:
       if "[DO_NOT_UPDATE]" not in open(dst).readline():
@@ -970,12 +970,12 @@ if True:
   print("#################### stderr diff")
   proc_err = run(f'diff --strip-trailing-cr -u '
                  f'"{ctx.expected_stderr}" "{test_stderr}"', check=False)
-  if strace == "yes":
+  if strace:
     print("#################### strace output (trimmed to 3000 lines)")
     # Some tests do not run dalvikvm, in which case the trace does not exist.
     run(f'tail -n 3000 "{tmp_dir}/{strace_output}"', check=False)
   SANITIZE_HOST = os.environ.get("SANITIZE_HOST")
-  if target_mode == "no" and SANITIZE_HOST == "address":
+  if not target_mode and SANITIZE_HOST == "address":
     # Run the stack script to symbolize any ASAN aborts on the host for SANITIZE_HOST. The
     # tools used by the given ABI work for both x86 and x86-64.
     print("#################### symbolizer (trimmed to 3000 lines)")
@@ -989,8 +989,8 @@ if True:
               (["stderr"] if proc_err.returncode != 0 else []))
       fail("{} did not match the expected file".format(" and ".join(kind)))
 
-    if run_checker == "yes":
-      if target_mode == "yes":
+    if run_checker:
+      if target_mode:
         if ON_VM:
           run(f'{SCP_CMD} "{SSH_USER}@{SSH_HOST}:{CHROOT}/{cfg_output_dir}/'
               f'{cfg_output}" "{tmp_dir}"')

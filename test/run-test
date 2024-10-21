@@ -176,51 +176,13 @@ if True:
   if not ANDROID_HOST_OUT:
     export("ANDROID_HOST_OUT", f"{OUT_DIR}/host/linux-x86")
 
-  host_lib_root = ANDROID_HOST_OUT
-  chroot = ""
   info = "info.txt"
   run_cmd = "run"
   test_stdout = "test-stdout.txt"
   test_stderr = "test-stderr.txt"
   cfg_output = "graph.cfg"
-  strace_output = "strace-output.txt"
-  lib = "libartd.so"
-  testlib = "arttestd"
-  run_args = []
   run_checker = False
-
-  quiet = False
-  debuggable = False
-  prebuild_mode = True
-  target_mode = True
-  dev_mode = False
-  create_runner = False
-  update_mode = False
   debug_mode = False
-  relocate = False
-  runtime = "art"
-  usage = False
-  suffix64 = ""
-  trace = "false"
-  trace_stream = "false"
-  basic_verify = "false"
-  gc_verify = "false"
-  gc_stress = "false"
-  jvmti_trace_stress = "false"
-  jvmti_field_stress = "false"
-  jvmti_step_stress = "false"
-  jvmti_redefine_stress = "false"
-  strace = "false"
-  always_clean = False
-  never_clean = False
-  have_image = True
-  android_root = "/system"
-  bisection_search = False
-  timeout = ""
-  suspend_timeout = "500000"
-  run_optimizing = "false"
-  dump_cfg = "false"
-  dump_cfg_path = ""
   # To cause tests to fail fast, limit the file sizes created by dx, dex2oat and
   # ART output to approximately 128MB. This should be more than sufficient
   # for any test while still catching cases of runaway output.
@@ -412,13 +374,17 @@ if True:
   args = argp.parse_args(argv)
 
   if True:
+    run_args = []
+    target_mode = True
     if args.host:
       target_mode = False
       DEX_LOCATION = tmp_dir
       run_args += ["--host"]
       os.environ["RUN_MODE"] = "host"
+    quiet = False
     if args.quiet:
       quiet = True
+    usage = False
     if args.use_java_home:
       JAVA_HOME = os.environ.get("JAVA_HOME")
       if JAVA_HOME:
@@ -427,12 +393,16 @@ if True:
       else:
         error("Passed --use-java-home without JAVA_HOME variable set!")
         usage = True
+    prebuild_mode = True
+    runtime = "art"
     if args.jvm:
       target_mode = False
       DEX_LOCATION = tmp_dir
       runtime = "jvm"
       prebuild_mode = False
       run_args += ["--jvm"]
+    lib = "libartd.so"
+    testlib = "arttestd"
     if args.O:
       lib = "libart.so"
       testlib = "arttest"
@@ -440,8 +410,10 @@ if True:
     if args.dalvik:
       lib = "libdvm.so"
       runtime = "dalvik"
+    have_image = True
     if args.no_image:
       have_image = False
+    relocate = False
     if args.relocate:
       relocate = True
     if args.no_relocate:
@@ -451,30 +423,39 @@ if True:
       prebuild_mode = True
     if args.strip_dex:
       run_args += ["--strip-dex"]
+    debuggable = False
     if args.debuggable:
       run_args += ["-Xcompiler-option --debuggable"]
       debuggable = True
     if args.no_prebuild:
       run_args += ["--no-prebuild"]
       prebuild_mode = False
+    basic_verify = "false"
+    gc_verify = "false"
     if args.gcverify:
       basic_verify = "true"
       gc_verify = "true"
+    gc_stress = "false"
     if args.gcstress:
       basic_verify = "true"
       gc_stress = "true"
+    jvmti_step_stress = "false"
     if args.jvmti_step_stress:
       jvmti_step_stress = "true"
       os.environ["JVMTI_STEP_STRESS"] = "true"
+    jvmti_redefine_stress = "false"
     if args.jvmti_redefine_stress:
       jvmti_redefine_stress = "true"
       os.environ["JVMTI_REDEFINE_STRESS"] = "true"
+    jvmti_field_stress = "false"
     if args.jvmti_field_stress:
       jvmti_field_stress = "true"
       os.environ["JVMTI_FIELD_STRESS"] = "true"
+    jvmti_trace_stress = "false"
     if args.jvmti_trace_stress:
       jvmti_trace_stress = "true"
       os.environ["JVMTI_TRACE_STRESS"] = "true"
+    suspend_timeout = "500000"
     if args.suspend_timeout:
       suspend_timeout = args.suspend_timeout
     if args.image:
@@ -497,9 +478,12 @@ if True:
       run_args += [f'--with-agent "{arg}"' for arg in args.with_agent]
     if args.debug_agent:
       run_args += [f'--debug-agent "{args.debug_agent}"']
+    dump_cfg = "false"
+    dump_cfg_path = ""
     if args.dump_cfg:
       dump_cfg = "true"
       dump_cfg_path = args.dump_cfg
+    dev_mode = False
     if args.gdb:
       run_args += ["--gdb"]
       dev_mode = True
@@ -513,6 +497,9 @@ if True:
     if args.gdbserver:
       run_args += ["--gdbserver"]
       dev_mode = True
+    strace = "false"
+    strace_output = "strace-output.txt"
+    timeout = ""
     if args.strace:
       strace = True
       run_args += [
@@ -529,6 +516,7 @@ if True:
       run_args += ["--jit"]
     if args.baseline:
       run_args += ["--baseline"]
+    run_optimizing = "false"
     if args.optimizing:
       run_optimizing = "true"
     if args.no_verify:
@@ -546,6 +534,8 @@ if True:
       run_args += ["--external-log-tags"]
     if args.invoke_with:
       run_args += [f'--invoke-with "{what}"' for what in args.invoke_with]
+    create_runner = False
+    never_clean = False
     if args.create_runner:
       run_args += ["--create-runner --dry-run"]
       dev_mode = True
@@ -553,11 +543,13 @@ if True:
       create_runner = True
     if args.dev:
       dev_mode = True
+    chroot = ""
     if args.chroot:
       chroot = args.chroot
       run_args += [f'--chroot "{args.chroot}"']
     if args.simpleperf:
       run_args += ["--simpleperf"]
+    android_root = "/system"
     if args.android_root:
       android_root = args.android_root
       run_args += [f'--android-root "{args.android_root}"']
@@ -565,11 +557,14 @@ if True:
       run_args += [f'--android-art-root "{args.android_art_root}"']
     if args.android_tzdata_root:
       run_args += [f'--android-tzdata-root "{args.android_tzdata_root}"']
+    update_mode = False
     if args.update:
       update_mode = True
+    suffix64 = ""
     if args.is64bit:
       run_args += ["--64"]
       suffix64 = "64"
+    host_lib_root = ANDROID_HOST_OUT
     if args.bionic:
       # soong linux_bionic builds are 64bit only.
       run_args += ["--bionic --host --64"]
@@ -579,10 +574,13 @@ if True:
       host_lib_root = f"{OUT_DIR}/soong/host/linux_bionic-x86"
     if args.timeout:
       timeout = args.timeout
+    trace = "false"
     if args.trace:
       trace = "true"
+    trace_stream = "false"
     if args.stream:
       trace_stream = "true"
+    always_clean = False
     if args.always_clean:
       always_clean = True
     if args.never_clean:
@@ -591,6 +589,7 @@ if True:
       run_args += ["--dex2oat-swap"]
     if args.instruction_set_features:
       run_args += [f'--instruction-set-features "{args.instruction_set_features}"']
+    bisection_search = False
     if args.bisection_search:
       bisection_search = True
     if args.vdex:

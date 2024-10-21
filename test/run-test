@@ -430,30 +430,30 @@ if True:
     if args.no_prebuild:
       run_args += ["--no-prebuild"]
       prebuild_mode = False
-    basic_verify = "false"
-    gc_verify = "false"
+    basic_verify = False
+    gc_verify = False
     if args.gcverify:
-      basic_verify = "true"
-      gc_verify = "true"
-    gc_stress = "false"
+      basic_verify = True
+      gc_verify = True
+    gc_stress = False
     if args.gcstress:
-      basic_verify = "true"
-      gc_stress = "true"
-    jvmti_step_stress = "false"
+      basic_verify = True
+      gc_stress = True
+    jvmti_step_stress = False
     if args.jvmti_step_stress:
-      jvmti_step_stress = "true"
+      jvmti_step_stress = True
       os.environ["JVMTI_STEP_STRESS"] = "true"
-    jvmti_redefine_stress = "false"
+    jvmti_redefine_stress = False
     if args.jvmti_redefine_stress:
-      jvmti_redefine_stress = "true"
+      jvmti_redefine_stress = True
       os.environ["JVMTI_REDEFINE_STRESS"] = "true"
-    jvmti_field_stress = "false"
+    jvmti_field_stress = False
     if args.jvmti_field_stress:
-      jvmti_field_stress = "true"
+      jvmti_field_stress = True
       os.environ["JVMTI_FIELD_STRESS"] = "true"
-    jvmti_trace_stress = "false"
+    jvmti_trace_stress = False
     if args.jvmti_trace_stress:
-      jvmti_trace_stress = "true"
+      jvmti_trace_stress = True
       os.environ["JVMTI_TRACE_STRESS"] = "true"
     suspend_timeout = "500000"
     if args.suspend_timeout:
@@ -478,10 +478,10 @@ if True:
       run_args += [f'--with-agent "{arg}"' for arg in args.with_agent]
     if args.debug_agent:
       run_args += [f'--debug-agent "{args.debug_agent}"']
-    dump_cfg = "false"
+    dump_cfg = False
     dump_cfg_path = ""
     if args.dump_cfg:
-      dump_cfg = "true"
+      dump_cfg = True
       dump_cfg_path = args.dump_cfg
     dev_mode = False
     if args.gdb:
@@ -497,7 +497,7 @@ if True:
     if args.gdbserver:
       run_args += ["--gdbserver"]
       dev_mode = True
-    strace = "false"
+    strace = False
     strace_output = "strace-output.txt"
     timeout = ""
     if args.strace:
@@ -516,9 +516,9 @@ if True:
       run_args += ["--jit"]
     if args.baseline:
       run_args += ["--baseline"]
-    run_optimizing = "false"
+    run_optimizing = False
     if args.optimizing:
-      run_optimizing = "true"
+      run_optimizing = True
     if args.no_verify:
       run_args += ["--no-verify"]
     if args.verify_soft_fail:
@@ -574,12 +574,12 @@ if True:
       host_lib_root = f"{OUT_DIR}/soong/host/linux_bionic-x86"
     if args.timeout:
       timeout = args.timeout
-    trace = "false"
+    trace = False
     if args.trace:
-      trace = "true"
-    trace_stream = "false"
+      trace = True
+    trace_stream = False
     if args.stream:
-      trace_stream = "true"
+      trace_stream = True
     always_clean = False
     if args.always_clean:
       always_clean = True
@@ -623,36 +623,36 @@ if True:
         f'--runtime-option "-XX:ThreadSuspendTimeout={suspend_timeout}"'
     ]
 
-  if basic_verify == "true":
+  if basic_verify:
     # Set HspaceCompactForOOMMinIntervalMs to zero to run hspace compaction for OOM more frequently in tests.
     run_args += [
         "--runtime-option -Xgc:preverify --runtime-option -Xgc:postverify "
         "--runtime-option -XX:HspaceCompactForOOMMinIntervalMs=0"
     ]
-  if gc_verify == "true":
+  if gc_verify:
     run_args += [
         "--runtime-option -Xgc:preverify_rosalloc --runtime-option "
         "-Xgc:postverify_rosalloc"
     ]
-  if gc_stress == "true":
+  if gc_stress:
     run_args += [
         "--gc-stress --runtime-option -Xgc:gcstress --runtime-option -Xms2m "
         "--runtime-option -Xmx16m"
     ]
-  if jvmti_redefine_stress == "true":
+  if jvmti_redefine_stress:
     run_args += ["--no-app-image --jvmti-redefine-stress"]
-  if jvmti_step_stress == "true":
+  if jvmti_step_stress:
     run_args += ["--no-app-image --jvmti-step-stress"]
-  if jvmti_field_stress == "true":
+  if jvmti_field_stress:
     run_args += ["--no-app-image --jvmti-field-stress"]
-  if jvmti_trace_stress == "true":
+  if jvmti_trace_stress:
     run_args += ["--no-app-image --jvmti-trace-stress"]
-  if trace == "true":
+  if trace:
     run_args += [
         "--runtime-option -Xmethod-trace --runtime-option "
         "-Xmethod-trace-file-size:2000000"
     ]
-    if trace_stream == "true":
+    if trace_stream:
       # Streaming mode uses the file size as the buffer size. So output gets really large. Drop
       # the ability to analyze the file and just write to /dev/null.
       run_args += ["--runtime-option -Xmethod-trace-file:/dev/null"]
@@ -662,7 +662,7 @@ if True:
       run_args += [
           f'--runtime-option "-Xmethod-trace-file:{DEX_LOCATION}/trace.bin"'
       ]
-  elif trace_stream == "true":
+  elif trace_stream:
     error("Cannot use --stream without --trace.")
     sys.exit(1)
   if timeout:
@@ -781,8 +781,8 @@ if True:
   # Checker when compiled with Optimizing on host.
   # Additionally, if the user specifies that the CFG must be dumped, it will
   # run the checker for any type of test to generate the CFG.
-  if re.match("[0-9]+-checker-", TEST_NAME) or dump_cfg == "true":
-    if runtime == "art" and run_optimizing == "true":
+  if re.match("[0-9]+-checker-", TEST_NAME) or dump_cfg:
+    if runtime == "art" and run_optimizing:
       # In no-prebuild or no-image mode, the compiler only quickens so disable the checker.
       if prebuild_mode:
         run_checker = True
@@ -858,7 +858,7 @@ if True:
     parsed_args.stderr_file = os.path.join(DEX_LOCATION, test_stderr)
 
     ctx.run(f"cd {DEX_LOCATION}")
-    if target_mode != "yes":
+    if not target_mode:
       # Make "out" directory accessible from test directory.
       ctx.run(f"ln -s -f -t {DEX_LOCATION} {ANDROID_BUILD_TOP}/out")
     # Clear the stdout/stderr files (create empty files).
@@ -877,8 +877,7 @@ if True:
     return runner
 
   def do_dump_cfg():
-    assert run_optimizing == "true", ("The CFG can be dumped only in"
-                                      " optimizing mode")
+    assert run_optimizing, "The CFG can be dumped only in optimizing mode"
     if target_mode:
       if ON_VM:
         run(f'{SCP_CMD} "{SSH_USER}@${SSH_HOST}:{CHROOT}/{cfg_output_dir}/'
@@ -939,7 +938,7 @@ if True:
             fail_message=f"Runner {chroot_dex_location}/run.sh failed")
     finally:
       # Copy the generated CFG to the specified path.
-      if dump_cfg == "true":
+      if dump_cfg:
         do_dump_cfg()
 
     # Copy the on-device stdout/stderr to host.
@@ -999,7 +998,7 @@ if True:
           fail_message="CFG checker failed")
   finally:
     # Copy the generated CFG to the specified path.
-    if dump_cfg == "true":
+    if dump_cfg:
       do_dump_cfg()
 
   clean_up(passed=True)

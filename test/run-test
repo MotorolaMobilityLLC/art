@@ -375,15 +375,12 @@ if True:
 
   if True:
     run_args = []
-    target_mode = True
-    if args.host:
-      target_mode = False
+    target_mode = not args.host
+    if not target_mode:
       DEX_LOCATION = tmp_dir
       run_args += ["--host"]
       os.environ["RUN_MODE"] = "host"
-    quiet = False
-    if args.quiet:
-      quiet = True
+    quiet = args.quiet
     usage = False
     if args.use_java_home:
       JAVA_HOME = os.environ.get("JAVA_HOME")
@@ -410,98 +407,74 @@ if True:
     if args.dalvik:
       lib = "libdvm.so"
       runtime = "dalvik"
-    have_image = True
-    if args.no_image:
-      have_image = False
-    relocate = False
-    if args.relocate:
-      relocate = True
-    if args.no_relocate:
-      relocate = False
+    have_image = not args.no_image
+    relocate = args.relocate and not args.no_relocate
     if args.prebuild:
       run_args += ["--prebuild"]
       prebuild_mode = True
     if args.strip_dex:
       run_args += ["--strip-dex"]
-    debuggable = False
-    if args.debuggable:
+    debuggable = args.debuggable
+    if debuggable:
       run_args += ["-Xcompiler-option --debuggable"]
-      debuggable = True
     if args.no_prebuild:
       run_args += ["--no-prebuild"]
       prebuild_mode = False
-    basic_verify = False
-    gc_verify = False
-    if args.gcverify:
-      basic_verify = True
-      gc_verify = True
-    gc_stress = False
-    if args.gcstress:
-      basic_verify = True
-      gc_stress = True
-    jvmti_step_stress = False
-    if args.jvmti_step_stress:
-      jvmti_step_stress = True
+    basic_verify = gc_verify = args.gcverify
+    gc_stress = args.gcstress
+    if gc_stress:
+        basic_verify = True
+
+    jvmti_step_stress = args.jvmti_step_stress
+    jvmti_redefine_stress = args.jvmti_redefine_stress
+    jvmti_field_stress = args.jvmti_field_stress
+    jvmti_trace_stress = args.jvmti_trace_stress
+
+    if jvmti_step_stress:
       os.environ["JVMTI_STEP_STRESS"] = "true"
-    jvmti_redefine_stress = False
-    if args.jvmti_redefine_stress:
-      jvmti_redefine_stress = True
+    if jvmti_redefine_stress:
       os.environ["JVMTI_REDEFINE_STRESS"] = "true"
-    jvmti_field_stress = False
-    if args.jvmti_field_stress:
-      jvmti_field_stress = True
+    if jvmti_field_stress:
       os.environ["JVMTI_FIELD_STRESS"] = "true"
-    jvmti_trace_stress = False
-    if args.jvmti_trace_stress:
-      jvmti_trace_stress = True
+    if jvmti_trace_stress:
       os.environ["JVMTI_TRACE_STRESS"] = "true"
-    suspend_timeout = "500000"
-    if args.suspend_timeout:
-      suspend_timeout = args.suspend_timeout
+    suspend_timeout = args.suspend_timeout or "500000"
     if args.image:
-      image = args.image
-      run_args += [f'--image "{image}"']
-    if args.Xcompiler_option:
-      run_args += [f'-Xcompiler-option "{option}"' for option in args.Xcompiler_option]
-    if args.runtime_option:
-      run_args += [f'--runtime-option "{option}"' for option in args.runtime_option]
-    if args.gdb_arg:
-      run_args += [f'--gdb-arg "{gdb_arg}"' for gdb_arg in args.gdb_arg]
+      run_args += [f'--image "{args.image}"']
+    run_args.extend([f'-Xcompiler-option "{option}"' for option in args.Xcompiler_option])
+    run_args.extend([f'--runtime-option "{option}"' for option in args.runtime_option])
+    run_args.extend([f'--gdb-arg "{gdb_arg}"' for gdb_arg in args.gdb_arg])
+
     if args.gdb_dex2oat_args:
-      gdb_dex2oat_args = args.gdb_dex2oat_args
-      run_args += [f'--gdb-dex2oat-args="{gdb_dex2oat_args}"']
+      run_args.append(f'--gdb-dex2oat-args="{args.gdb_dex2oat_args}"')
     if args.debug:
-      run_args += ["--debug"]
+      run_args.append("--debug")
     if args.debug_wrap_agent:
-      run_args += ["--debug-wrap-agent"]
-    if args.with_agent:
-      run_args += [f'--with-agent "{arg}"' for arg in args.with_agent]
+      run_args.append("--debug-wrap-agent")
+    run_args.extend([f'--with-agent "{arg}"' for arg in args.with_agent])
+
     if args.debug_agent:
-      run_args += [f'--debug-agent "{args.debug_agent}"']
-    dump_cfg = False
-    dump_cfg_path = ""
-    if args.dump_cfg:
-      dump_cfg = True
-      dump_cfg_path = args.dump_cfg
-    dev_mode = False
+      run_args.append(f'--debug-agent "{args.debug_agent}"')
+
+    dump_cfg = bool(args.dump_cfg)
+    dump_cfg_path = args.dump_cfg or ""
+
+    dev_mode = args.gdb or args.gdb_dex2oat
     if args.gdb:
-      run_args += ["--gdb"]
-      dev_mode = True
+      run_args.append("--gdb")
     if args.gdb_dex2oat:
-      run_args += ["--gdb-dex2oat"]
-      dev_mode = True
+      run_args.append("--gdb-dex2oat")
     if args.gdbserver_bin:
-      run_args += [f'--gdbserver-bin "{args.gdbserver_bin}"']
+      run_args.append(f'--gdbserver-bin "{args.gdbserver_bin}"')
     if args.gdbserver_port:
-      run_args += [f'--gdbserver-port "{args.gdbserver_port}"']
+      run_args.append(f'--gdbserver-port "{args.gdbserver_port}"')
     if args.gdbserver:
-      run_args += ["--gdbserver"]
+      run_args.append("--gdbserver")
       dev_mode = True
-    strace = False
+    strace = args.strace
     strace_output = "strace-output.txt"
     timeout = ""
-    if args.strace:
-      strace = True
+    if strace:
       run_args += [
           f'--invoke-with=strace --invoke-with=-o --invoke-with="{tmp_dir}/{strace_output}"'
       ]
@@ -516,9 +489,7 @@ if True:
       run_args += ["--jit"]
     if args.baseline:
       run_args += ["--baseline"]
-    run_optimizing = False
-    if args.optimizing:
-      run_optimizing = True
+    run_optimizing = args.optimizing
     if args.no_verify:
       run_args += ["--no-verify"]
     if args.verify_soft_fail:
@@ -534,36 +505,27 @@ if True:
       run_args += ["--external-log-tags"]
     if args.invoke_with:
       run_args += [f'--invoke-with "{what}"' for what in args.invoke_with]
-    create_runner = False
-    never_clean = False
-    if args.create_runner:
+    create_runner = args.create_runner
+    if create_runner:
       run_args += ["--create-runner --dry-run"]
       dev_mode = True
-      never_clean = True
-      create_runner = True
-    if args.dev:
-      dev_mode = True
-    chroot = ""
-    if args.chroot:
-      chroot = args.chroot
-      run_args += [f'--chroot "{args.chroot}"']
+    dev_mode = dev_mode or args.dev
+    chroot = args.chroot or ""
+    if chroot:
+      run_args += [f'--chroot "{chroot}"']
     if args.simpleperf:
       run_args += ["--simpleperf"]
-    android_root = "/system"
+    android_root = args.android_root or "/system"
     if args.android_root:
-      android_root = args.android_root
-      run_args += [f'--android-root "{args.android_root}"']
+      run_args += [f'--android-root "{android_root}"']
     if args.android_art_root:
       run_args += [f'--android-art-root "{args.android_art_root}"']
     if args.android_tzdata_root:
       run_args += [f'--android-tzdata-root "{args.android_tzdata_root}"']
-    update_mode = False
-    if args.update:
-      update_mode = True
-    suffix64 = ""
+    update_mode = args.update
+    suffix64 = "64" if args.is64bit else ""
     if args.is64bit:
       run_args += ["--64"]
-      suffix64 = "64"
     host_lib_root = ANDROID_HOST_OUT
     if args.bionic:
       # soong linux_bionic builds are 64bit only.
@@ -572,26 +534,18 @@ if True:
       target_mode = False
       DEX_LOCATION = tmp_dir
       host_lib_root = f"{OUT_DIR}/soong/host/linux_bionic-x86"
-    if args.timeout:
-      timeout = args.timeout
-    trace = False
-    if args.trace:
-      trace = True
-    trace_stream = False
-    if args.stream:
-      trace_stream = True
-    always_clean = False
-    if args.always_clean:
-      always_clean = True
-    if args.never_clean:
-      never_clean = True
+
+    timeout = args.timeout or timeout
+    trace = args.trace
+    trace_stream = args.stream
+    always_clean = args.always_clean
+    never_clean = create_runner or args.never_clean
     if args.dex2oat_swap:
       run_args += ["--dex2oat-swap"]
     if args.instruction_set_features:
       run_args += [f'--instruction-set-features "{args.instruction_set_features}"']
-    bisection_search = False
-    if args.bisection_search:
-      bisection_search = True
+
+    bisection_search = args.bisection_search
     if args.vdex:
       run_args += ["--vdex"]
     if args.dm:

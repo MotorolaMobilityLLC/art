@@ -629,7 +629,7 @@ static void VMDebug_setAllocTrackerStackDepth(JNIEnv* env, jclass, jint stack_de
 }
 
 static void VMDebug_setCurrentProcessName(JNIEnv* env, jclass, jstring process_name) {
-  ScopedFastNativeObjectAccess soa(env);
+  ScopedObjectAccess soa(env);
 
   // Android application ID naming convention states:
   // "The name can contain uppercase or lowercase letters, numbers, and underscores ('_')"
@@ -640,7 +640,7 @@ static void VMDebug_setCurrentProcessName(JNIEnv* env, jclass, jstring process_n
 }
 
 static void VMDebug_addApplication(JNIEnv* env, jclass, jstring package_name) {
-  ScopedFastNativeObjectAccess soa(env);
+  ScopedObjectAccess soa(env);
 
   // Android application ID naming convention states:
   // "The name can contain uppercase or lowercase letters, numbers, and underscores ('_')"
@@ -651,7 +651,7 @@ static void VMDebug_addApplication(JNIEnv* env, jclass, jstring package_name) {
 }
 
 static void VMDebug_removeApplication(JNIEnv* env, jclass, jstring package_name) {
-  ScopedFastNativeObjectAccess soa(env);
+  ScopedObjectAccess soa(env);
 
   // Android application ID naming convention states:
   // "The name can contain uppercase or lowercase letters, numbers, and underscores ('_')"
@@ -662,12 +662,12 @@ static void VMDebug_removeApplication(JNIEnv* env, jclass, jstring package_name)
 }
 
 static void VMDebug_setWaitingForDebugger(JNIEnv* env, jclass, jboolean waiting) {
-  ScopedFastNativeObjectAccess soa(env);
+  ScopedObjectAccess soa(env);
   Runtime::Current()->GetRuntimeCallbacks()->SetWaitingForDebugger(waiting);
 }
 
 static void VMDebug_setUserId(JNIEnv* env, jclass, jint user_id) {
-  ScopedFastNativeObjectAccess soa(env);
+  ScopedObjectAccess soa(env);
   Runtime::Current()->GetRuntimeCallbacks()->SetUserId(user_id);
 }
 

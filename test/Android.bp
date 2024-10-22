@@ -1381,7 +1381,7 @@ csuite_test {
 
 filegroup {
     name: "art-gtest-jars",
-    srcs: [
+    device_common_srcs: [
         ":art-gtest-jars-AbstractMethod",
         ":art-gtest-jars-AllFields",
         ":art-gtest-jars-ArrayClassWithUnresolvedComponent",
@@ -1720,7 +1720,7 @@ genrule_defaults {
 }
 
 // A copy of Main with the classes.dex stripped for the oat file assistant tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MainStripped",
     srcs: [":art-gtest-jars-Main"],
     cmd: "$(location zip2zip) -i $(in) -o $(out) -x 'classes*.dex'",
@@ -1729,7 +1729,7 @@ genrule {
 }
 
 // An empty.dex that is empty and uncompressed for the dex2oat tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MainEmptyUncompressed",
     srcs: ["Main/empty.dex"],
     cmd: "$(location soong_zip) -j -L 0 -o $(out) -f $(in)",
@@ -1738,7 +1738,7 @@ genrule {
 }
 
 // An empty.dex that is empty and uncompressed and aligned for the dex2oat tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MainEmptyUncompressedAligned",
     defaults: ["art-gtest-jars-align-defaults"],
     srcs: [":art-gtest-jars-MainEmptyUncompressed"],
@@ -1746,7 +1746,7 @@ genrule {
 }
 
 // A copy of Main with the classes.dex uncompressed for the dex2oat tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MainUncompressed",
     defaults: ["art-gtest-jars-uncompress-defaults"],
     srcs: [":art-gtest-jars-Main"],
@@ -1754,7 +1754,7 @@ genrule {
 }
 
 // A copy of Main with the classes.dex uncompressed and aligned for the dex2oat tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MainUncompressedAligned",
     defaults: ["art-gtest-jars-align-defaults"],
     srcs: [":art-gtest-jars-MainUncompressed"],
@@ -1773,7 +1773,7 @@ java_library {
 }
 
 // A copy of MultiDex with the classes.dex uncompressed for the OatFile tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MultiDexUncompressed",
     defaults: ["art-gtest-jars-uncompress-defaults"],
     srcs: [":art-gtest-jars-MultiDex"],
@@ -1781,7 +1781,7 @@ genrule {
 }
 
 // A copy of MultiDex with the classes.dex uncompressed and aligned for the OatFile tests.
-genrule {
+java_genrule {
     name: "art-gtest-jars-MultiDexUncompressedAligned",
     defaults: ["art-gtest-jars-align-defaults"],
     srcs: [":art-gtest-jars-MultiDexUncompressed"],

@@ -165,13 +165,27 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
        api_level_(api_level == 0 ? std::numeric_limits<uint32_t>::max() : api_level) {
   }
 
-  void UninstantiableError(const char* descriptor) {
-    Fail(VerifyError::VERIFY_ERROR_NO_CLASS) << "Could not create precise reference for "
-                                             << "non-instantiable klass " << descriptor;
+  void FinalAbstractClassError(ObjPtr<mirror::Class> klass) REQUIRES_SHARED(Locks::mutator_lock_) {
+    // Note: We reuse NO_CLASS as the instruction we're checking shall throw an exception at
+    // runtime if executed. A final abstract class shall fail verification, so no instances can
+    // be created and therefore instance field or method access can be reached only for a null
+    // reference and throw NPE. All other instructions where we check for final abstract class
+    // shall throw `VerifyError`. (But we can also hit OOME/SOE while creating the exception.)
+    std::string temp;
+    const char* descriptor = klass->GetDescriptor(&temp);
+    Fail(VerifyError::VERIFY_ERROR_NO_CLASS)
+        << "Final abstract class used in a context that requires a verified class: " << descriptor;
   }
-  static bool IsInstantiableOrPrimitive(ObjPtr<mirror::Class> klass)
+
+  void CheckForFinalAbstractClass(ObjPtr<mirror::Class> klass)
       REQUIRES_SHARED(Locks::mutator_lock_) {
-    return klass->IsInstantiable() || klass->IsPrimitive();
+    if (UNLIKELY(klass->IsFinal() &&
+                 klass->IsAbstract() &&
+                 !klass->IsInterface() &&
+                 !klass->IsPrimitive() &&
+                 !klass->IsArrayClass())) {
+      FinalAbstractClassError(klass);
+    }
   }
 
   // Is the method being verified a constructor? See the comment on the field.
@@ -670,22 +684,6 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
 
   const RegType& DetermineCat1Constant(int32_t value)
       REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // Try to create a register type from the given class. In case a precise type is requested, but
-  // the class is not instantiable, a soft error (of type NO_CLASS) will be enqueued and a
-  // non-precise reference will be returned.
-  // Note: we reuse NO_CLASS as this will throw an exception at runtime, when the failing class is
-  //       actually touched.
-  const RegType& FromClass(const char* descriptor, ObjPtr<mirror::Class> klass, bool precise)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    DCHECK(klass != nullptr);
-    if (precise && !klass->IsInstantiable() && !klass->IsPrimitive()) {
-      Fail(VerifyError::VERIFY_ERROR_NO_CLASS) << "Could not create precise reference for "
-          << "non-instantiable klass " << descriptor;
-      precise = false;
-    }
-    return reg_types_.FromClass(descriptor, klass, precise);
-  }
 
   ALWAYS_INLINE bool FailOrAbort(bool condition, const char* error_msg, uint32_t work_insn_idx);
 
@@ -3557,11 +3555,6 @@ const RegType& MethodVerifier<kVerifierDebug>::ResolveClass(dex::TypeIndex class
   const RegType* result = nullptr;
   if (klass != nullptr) {
     bool precise = klass->CannotBeAssignedFromOtherTypes();
-    if (precise && !IsInstantiableOrPrimitive(klass)) {
-      const char* descriptor = dex_file_->GetTypeDescriptor(class_idx);
-      UninstantiableError(descriptor);
-      precise = false;
-    }
     result = reg_types_.FindClass(klass, precise);
     if (result == nullptr) {
       const char* descriptor = dex_file_->GetTypeDescriptor(class_idx);
@@ -3682,6 +3675,8 @@ bool MethodVerifier<kVerifierDebug>::HandleMoveException(const Instruction* inst
       Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unable to find exception handler";
       return std::make_pair(true, &reg_types_.Conflict());
     }
+    DCHECK(common_super->HasClass());
+    CheckForFinalAbstractClass(common_super->GetClass());
     return std::make_pair(true, common_super);
   };
   auto result = caught_exc_type_fn();
@@ -3887,8 +3882,8 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgsFromIterator(
       if (res_method != nullptr && !res_method->IsMiranda()) {
         ObjPtr<mirror::Class> klass = res_method->GetDeclaringClass();
         std::string temp;
-        res_method_class = &FromClass(klass->GetDescriptor(&temp), klass,
-                                      klass->CannotBeAssignedFromOtherTypes());
+        res_method_class = &reg_types_.FromClass(
+            klass->GetDescriptor(&temp), klass, klass->CannotBeAssignedFromOtherTypes());
       } else {
         const uint32_t method_idx = GetMethodIdxOfInvoke(inst);
         const dex::TypeIndex class_idx = dex_file_->GetMethodId(method_idx).class_idx_;
@@ -4133,16 +4128,25 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgs(
     }
   }
 
+  ArtMethod* verified_method;
   if (UNLIKELY(method_type == METHOD_POLYMORPHIC)) {
     // Process the signature of the calling site that is invoking the method handle.
     dex::ProtoIndex proto_idx(inst->VRegH());
     DexFileParameterIterator it(*dex_file_, dex_file_->GetProtoId(proto_idx));
-    return VerifyInvocationArgsFromIterator(&it, inst, method_type, is_range, res_method);
+    verified_method =
+        VerifyInvocationArgsFromIterator(&it, inst, method_type, is_range, res_method);
   } else {
     // Process the target method's signature.
     MethodParamListDescriptorIterator it(res_method);
-    return VerifyInvocationArgsFromIterator(&it, inst, method_type, is_range, res_method);
+    verified_method =
+        VerifyInvocationArgsFromIterator(&it, inst, method_type, is_range, res_method);
   }
+
+  if (verified_method != nullptr && !verified_method->GetDeclaringClass()->IsInterface()) {
+    CheckForFinalAbstractClass(res_method->GetDeclaringClass());
+  }
+
+  return verified_method;
 }
 
 template <bool kVerifierDebug>
@@ -4546,10 +4550,10 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(const RegType& obj_ty
     // Cannot infer and check type, however, access will cause null pointer exception.
     // Fall through into a few last soft failure checks below.
   } else {
-    std::string temp;
     ObjPtr<mirror::Class> klass = field->GetDeclaringClass();
-    const RegType& field_klass =
-        FromClass(klass->GetDescriptor(&temp), klass, klass->CannotBeAssignedFromOtherTypes());
+    std::string temp;
+    const RegType& field_klass = reg_types_.FromClass(
+        klass->GetDescriptor(&temp), klass, klass->CannotBeAssignedFromOtherTypes());
     if (obj_type.IsUninitializedTypes()) {
       // Field accesses through uninitialized references are only allowable for constructors where
       // the field is declared in this class.
@@ -4649,6 +4653,7 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
     }
   }
   if (field != nullptr) {
+    CheckForFinalAbstractClass(field->GetDeclaringClass());
     if (kAccType == FieldAccessType::kAccPut) {
       if (field->IsFinal() && field->GetDeclaringClass() != GetDeclaringClass().GetClass()) {
         Fail(VERIFY_ERROR_ACCESS_FIELD) << "cannot modify final field " << field->PrettyField()

@@ -463,12 +463,9 @@ ArtMethod* RefineTargetMethod(Thread* self,
           target_method, kRuntimePointerSize);
     }
   } else if (handle_kind == mirror::MethodHandle::Kind::kInvokeDirect) {
-    // String constructors are a special case, they are replaced with
-    // StringFactory methods.
-    if (target_method->IsStringConstructor()) {
-      DCHECK(handle_type->GetRType()->IsStringClass());
-      return WellKnownClasses::StringInitToStringFactory(target_method);
-    }
+    // String constructors are replaced with static StringFactory methods when a MethodHandle
+    // object is created.
+    DCHECK(!target_method->IsStringConstructor());
   } else if (handle_kind == mirror::MethodHandle::Kind::kInvokeSuper) {
     // Note that we're not dynamically dispatching on the type of the receiver
     // here. We use the static type of the "receiver" object that we've

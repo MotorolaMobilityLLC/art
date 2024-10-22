@@ -102,6 +102,7 @@
   V(AtomicLongVMSupportsCS8, "Ljava/util/concurrent/atomic/AtomicLong;", "VMSupportsCS8", "()Z") \
   V(ClassGetNameNative, "Ljava/lang/Class;", "getNameNative", "()Ljava/lang/String;") \
   V(DoubleLongBitsToDouble, "Ljava/lang/Double;", "longBitsToDouble", "(J)D") \
+  V(ExecutableGetParameterTypesInternal, "Ljava/lang/reflect/Executable;", "getParameterTypesInternal", "()[Ljava/lang/Class;") \
   V(FloatFloatToRawIntBits, "Ljava/lang/Float;", "floatToRawIntBits", "(F)I") \
   V(FloatIntBitsToFloat, "Ljava/lang/Float;", "intBitsToFloat", "(I)F") \
   V(ObjectInternalClone, "Ljava/lang/Object;", "internalClone", "()Ljava/lang/Object;") \

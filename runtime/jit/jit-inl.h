@@ -30,13 +30,10 @@ namespace jit {
 inline void Jit::AddSamples(Thread* self, ArtMethod* method) {
   if (method->CounterIsHot()) {
     if (method->IsMemorySharedMethod()) {
-      // Intrinsics are special and will be considered hot from the first call.
-      if (!method->IsIntrinsic()) {
-        if (self->DecrementSharedMethodHotness() == 0) {
-          self->ResetSharedMethodHotness();
-        } else {
-          return;
-        }
+      if (self->DecrementSharedMethodHotness() == 0) {
+        self->ResetSharedMethodHotness();
+      } else {
+        return;
       }
     } else {
       method->ResetCounter(Runtime::Current()->GetJITOptions()->GetWarmupThreshold());

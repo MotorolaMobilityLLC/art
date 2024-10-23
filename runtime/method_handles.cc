@@ -466,6 +466,11 @@ ArtMethod* RefineTargetMethod(Thread* self,
     // String constructors are replaced with static StringFactory methods when a MethodHandle
     // object is created.
     DCHECK(!target_method->IsStringConstructor());
+    ObjPtr<mirror::Object> receiver(shadow_frame.GetVRegReference(receiver_reg));
+    if (receiver == nullptr) {
+      ThrowNullPointerException("null receiver");
+      return nullptr;
+    }
   } else if (handle_kind == mirror::MethodHandle::Kind::kInvokeSuper) {
     // Note that we're not dynamically dispatching on the type of the receiver
     // here. We use the static type of the "receiver" object that we've

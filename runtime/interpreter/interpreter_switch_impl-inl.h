@@ -2035,7 +2035,6 @@ void ExecuteSwitchImplCpp(SwitchImplContext* ctx) {
   DCHECK(!shadow_frame.GetForceRetryInstruction())
       << "Entered interpreter from invoke without retry instruction being handled!";
 
-  bool const interpret_one_instruction = ctx->interpret_one_instruction;
   while (true) {
     const Instruction* const inst = next;
     dex_pc = inst->GetDexPc(insns);
@@ -2054,7 +2053,7 @@ void ExecuteSwitchImplCpp(SwitchImplContext* ctx) {
           next = inst->RelativeAt(Instruction::SizeInCodeUnits(Instruction::FORMAT));             \
           success = OP_##OPCODE_NAME<transaction_active>(                                         \
               ctx, instrumentation, self, shadow_frame, dex_pc, inst, inst_data, next, exit);     \
-          if (success && LIKELY(!interpret_one_instruction)) {                                    \
+          if (success) {                                                                          \
             continue;                                                                             \
           }                                                                                       \
           break;                                                                                  \
@@ -2075,11 +2074,6 @@ void ExecuteSwitchImplCpp(SwitchImplContext* ctx) {
         return;  // Locally unhandled exception - return to caller.
       }
       // Continue execution in the catch block.
-    }
-    if (interpret_one_instruction) {
-      shadow_frame.SetDexPC(next->GetDexPc(insns));  // Record where we stopped.
-      ctx->result = ctx->result_register;
-      return;
     }
   }
 }  // NOLINT(readability/fn_size)

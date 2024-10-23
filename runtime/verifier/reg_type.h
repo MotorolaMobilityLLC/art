@@ -39,8 +39,8 @@ class Class;
 class ClassLoader;
 }  // namespace mirror
 
+class ArenaAllocator;
 class ArenaBitVector;
-class ScopedArenaAllocator;
 
 namespace verifier {
 
@@ -257,8 +257,8 @@ class RegType {
     return ::operator new(size);
   }
 
-  static void* operator new(size_t size, ArenaAllocator* allocator) = delete;
-  static void* operator new(size_t size, ScopedArenaAllocator* allocator);
+  static void* operator new(size_t size, ArenaAllocator* allocator);
+  static void* operator new(size_t size, ScopedArenaAllocator* allocator) = delete;
 
   enum class AssignmentType {
     kBoolean,

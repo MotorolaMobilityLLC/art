@@ -1711,8 +1711,7 @@ void Jit::MaybeEnqueueCompilation(ArtMethod* method, Thread* self) {
   }
 
   static constexpr size_t kIndividualSharedMethodHotnessThreshold = 0x3f;
-  // Intrinsics are always in the boot image and considered hot.
-  if (method->IsMemorySharedMethod() && !method->IsIntrinsic()) {
+  if (method->IsMemorySharedMethod()) {
     MutexLock mu(self, lock_);
     auto it = shared_method_counters_.find(method);
     if (it == shared_method_counters_.end()) {

@@ -5919,6 +5919,9 @@
     },
     {
       "name": "art-run-test-859-checker-var-handles-intrinsics"
+    },
+    {
+      "name": "libnativebridge-lazy-tests"
     }
   ]
 }

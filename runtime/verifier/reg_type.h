@@ -75,7 +75,6 @@ class RegType {
   virtual bool IsUnresolvedMergedReference() const { return false; }
   virtual bool IsUnresolvedSuperClass() const { return false; }
   virtual bool IsReference() const { return false; }
-  virtual bool IsPreciseReference() const { return false; }
   virtual bool IsPreciseConstant() const { return false; }
   virtual bool IsPreciseConstantLo() const { return false; }
   virtual bool IsPreciseConstantHi() const { return false; }
@@ -884,29 +883,6 @@ class ReferenceType final : public RegType {
   }
 
   bool IsReference() const override { return true; }
-
-  bool IsNonZeroReferenceTypes() const override { return true; }
-
-  bool HasClassVirtual() const override { return true; }
-
-  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
-  AssignmentType GetAssignmentTypeImpl() const override {
-    return AssignmentType::kReference;
-  }
-};
-
-// A type of register holding a reference to an Object of type GetClass and only
-// an object of that
-// type.
-class PreciseReferenceType final : public RegType {
- public:
-  PreciseReferenceType(Handle<mirror::Class> klass,
-                       const std::string_view& descriptor,
-                       uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  bool IsPreciseReference() const override { return true; }
 
   bool IsNonZeroReferenceTypes() const override { return true; }
 

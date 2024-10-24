@@ -2717,7 +2717,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       VerifyAGet(inst, reg_types_.LongLo(), true);
       break;
     case Instruction::AGET_OBJECT:
-      VerifyAGet(inst, reg_types_.JavaLangObject(false), false);
+      VerifyAGet(inst, reg_types_.JavaLangObject(), false);
       break;
 
     case Instruction::APUT_BOOLEAN:
@@ -2739,7 +2739,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       VerifyAPut(inst, reg_types_.LongLo(), true);
       break;
     case Instruction::APUT_OBJECT:
-      VerifyAPut(inst, reg_types_.JavaLangObject(false), false);
+      VerifyAPut(inst, reg_types_.JavaLangObject(), false);
       break;
 
     case Instruction::IGET_BOOLEAN:
@@ -2761,8 +2761,8 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.LongLo(), true, false);
       break;
     case Instruction::IGET_OBJECT:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.JavaLangObject(false), false,
-                                                    false);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(
+          inst, reg_types_.JavaLangObject(), false, false);
       break;
 
     case Instruction::IPUT_BOOLEAN:
@@ -2784,8 +2784,8 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.LongLo(), true, false);
       break;
     case Instruction::IPUT_OBJECT:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.JavaLangObject(false), false,
-                                                    false);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(
+          inst, reg_types_.JavaLangObject(), false, false);
       break;
 
     case Instruction::SGET_BOOLEAN:
@@ -2807,8 +2807,8 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.LongLo(), true, true);
       break;
     case Instruction::SGET_OBJECT:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.JavaLangObject(false), false,
-                                                    true);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(
+          inst, reg_types_.JavaLangObject(), false, true);
       break;
 
     case Instruction::SPUT_BOOLEAN:
@@ -2830,8 +2830,8 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.LongLo(), true, true);
       break;
     case Instruction::SPUT_OBJECT:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.JavaLangObject(false), false,
-                                                    true);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(
+          inst, reg_types_.JavaLangObject(), false, true);
       break;
 
     case Instruction::INVOKE_VIRTUAL:
@@ -3554,11 +3554,10 @@ const RegType& MethodVerifier<kVerifierDebug>::ResolveClass(dex::TypeIndex class
   }
   const RegType* result = nullptr;
   if (klass != nullptr) {
-    bool precise = klass->CannotBeAssignedFromOtherTypes();
-    result = reg_types_.FindClass(klass, precise);
+    result = reg_types_.FindClass(klass);
     if (result == nullptr) {
       const char* descriptor = dex_file_->GetTypeDescriptor(class_idx);
-      result = reg_types_.InsertClass(descriptor, klass, precise);
+      result = reg_types_.InsertClass(descriptor, klass);
     }
   } else {
     const char* descriptor = dex_file_->GetTypeDescriptor(class_idx);
@@ -3882,8 +3881,7 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgsFromIterator(
       if (res_method != nullptr && !res_method->IsMiranda()) {
         ObjPtr<mirror::Class> klass = res_method->GetDeclaringClass();
         std::string temp;
-        res_method_class = &reg_types_.FromClass(
-            klass->GetDescriptor(&temp), klass, klass->CannotBeAssignedFromOtherTypes());
+        res_method_class = &reg_types_.FromClass(klass->GetDescriptor(&temp), klass);
       } else {
         const uint32_t method_idx = GetMethodIdxOfInvoke(inst);
         const dex::TypeIndex class_idx = dex_file_->GetMethodId(method_idx).class_idx_;
@@ -4258,8 +4256,7 @@ void MethodVerifier<kVerifierDebug>::VerifyNewArray(const Instruction* inst,
       /* make sure "size" register is valid type */
       work_line_->VerifyRegisterType(this, inst->VRegB_22c(), reg_types_.Integer());
       /* set register type to array class */
-      const RegType& precise_type = reg_types_.FromUninitialized(res_type);
-      work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_22c(), precise_type);
+      work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_22c(), res_type);
     } else {
       DCHECK(!res_type.IsUnresolvedMergedReference());
       // Verify each register. If "arg_count" is bad, VerifyRegisterType() will run off the end of
@@ -4279,8 +4276,7 @@ void MethodVerifier<kVerifierDebug>::VerifyNewArray(const Instruction* inst,
         }
       }
       // filled-array result goes into "result" register
-      const RegType& precise_type = reg_types_.FromUninitialized(res_type);
-      work_line_->SetResultRegisterType(this, precise_type);
+      work_line_->SetResultRegisterType(this, res_type);
     }
   }
 }
@@ -4324,8 +4320,7 @@ void MethodVerifier<kVerifierDebug>::VerifyAGet(const Instruction* inst,
         Fail(VERIFY_ERROR_NO_CLASS) << "cannot verify aget for " << array_type
             << " because of missing class";
         // Approximate with java.lang.Object[].
-        work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_23x(),
-                                                    reg_types_.JavaLangObject(false));
+        work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_23x(), reg_types_.JavaLangObject());
       }
     } else {
       /* verify the class */
@@ -4552,8 +4547,7 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(const RegType& obj_ty
   } else {
     ObjPtr<mirror::Class> klass = field->GetDeclaringClass();
     std::string temp;
-    const RegType& field_klass = reg_types_.FromClass(
-        klass->GetDescriptor(&temp), klass, klass->CannotBeAssignedFromOtherTypes());
+    const RegType& field_klass = reg_types_.FromClass(klass->GetDescriptor(&temp), klass);
     if (obj_type.IsUninitializedTypes()) {
       // Field accesses through uninitialized references are only allowable for constructors where
       // the field is declared in this class.

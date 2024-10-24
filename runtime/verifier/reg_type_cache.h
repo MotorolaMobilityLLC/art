@@ -55,7 +55,7 @@ class LongLoType;
 class MethodVerifier;
 class NullType;
 class PreciseConstType;
-class PreciseReferenceType;
+class ReferenceType;
 class RegType;
 class ShortType;
 class UndefinedType;
@@ -82,15 +82,13 @@ class RegTypeCache {
 
   const art::verifier::RegType& GetFromId(uint16_t id) const;
   // Find a RegType, returns null if not found.
-  const RegType* FindClass(ObjPtr<mirror::Class> klass, bool precise) const
+  const RegType* FindClass(ObjPtr<mirror::Class> klass) const
       REQUIRES_SHARED(Locks::mutator_lock_);
   // Insert a new class with a specified descriptor, must not already be in the cache.
-  const RegType* InsertClass(const std::string_view& descriptor,
-                             ObjPtr<mirror::Class> klass,
-                             bool precise)
+  const RegType* InsertClass(const std::string_view& descriptor, ObjPtr<mirror::Class> klass)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  // Get or insert a reg type for a description, klass, and precision.
-  const RegType& FromClass(const char* descriptor, ObjPtr<mirror::Class> klass, bool precise)
+  // Get or insert a reg type for a descriptor and klass.
+  const RegType& FromClass(const char* descriptor, ObjPtr<mirror::Class> klass)
       REQUIRES_SHARED(Locks::mutator_lock_);
   const ConstantType& FromCat1Const(int32_t value, bool precise)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -133,12 +131,12 @@ class RegTypeCache {
   const ConflictType& Conflict();
   const NullType& Null();
 
-  const PreciseReferenceType& JavaLangClass() REQUIRES_SHARED(Locks::mutator_lock_);
-  const PreciseReferenceType& JavaLangString() REQUIRES_SHARED(Locks::mutator_lock_);
-  const PreciseReferenceType& JavaLangInvokeMethodHandle() REQUIRES_SHARED(Locks::mutator_lock_);
-  const PreciseReferenceType& JavaLangInvokeMethodType() REQUIRES_SHARED(Locks::mutator_lock_);
-  const RegType& JavaLangThrowable() REQUIRES_SHARED(Locks::mutator_lock_);
-  const RegType& JavaLangObject(bool precise) REQUIRES_SHARED(Locks::mutator_lock_);
+  const ReferenceType& JavaLangClass() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ReferenceType& JavaLangString() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ReferenceType& JavaLangInvokeMethodHandle() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ReferenceType& JavaLangInvokeMethodType() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ReferenceType& JavaLangThrowable() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ReferenceType& JavaLangObject() REQUIRES_SHARED(Locks::mutator_lock_);
 
   const UninitializedType& Uninitialized(const RegType& type, uint32_t allocation_pc)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -188,7 +186,7 @@ class RegTypeCache {
   void FillPrimitiveAndSmallConstantTypes() REQUIRES_SHARED(Locks::mutator_lock_);
   ObjPtr<mirror::Class> ResolveClass(const char* descriptor, Handle<mirror::ClassLoader> loader)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  bool MatchDescriptor(size_t idx, const std::string_view& descriptor, bool precise)
+  bool MatchDescriptor(size_t idx, const std::string_view& descriptor)
       REQUIRES_SHARED(Locks::mutator_lock_);
   const ConstantType& FromCat1NonSmallConstant(int32_t value, bool precise)
       REQUIRES_SHARED(Locks::mutator_lock_);

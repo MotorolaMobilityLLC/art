@@ -289,7 +289,6 @@ art_gtest_module_names = sorted(art_gtest_user_module_names + art_gtest_eng_only
 # removing them from this set (in order to promote them to
 # presubmits).
 art_gtest_postsubmit_only_module_names = [
-    "art_standalone_dex2oat_cts_tests",
 ]
 
 # ART gtests not supported in MTS.

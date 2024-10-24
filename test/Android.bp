@@ -1337,13 +1337,12 @@ art_cc_test {
     // It seems that only device-tests build can create a valid apex.
     test_suites: [
         "device-tests",
-        "mts-art",
     ],
     test_config: "art-gtests-target-install-apex.xml",
 
     // Support multilib variants (using different suffix per sub-architecture), which is needed on
-    // build targets with secondary architectures, as the MTS test suite packaging logic flattens
-    // all test artifacts into a single `testcases` directory.
+    // build targets with secondary architectures, as the packaging logic for some test suites
+    // flattens all test artifacts into a single `testcases` directory.
     compile_multilib: "both",
     multilib: {
         lib32: {

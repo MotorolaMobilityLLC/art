@@ -392,37 +392,31 @@ const RegType& RegTypeCache::FromUnresolvedSuperClass(const RegType& child) {
       null_handle_, child.GetId(), this, entries_.size()));
 }
 
-const UninitializedType& RegTypeCache::Uninitialized(const RegType& type, uint32_t allocation_pc) {
+const UninitializedType& RegTypeCache::Uninitialized(const RegType& type) {
   UninitializedType* entry = nullptr;
   const std::string_view& descriptor(type.GetDescriptor());
   if (type.IsUnresolvedTypes()) {
     for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
       const RegType* cur_entry = entries_[i];
       if (cur_entry->IsUnresolvedAndUninitializedReference() &&
-          down_cast<const UnresolvedUninitializedRefType*>(cur_entry)->GetAllocationPc()
-              == allocation_pc &&
           (cur_entry->GetDescriptor() == descriptor)) {
         return *down_cast<const UnresolvedUninitializedRefType*>(cur_entry);
       }
     }
     entry = new (&allocator_) UnresolvedUninitializedRefType(null_handle_,
                                                              descriptor,
-                                                             allocation_pc,
                                                              entries_.size());
   } else {
     ObjPtr<mirror::Class> klass = type.GetClass();
     for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
       const RegType* cur_entry = entries_[i];
       if (cur_entry->IsUninitializedReference() &&
-          down_cast<const UninitializedReferenceType*>(cur_entry)
-              ->GetAllocationPc() == allocation_pc &&
           cur_entry->GetClass() == klass) {
         return *down_cast<const UninitializedReferenceType*>(cur_entry);
       }
     }
     entry = new (&allocator_) UninitializedReferenceType(handles_.NewHandle(klass),
                                                          descriptor,
-                                                         allocation_pc,
                                                          entries_.size());
   }
   return AddEntry(entry);

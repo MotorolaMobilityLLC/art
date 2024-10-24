@@ -46,30 +46,6 @@ bool RegisterLine::CheckConstructorReturn(MethodVerifier* verifier) const {
   return this_initialized_;
 }
 
-const RegType& RegisterLine::GetInvocationThis(MethodVerifier* verifier, const Instruction* inst,
-                                               bool allow_failure) {
-  DCHECK(inst->IsInvoke());
-  const size_t args_count = inst->VRegA();
-  if (args_count < 1) {
-    if (!allow_failure) {
-      verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invoke lacks 'this'";
-    }
-    return verifier->GetRegTypeCache()->Conflict();
-  }
-  /* Get the element type of the array held in vsrc */
-  const uint32_t this_reg = inst->VRegC();
-  const RegType& this_type = GetRegisterType(verifier, this_reg);
-  if (!this_type.IsReferenceTypes()) {
-    if (!allow_failure) {
-      verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD)
-          << "tried to get class from non-reference register v" << this_reg
-          << " (type=" << this_type << ")";
-    }
-    return verifier->GetRegTypeCache()->Conflict();
-  }
-  return this_type;
-}
-
 bool RegisterLine::VerifyRegisterTypeWide(MethodVerifier* verifier, uint32_t vsrc,
                                           const RegType& check_type1,
                                           const RegType& check_type2) {
@@ -94,20 +70,47 @@ bool RegisterLine::VerifyRegisterTypeWide(MethodVerifier* verifier, uint32_t vsr
   return true;
 }
 
-void RegisterLine::MarkRefsAsInitialized(MethodVerifier* verifier, const RegType& uninit_type) {
+void RegisterLine::CopyFromLine(const RegisterLine* src) {
+  DCHECK_EQ(num_regs_, src->num_regs_);
+  memcpy(&line_, &src->line_, num_regs_ * sizeof(uint16_t));
+  // Copy `allocation_dex_pcs_`. Note that if the `src` does not have `allocation_dex_pcs_`
+  // allocated, we retain the array allocated for this register line to avoid wasting
+  // memory by allocating a new array later. This means that the `allocation_dex_pcs_` can
+  // be filled with bogus values not tied to a `new-instance` uninitialized type.
+  if (src->allocation_dex_pcs_ != nullptr) {
+    EnsureAllocationDexPcsAvailable();
+    memcpy(allocation_dex_pcs_, src->allocation_dex_pcs_, num_regs_ * sizeof(uint32_t));
+  }
+  monitors_ = src->monitors_;
+  reg_to_lock_depths_ = src->reg_to_lock_depths_;
+  this_initialized_ = src->this_initialized_;
+}
+
+void RegisterLine::MarkRefsAsInitialized(MethodVerifier* verifier, uint32_t vsrc) {
+  const RegType& uninit_type = GetRegisterType(verifier, vsrc);
   DCHECK(uninit_type.IsUninitializedTypes());
   const RegType& init_type = verifier->GetRegTypeCache()->FromUninitialized(uninit_type);
   size_t changed = 0;
-  for (uint32_t i = 0; i < num_regs_; i++) {
-    if (GetRegisterType(verifier, i).Equals(uninit_type)) {
-      line_[i] = init_type.GetId();
-      changed++;
-    }
-  }
   // Is this initializing "this"?
   if (uninit_type.IsUninitializedThisReference() ||
       uninit_type.IsUnresolvedAndUninitializedThisReference()) {
     this_initialized_ = true;
+    for (uint32_t i = 0; i < num_regs_; i++) {
+      if (GetRegisterType(verifier, i).Equals(uninit_type)) {
+        line_[i] = init_type.GetId();
+        changed++;
+      }
+    }
+  } else {
+    DCHECK(NeedsAllocationDexPc(uninit_type));
+    DCHECK(allocation_dex_pcs_ != nullptr);
+    uint32_t dex_pc = allocation_dex_pcs_[vsrc];
+    for (uint32_t i = 0; i < num_regs_; i++) {
+      if (GetRegisterType(verifier, i).Equals(uninit_type) && allocation_dex_pcs_[i] == dex_pc) {
+        line_[i] = init_type.GetId();
+        changed++;
+      }
+    }
   }
   DCHECK_GT(changed, 0u);
 }
@@ -153,15 +156,6 @@ std::string RegisterLine::Dump(MethodVerifier* verifier) const {
                            static_cast<uint64_t>(pairs.second));
   }
   return result;
-}
-
-void RegisterLine::MarkUninitRefsAsInvalid(MethodVerifier* verifier, const RegType& uninit_type) {
-  for (size_t i = 0; i < num_regs_; i++) {
-    if (GetRegisterType(verifier, i).Equals(uninit_type)) {
-      line_[i] = verifier->GetRegTypeCache()->Conflict().GetId();
-      ClearAllRegToLockDepths(i);
-    }
-  }
 }
 
 void RegisterLine::CopyResultRegister1(MethodVerifier* verifier, uint32_t vdst, bool is_reference) {
@@ -432,6 +426,20 @@ bool RegisterLine::MergeRegisters(MethodVerifier* verifier, const RegisterLine* 
           incoming_reg_type, verifier->GetRegTypeCache(), verifier);
       changed = changed || !cur_type.Equals(new_type);
       line_[idx] = new_type.GetId();
+    } else {
+      auto needs_allocation_dex_pc = [&]() {
+        return NeedsAllocationDexPc(verifier->GetRegTypeCache()->GetFromId(line_[idx]));
+      };
+      DCHECK_IMPLIES(needs_allocation_dex_pc(), allocation_dex_pcs_ != nullptr);
+      DCHECK_IMPLIES(needs_allocation_dex_pc(), incoming_line->allocation_dex_pcs_ != nullptr);
+      // Check for allocation dex pc mismatch first to try and avoid costly virtual calls.
+      // For methods without any `new-instance` instructions, the `allocation_dex_pcs_` is null.
+      if (allocation_dex_pcs_ != nullptr &&
+          incoming_line->allocation_dex_pcs_ != nullptr &&
+          allocation_dex_pcs_[idx] != incoming_line->allocation_dex_pcs_[idx] &&
+          needs_allocation_dex_pc()) {
+        line_[idx] = verifier->GetRegTypeCache()->Conflict().GetId();
+      }
     }
   }
   if (monitors_.size() > 0 || incoming_line->monitors_.size() > 0) {

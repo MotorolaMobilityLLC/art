@@ -35,21 +35,6 @@
 namespace art HIDDEN {
 namespace verifier {
 
-ALWAYS_INLINE static inline bool MatchingPrecisionForClass(const RegType* entry, bool precise)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
-  if (entry->IsPreciseReference() == precise) {
-    // We were or weren't looking for a precise reference and we found what we need.
-    return true;
-  } else {
-    if (!precise && entry->GetClass()->CannotBeAssignedFromOtherTypes()) {
-      // We weren't looking for a precise reference, as we're looking up based on a descriptor, but
-      // we found a matching entry based on the descriptor. Return the precise entry in that case.
-      return true;
-    }
-    return false;
-  }
-}
-
 void RegTypeCache::FillPrimitiveAndSmallConstantTypes() {
   entries_.resize(kNumPrimitivesAndSmallConstants);
   for (int32_t value = kMinSmallConstant; value <= kMaxSmallConstant; ++value) {
@@ -140,17 +125,12 @@ const RegType& RegTypeCache::RegTypeFromPrimitiveType(Primitive::Type prim_type)
   }
 }
 
-bool RegTypeCache::MatchDescriptor(size_t idx, const std::string_view& descriptor, bool precise) {
+bool RegTypeCache::MatchDescriptor(size_t idx, const std::string_view& descriptor) {
   const RegType* entry = entries_[idx];
   if (descriptor != entry->descriptor_) {
     return false;
   }
-  if (entry->HasClass()) {
-    return MatchingPrecisionForClass(entry, precise);
-  }
-  // There is no notion of precise unresolved references, the precise information is just dropped
-  // on the floor.
-  DCHECK(entry->IsUnresolvedReference());
+  DCHECK(entry->IsReference() || entry->IsUnresolvedReference());
   return true;
 }
 
@@ -183,7 +163,7 @@ const RegType& RegTypeCache::From(Handle<mirror::ClassLoader> loader, const char
   // Try looking up the class in the cache first. We use a std::string_view to avoid
   // repeated strlen operations on the descriptor.
   for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
-    if (MatchDescriptor(i, sv_descriptor, /* precise= */ false)) {
+    if (MatchDescriptor(i, sv_descriptor)) {
       return *(entries_[i]);
     }
   }
@@ -191,29 +171,9 @@ const RegType& RegTypeCache::From(Handle<mirror::ClassLoader> loader, const char
   // Try resolving class.
   ObjPtr<mirror::Class> klass = ResolveClass(descriptor, loader);
   if (klass != nullptr) {
-    // Create a precise type if the class cannot be assigned from other types
-    // (final classes, arrays of final classes and primitive arrays, see
-    // `Class::CannotBeAssignedFromOtherTypes()`; primitive types should not
-    // reach this code).
     DCHECK(!klass->IsPrimitive());
-    RegType* entry;
-    // Create an imprecise type if we can't tell for a fact that it is precise.
-    if (klass->CannotBeAssignedFromOtherTypes()) {
-      // Note: The class can be abstract. Array classes are marked as abstract (and
-      // final) whether they can be assigned from other classes or not. Additionally,
-      // we can encounter a class that's both `abstract` and `final` and this shall
-      // not result in verification failures when referencing it in some contexts
-      // even though such class shall be marked as erroneous during verification.
-      DCHECK(klass->IsFinal());
-      DCHECK(!klass->IsInterface());
-      entry = new (&allocator_) PreciseReferenceType(handles_.NewHandle(klass),
-                                                     AddString(sv_descriptor),
-                                                     entries_.size());
-    } else {
-      entry = new (&allocator_) ReferenceType(handles_.NewHandle(klass),
-                                              AddString(sv_descriptor),
-                                              entries_.size());
-    }
+    RegType* entry = new (&allocator_) ReferenceType(
+        handles_.NewHandle(klass), AddString(sv_descriptor), entries_.size());
     return AddEntry(entry);
   } else {  // Class not resolved.
     // We tried loading the class and failed, this might get an exception raised
@@ -242,46 +202,35 @@ const RegType& RegTypeCache::MakeUnresolvedReference() {
       null_handle_, AddString("a"), entries_.size()));
 }
 
-const RegType* RegTypeCache::FindClass(ObjPtr<mirror::Class> klass, bool precise) const {
+const RegType* RegTypeCache::FindClass(ObjPtr<mirror::Class> klass) const {
   DCHECK(klass != nullptr);
   if (klass->IsPrimitive()) {
-    // Note: precise isn't used for primitive classes. A char is assignable to an int. All
-    // primitive classes are final.
     return &RegTypeFromPrimitiveType(klass->GetPrimitiveType());
   }
   for (auto& pair : klass_entries_) {
     const Handle<mirror::Class> reg_klass = pair.first;
+    const RegType* reg_type = pair.second;
     if (reg_klass.Get() == klass) {
-      const RegType* reg_type = pair.second;
-      if (MatchingPrecisionForClass(reg_type, precise)) {
-        return reg_type;
-      }
+      return reg_type;
     }
   }
   return nullptr;
 }
 
 const RegType* RegTypeCache::InsertClass(const std::string_view& descriptor,
-                                         ObjPtr<mirror::Class> klass,
-                                         bool precise) {
+                                         ObjPtr<mirror::Class> klass) {
   // No reference to the class was found, create new reference.
-  DCHECK(FindClass(klass, precise) == nullptr);
-  RegType* const reg_type = precise
-      ? static_cast<RegType*>(
-          new (&allocator_) PreciseReferenceType(handles_.NewHandle(klass),
-                                                 descriptor,
-                                                 entries_.size()))
-      : new (&allocator_) ReferenceType(handles_.NewHandle(klass), descriptor, entries_.size());
+  DCHECK(FindClass(klass) == nullptr);
+  RegType* const reg_type =
+      new (&allocator_) ReferenceType(handles_.NewHandle(klass), descriptor, entries_.size());
   return &AddEntry(reg_type);
 }
 
-const RegType& RegTypeCache::FromClass(const char* descriptor,
-                                       ObjPtr<mirror::Class> klass,
-                                       bool precise) {
+const RegType& RegTypeCache::FromClass(const char* descriptor, ObjPtr<mirror::Class> klass) {
   DCHECK(klass != nullptr);
-  const RegType* reg_type = FindClass(klass, precise);
+  const RegType* reg_type = FindClass(klass);
   if (reg_type == nullptr) {
-    reg_type = InsertClass(AddString(std::string_view(descriptor)), klass, precise);
+    reg_type = InsertClass(AddString(std::string_view(descriptor)), klass);
   }
   return *reg_type;
 }
@@ -368,14 +317,14 @@ const RegType& RegTypeCache::FromUnresolvedMerge(const RegType& left,
 
     // Is the resolved part a primitive array?
     if (resolved_merged_is_array && !resolved_parts_merged.IsObjectArrayTypes()) {
-      return JavaLangObject(/* precise= */ false);
+      return JavaLangObject();
     }
 
     // Is any part not an array (but exists)?
     if ((!left_unresolved_is_array && left_resolved != &left) ||
         (!right_unresolved_is_array && right_resolved != &right) ||
         !resolved_merged_is_array) {
-      return JavaLangObject(/* precise= */ false);
+      return JavaLangObject();
     }
   }
 
@@ -469,7 +418,6 @@ const RegType& RegTypeCache::FromUninitialized(const RegType& uninit_type) {
   } else {
     ObjPtr<mirror::Class> klass = uninit_type.GetClass();
     if (uninit_type.IsUninitializedThisReference() && !klass->IsFinal()) {
-      // For uninitialized "this reference" look for reference types that are not precise.
       for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
         const RegType* cur_entry = entries_[i];
         if (cur_entry->IsReference() && cur_entry->GetClass() == klass) {
@@ -478,8 +426,7 @@ const RegType& RegTypeCache::FromUninitialized(const RegType& uninit_type) {
       }
       entry = new (&allocator_) ReferenceType(handles_.NewHandle(klass), "", entries_.size());
     } else if (!klass->IsPrimitive()) {
-      // We're uninitialized because of allocation, look or create a precise type as allocations
-      // may only create objects of that type.
+      // We're uninitialized because of allocation, look for or create a reference type.
       // Note: we do not check whether the given klass is actually instantiable (besides being
       //       primitive), that is, we allow interfaces and abstract classes here. The reasoning is
       //       twofold:
@@ -491,13 +438,13 @@ const RegType& RegTypeCache::FromUninitialized(const RegType& uninit_type) {
       //          correct semantics.
       for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
         const RegType* cur_entry = entries_[i];
-        if (cur_entry->IsPreciseReference() && cur_entry->GetClass() == klass) {
+        if (cur_entry->IsReference() && cur_entry->GetClass() == klass) {
           return *cur_entry;
         }
       }
-      entry = new (&allocator_) PreciseReferenceType(handles_.NewHandle(klass),
-                                                     uninit_type.GetDescriptor(),
-                                                     entries_.size());
+      entry = new (&allocator_) ReferenceType(handles_.NewHandle(klass),
+                                              uninit_type.GetDescriptor(),
+                                              entries_.size());
     } else {
       return Conflict();
     }
@@ -603,7 +550,7 @@ const RegType& RegTypeCache::GetComponentType(const RegType& array,
       // reference type.
       return FromDescriptor(loader, descriptor);
     } else {
-      return FromClass(descriptor, klass, klass->CannotBeAssignedFromOtherTypes());
+      return FromClass(descriptor, klass);
     }
   }
 }

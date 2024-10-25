@@ -22,11 +22,18 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <string>
+#include <utility>
+
+#include "android-base/file.h"
 #include "android-base/strings.h"
+#include "app_info.h"
 #include "art_method-inl.h"
 #include "base/compiler_filter.h"
 #include "base/logging.h"  // For VLOG.
 #include "base/pointer_size.h"
+#include "base/safe_map.h"
 #include "base/scoped_arena_containers.h"
 #include "base/stl_util.h"
 #include "base/systrace.h"
@@ -238,7 +245,7 @@ static bool IsProfileEmpty(const std::string& location) {
 
 bool ProfileSaver::IsFirstSave() {
   Thread* self = Thread::Current();
-  SafeMap<std::string, std::string> tracked_locations;
+  SafeMap<std::string, std::pair<std::string, AppInfo::CodeType>> tracked_locations;
   {
     // Make a copy so that we don't hold the lock while doing I/O.
     MutexLock mu(self, *Locks::profiler_lock_);
@@ -250,7 +257,7 @@ bool ProfileSaver::IsFirstSave() {
       return false;
     }
     const std::string& cur_profile = it.first;
-    const std::string& ref_profile = it.second;
+    const std::string& ref_profile = it.second.first;
 
     // Check if any profile is non empty. If so, then this is not the first save.
     if (!IsProfileEmpty(cur_profile) || !IsProfileEmpty(ref_profile)) {
@@ -770,12 +777,26 @@ bool ProfileSaver::ProcessProfilingInfo(bool force_save, /*out*/uint16_t* number
   // Resolve any new registered locations.
   ResolveTrackedLocations();
 
-  SafeMap<std::string, std::set<std::string>> tracked_locations;
+  std::vector<std::pair<std::string, std::set<std::string>>> tracked_locations;
+  SafeMap<std::string, AppInfo::CodeType> profile_to_code_type;
   {
     // Make a copy so that we don't hold the lock while doing I/O.
     MutexLock mu(Thread::Current(), *Locks::profiler_lock_);
-    tracked_locations = tracked_dex_base_locations_;
+    tracked_locations.assign(tracked_dex_base_locations_.begin(),
+                             tracked_dex_base_locations_.end());
+    for (const auto& [key, value] : tracked_profiles_) {
+      profile_to_code_type.Put(key, value.second);
+    }
   }
+
+  // Put "primary.prof" at the end. `artd` relies on the fact that "primary.prof" is the last one to
+  // write when it waits for a profile save to be done.
+  std::sort(tracked_locations.begin(),
+            tracked_locations.end(),
+            [&](const auto& pair1, const auto& pair2) {
+              return profile_to_code_type.Get(pair1.first) != AppInfo::CodeType::kPrimaryApk &&
+                     profile_to_code_type.Get(pair2.first) == AppInfo::CodeType::kPrimaryApk;
+            });
 
   bool profile_file_saved = false;
   if (number_of_new_methods != nullptr) {
@@ -857,6 +878,8 @@ bool ProfileSaver::ProcessProfilingInfo(bool force_save, /*out*/uint16_t* number
         int64_t delta_number_of_classes =
             info.GetNumberOfResolvedClasses() - last_save_number_of_classes;
 
+        // Always write on a forced save. `artd` relies on the fact that profiles are always
+        // written when it waits for a forced profile save to be done.
         if (!force_save &&
             delta_number_of_methods < options_.GetMinMethodsToSave() &&
             delta_number_of_classes < options_.GetMinClassesToSave()) {
@@ -957,11 +980,12 @@ static bool ShouldProfileLocation(const std::string& location, bool profile_aot_
   return true;
 }
 
-void  ProfileSaver::Start(const ProfileSaverOptions& options,
-                          const std::string& output_filename,
-                          jit::JitCodeCache* jit_code_cache,
-                          const std::vector<std::string>& code_paths,
-                          const std::string& ref_profile_filename) {
+void ProfileSaver::Start(const ProfileSaverOptions& options,
+                         const std::string& output_filename,
+                         jit::JitCodeCache* jit_code_cache,
+                         const std::vector<std::string>& code_paths,
+                         const std::string& ref_profile_filename,
+                         AppInfo::CodeType code_type) {
   Runtime* const runtime = Runtime::Current();
   DCHECK(options.IsEnabled());
   DCHECK(runtime->GetJit() != nullptr);
@@ -1014,7 +1038,8 @@ void  ProfileSaver::Start(const ProfileSaverOptions& options,
     // apps which share the same runtime).
     DCHECK_EQ(instance_->jit_code_cache_, jit_code_cache);
     // Add the code_paths to the tracked locations.
-    instance_->AddTrackedLocations(output_filename, code_paths_to_profile, ref_profile_filename);
+    instance_->AddTrackedLocations(
+        output_filename, code_paths_to_profile, ref_profile_filename, code_type);
     return;
   }
 
@@ -1023,7 +1048,8 @@ void  ProfileSaver::Start(const ProfileSaverOptions& options,
       << ". With reference profile: " << ref_profile_filename;
 
   instance_ = new ProfileSaver(options, jit_code_cache);
-  instance_->AddTrackedLocations(output_filename, code_paths_to_profile, ref_profile_filename);
+  instance_->AddTrackedLocations(
+      output_filename, code_paths_to_profile, ref_profile_filename, code_type);
 
   // Create a new thread which does the saving.
   CHECK_PTHREAD_CALL(
@@ -1122,11 +1148,12 @@ static void AddTrackedLocationsToMap(const std::string& output_filename,
 
 void ProfileSaver::AddTrackedLocations(const std::string& output_filename,
                                        const std::vector<std::string>& code_paths,
-                                       const std::string& ref_profile_filename) {
+                                       const std::string& ref_profile_filename,
+                                       AppInfo::CodeType code_type) {
   // Register the output profile and its reference profile.
   auto it = tracked_profiles_.find(output_filename);
   if (it == tracked_profiles_.end()) {
-    tracked_profiles_.Put(output_filename, ref_profile_filename);
+    tracked_profiles_.Put(output_filename, std::make_pair(ref_profile_filename, code_type));
   }
 
   // Add the code paths to the list of tracked location.

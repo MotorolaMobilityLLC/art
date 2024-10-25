@@ -79,6 +79,14 @@ extern "C" mirror::Object* art_quick_read_barrier_mark_introspection_gc_roots(mi
 extern "C" void art_quick_record_entry_trace_event();
 extern "C" void art_quick_record_exit_trace_event();
 
+extern "C" void art_quick_nop_record_entry_trace_event() {
+  return;
+}
+
+extern "C" void art_quick_nop_record_exit_trace_event() {
+  return;
+}
+
 void UpdateReadBarrierEntrypoints(QuickEntryPoints* qpoints, bool is_active) {
   // ARM64 is the architecture with the largest number of core
   // registers (32) that supports the read barrier configuration.
@@ -202,6 +210,16 @@ void InitEntryPoints(JniEntryPoints* jpoints,
     // devices.
     qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
     qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
+  }
+}
+
+void UpdateLowOverheadTraceEntrypoints(QuickEntryPoints* qpoints, bool enable) {
+  if (enable) {
+    qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
+    qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
+  } else {
+    qpoints->SetRecordEntryTraceEvent(art_quick_nop_record_entry_trace_event);
+    qpoints->SetRecordExitTraceEvent(art_quick_nop_record_exit_trace_event);
   }
 }
 

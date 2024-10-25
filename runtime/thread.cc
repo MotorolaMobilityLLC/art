@@ -56,6 +56,7 @@
 #include "base/utils.h"
 #include "class_linker-inl.h"
 #include "class_root-inl.h"
+#include "com_android_art_flags.h"
 #include "debugger.h"
 #include "dex/descriptors_names.h"
 #include "dex/dex_file-inl.h"
@@ -130,6 +131,8 @@
 extern "C" __attribute__((weak)) void* __hwasan_tag_pointer(const volatile void* p,
                                                             unsigned char tag);
 
+namespace art_flags = com::android::art::flags;
+
 namespace art HIDDEN {
 
 using android::base::StringAppendV;
@@ -163,6 +166,11 @@ void InitEntryPoints(JniEntryPoints* jpoints,
                      QuickEntryPoints* qpoints,
                      bool monitor_jni_entry_exit);
 void UpdateReadBarrierEntrypoints(QuickEntryPoints* qpoints, bool is_active);
+void UpdateLowOverheadTraceEntrypoints(QuickEntryPoints* qpoints, bool enable);
+
+void Thread::UpdateTlsLowOverheadTraceEntrypoints(bool enable) {
+  UpdateLowOverheadTraceEntrypoints(&tlsPtr_.quick_entrypoints, enable);
+}
 
 void Thread::SetIsGcMarkingAndUpdateEntrypoints(bool is_marking) {
   CHECK(gUseReadBarrier);
@@ -1063,6 +1071,9 @@ bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_en
 
   ScopedTrace trace3("ThreadList::Register");
   thread_list->Register(this);
+  if (art_flags::always_enable_profile_code()) {
+    UpdateTlsLowOverheadTraceEntrypoints(!Trace::IsTracingEnabled());
+  }
   return true;
 }
 

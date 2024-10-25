@@ -758,6 +758,26 @@ class HeapGraphDumper {
       object_proto->set_self_size(obj->SizeOf());
     }
 
+    const art::gc::Heap* heap = art::Runtime::Current()->GetHeap();
+    const auto* space = heap->FindContinuousSpaceFromObject(obj, /*fail_ok=*/true);
+    auto heap_type = perfetto::protos::pbzero::HeapGraphObject::HEAP_TYPE_APP;
+    if (space != nullptr) {
+      if (space->IsZygoteSpace()) {
+        heap_type = perfetto::protos::pbzero::HeapGraphObject::HEAP_TYPE_ZYGOTE;
+      } else if (space->IsImageSpace() && heap->ObjectIsInBootImageSpace(obj)) {
+        heap_type = perfetto::protos::pbzero::HeapGraphObject::HEAP_TYPE_BOOT_IMAGE;
+      }
+    } else {
+      const auto* los = heap->GetLargeObjectsSpace();
+      if (los->Contains(obj) && los->IsZygoteLargeObject(art::Thread::Current(), obj)) {
+        heap_type = perfetto::protos::pbzero::HeapGraphObject::HEAP_TYPE_ZYGOTE;
+      }
+    }
+    if (heap_type != prev_heap_type_) {
+      object_proto->set_heap_type_delta(heap_type);
+      prev_heap_type_ = heap_type;
+    }
+
     FillReferences(obj, klass, object_proto);
 
     FillFieldValues(obj, klass, object_proto);
@@ -922,6 +942,9 @@ class HeapGraphDumper {
 
   // Id of the previous object that was dumped. Used for delta encoding.
   uint64_t prev_object_id_ = 0;
+  // Heap type of the previous object that was dumped. Used for delta encoding.
+  perfetto::protos::pbzero::HeapGraphObject::HeapType prev_heap_type_ =
+      perfetto::protos::pbzero::HeapGraphObject::HEAP_TYPE_UNKNOWN;
 };
 
 // waitpid with a timeout implemented by ~busy-waiting

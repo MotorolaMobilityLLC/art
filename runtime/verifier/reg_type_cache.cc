@@ -260,8 +260,7 @@ RegTypeCache::RegTypeCache(Thread* self,
                            const DexFile* dex_file,
                            bool can_load_classes,
                            bool can_suspend)
-    : arena_stack_(arena_pool),
-      allocator_(&arena_stack_),
+    : allocator_(arena_pool),
       entries_(allocator_.Adapter(kArenaAllocVerifier)),
       klass_entries_(allocator_.Adapter(kArenaAllocVerifier)),
       handles_(self),
@@ -275,9 +274,10 @@ RegTypeCache::RegTypeCache(Thread* self,
   if (kIsDebugBuild && can_suspend) {
     Thread::Current()->AssertThreadSuspensionIsAllowable(gAborting == 0);
   }
-  // TODO: Why are we using `ScopedArenaAllocator` here instead of the `ArenaAllocator` which
-  // guarantees zero-initialization? We could avoid this `fill_n()` with the `ArenaAllocator`.
-  std::fill_n(entries_for_type_index_, dex_file->NumTypeIds(), nullptr);
+  // `ArenaAllocator` guarantees zero-initialization.
+  DCHECK(std::all_of(entries_for_type_index_,
+                     entries_for_type_index_ + dex_file->NumTypeIds(),
+                     [](const RegType* reg_type) { return reg_type == nullptr; }));
   // The klass_entries_ array does not have primitives or small constants.
   static constexpr size_t kNumReserveEntries = 32;
   klass_entries_.reserve(kNumReserveEntries);

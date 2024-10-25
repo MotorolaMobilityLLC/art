@@ -34,8 +34,8 @@
 namespace art HIDDEN {
 
 const uint8_t ImageHeader::kImageMagic[] = { 'a', 'r', 't', '\n' };
-// Last change: Add intrinsics for Unsafe/JdkUnsafe.{get,put}Int(long[, int]).
-const uint8_t ImageHeader::kImageVersion[] = { '1', '1', '5', '\0' };
+// Use arrays for resolved methods and resolved fields in DexCache.
+const uint8_t ImageHeader::kImageVersion[] = { '1', '1', '6', '\0' };
 
 ImageHeader::ImageHeader(uint32_t image_reservation_size,
                          uint32_t component_count,

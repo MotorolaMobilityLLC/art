@@ -312,7 +312,8 @@ const RegType& RegType::GetSuperClass(RegTypeCache* cache) const {
   if (!IsUnresolvedTypes()) {
     ObjPtr<mirror::Class> super_klass = GetClass()->GetSuperClass();
     if (super_klass != nullptr) {
-      return cache->FromClass(super_klass);
+      std::string temp;
+      return cache->FromClass(super_klass->GetDescriptor(&temp), super_klass);
     } else {
       return cache->Zero();
     }
@@ -704,7 +705,9 @@ const RegType& RegType::Merge(const RegType& incoming_type,
       } else if (incoming_type.GetClass() == join_class) {
         return incoming_type;
       } else {
-        return reg_types->FromClass(join_class);
+        std::string temp;
+        const char* descriptor = join_class->GetDescriptor(&temp);
+        return reg_types->FromClass(descriptor, join_class);
       }
     }
   } else {

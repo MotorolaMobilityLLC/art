@@ -235,14 +235,13 @@ NO_STACK_PROTECTOR
 static JValue ExecuteSwitch(Thread* self,
                             const CodeItemDataAccessor& accessor,
                             ShadowFrame& shadow_frame,
-                            JValue result_register,
-                            bool interpret_one_instruction) REQUIRES_SHARED(Locks::mutator_lock_) {
+                            JValue result_register) REQUIRES_SHARED(Locks::mutator_lock_) {
   Runtime* runtime = Runtime::Current();
   auto switch_impl_cpp = runtime->IsActiveTransaction()
       ? runtime->GetClassLinker()->GetTransactionalInterpreter()
       : reinterpret_cast<const void*>(&ExecuteSwitchImplCpp</*transaction_active=*/ false>);
   return ExecuteSwitchImpl(
-      self, accessor, shadow_frame, result_register, interpret_one_instruction, switch_impl_cpp);
+      self, accessor, shadow_frame, result_register, switch_impl_cpp);
 }
 
 NO_STACK_PROTECTOR
@@ -339,8 +338,7 @@ static inline JValue Execute(
 
   VLOG(interpreter) << "Interpreting " << method->PrettyMethod();
 
-  return ExecuteSwitch(
-      self, accessor, shadow_frame, result_register, /*interpret_one_instruction=*/ false);
+  return ExecuteSwitch(self, accessor, shadow_frame, result_register);
 }
 
 void EnterInterpreterFromInvoke(Thread* self,

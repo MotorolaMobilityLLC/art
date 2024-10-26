@@ -176,51 +176,13 @@ if True:
   if not ANDROID_HOST_OUT:
     export("ANDROID_HOST_OUT", f"{OUT_DIR}/host/linux-x86")
 
-  host_lib_root = ANDROID_HOST_OUT
-  chroot = ""
   info = "info.txt"
   run_cmd = "run"
   test_stdout = "test-stdout.txt"
   test_stderr = "test-stderr.txt"
   cfg_output = "graph.cfg"
-  strace_output = "strace-output.txt"
-  lib = "libartd.so"
-  testlib = "arttestd"
-  run_args = []
-  run_checker = "no"
-
-  quiet = "no"
-  debuggable = "no"
-  prebuild_mode = "yes"
-  target_mode = "yes"
-  dev_mode = "no"
-  create_runner = "no"
-  update_mode = "no"
-  debug_mode = "no"
-  relocate = "no"
-  runtime = "art"
-  usage = "no"
-  suffix64 = ""
-  trace = "false"
-  trace_stream = "false"
-  basic_verify = "false"
-  gc_verify = "false"
-  gc_stress = "false"
-  jvmti_trace_stress = "false"
-  jvmti_field_stress = "false"
-  jvmti_step_stress = "false"
-  jvmti_redefine_stress = "false"
-  strace = "false"
-  always_clean = "no"
-  never_clean = "no"
-  have_image = "yes"
-  android_root = "/system"
-  bisection_search = "no"
-  timeout = ""
-  suspend_timeout = "500000"
-  run_optimizing = "false"
-  dump_cfg = "false"
-  dump_cfg_path = ""
+  run_checker = False
+  debug_mode = False
   # To cause tests to fail fast, limit the file sizes created by dx, dex2oat and
   # ART output to approximately 128MB. This should be more than sufficient
   # for any test while still catching cases of runaway output.
@@ -412,13 +374,14 @@ if True:
   args = argp.parse_args(argv)
 
   if True:
-    if args.host:
-      target_mode = "no"
+    run_args = []
+    target_mode = not args.host
+    if not target_mode:
       DEX_LOCATION = tmp_dir
       run_args += ["--host"]
       os.environ["RUN_MODE"] = "host"
-    if args.quiet:
-      quiet = "yes"
+    quiet = args.quiet
+    usage = False
     if args.use_java_home:
       JAVA_HOME = os.environ.get("JAVA_HOME")
       if JAVA_HOME:
@@ -426,13 +389,17 @@ if True:
         export("JAVAC", f"{JAVA_HOME}/bin/javac -g")
       else:
         error("Passed --use-java-home without JAVA_HOME variable set!")
-        usage = "yes"
+        usage = True
+    prebuild_mode = True
+    runtime = "art"
     if args.jvm:
-      target_mode = "no"
+      target_mode = False
       DEX_LOCATION = tmp_dir
       runtime = "jvm"
-      prebuild_mode = "no"
+      prebuild_mode = False
       run_args += ["--jvm"]
+    lib = "libartd.so"
+    testlib = "arttestd"
     if args.O:
       lib = "libart.so"
       testlib = "arttest"
@@ -440,81 +407,74 @@ if True:
     if args.dalvik:
       lib = "libdvm.so"
       runtime = "dalvik"
-    if args.no_image:
-      have_image = "no"
-    if args.relocate:
-      relocate = "yes"
-    if args.no_relocate:
-      relocate = "no"
+    have_image = not args.no_image
+    relocate = args.relocate and not args.no_relocate
     if args.prebuild:
       run_args += ["--prebuild"]
-      prebuild_mode = "yes"
+      prebuild_mode = True
     if args.strip_dex:
       run_args += ["--strip-dex"]
-    if args.debuggable:
+    debuggable = args.debuggable
+    if debuggable:
       run_args += ["-Xcompiler-option --debuggable"]
-      debuggable = "yes"
     if args.no_prebuild:
       run_args += ["--no-prebuild"]
-      prebuild_mode = "no"
-    if args.gcverify:
-      basic_verify = "true"
-      gc_verify = "true"
-    if args.gcstress:
-      basic_verify = "true"
-      gc_stress = "true"
-    if args.jvmti_step_stress:
-      jvmti_step_stress = "true"
+      prebuild_mode = False
+    basic_verify = gc_verify = args.gcverify
+    gc_stress = args.gcstress
+    if gc_stress:
+        basic_verify = True
+
+    jvmti_step_stress = args.jvmti_step_stress
+    jvmti_redefine_stress = args.jvmti_redefine_stress
+    jvmti_field_stress = args.jvmti_field_stress
+    jvmti_trace_stress = args.jvmti_trace_stress
+
+    if jvmti_step_stress:
       os.environ["JVMTI_STEP_STRESS"] = "true"
-    if args.jvmti_redefine_stress:
-      jvmti_redefine_stress = "true"
+    if jvmti_redefine_stress:
       os.environ["JVMTI_REDEFINE_STRESS"] = "true"
-    if args.jvmti_field_stress:
-      jvmti_field_stress = "true"
+    if jvmti_field_stress:
       os.environ["JVMTI_FIELD_STRESS"] = "true"
-    if args.jvmti_trace_stress:
-      jvmti_trace_stress = "true"
+    if jvmti_trace_stress:
       os.environ["JVMTI_TRACE_STRESS"] = "true"
-    if args.suspend_timeout:
-      suspend_timeout = args.suspend_timeout
+    suspend_timeout = args.suspend_timeout or "500000"
     if args.image:
-      image = args.image
-      run_args += [f'--image "{image}"']
-    if args.Xcompiler_option:
-      run_args += [f'-Xcompiler-option "{option}"' for option in args.Xcompiler_option]
-    if args.runtime_option:
-      run_args += [f'--runtime-option "{option}"' for option in args.runtime_option]
-    if args.gdb_arg:
-      run_args += [f'--gdb-arg "{gdb_arg}"' for gdb_arg in args.gdb_arg]
+      run_args += [f'--image "{args.image}"']
+    run_args.extend([f'-Xcompiler-option "{option}"' for option in args.Xcompiler_option])
+    run_args.extend([f'--runtime-option "{option}"' for option in args.runtime_option])
+    run_args.extend([f'--gdb-arg "{gdb_arg}"' for gdb_arg in args.gdb_arg])
+
     if args.gdb_dex2oat_args:
-      gdb_dex2oat_args = args.gdb_dex2oat_args
-      run_args += [f'--gdb-dex2oat-args="{gdb_dex2oat_args}"']
+      run_args.append(f'--gdb-dex2oat-args="{args.gdb_dex2oat_args}"')
     if args.debug:
-      run_args += ["--debug"]
+      run_args.append("--debug")
     if args.debug_wrap_agent:
-      run_args += ["--debug-wrap-agent"]
-    if args.with_agent:
-      run_args += [f'--with-agent "{arg}"' for arg in args.with_agent]
+      run_args.append("--debug-wrap-agent")
+    run_args.extend([f'--with-agent "{arg}"' for arg in args.with_agent])
+
     if args.debug_agent:
-      run_args += [f'--debug-agent "{args.debug_agent}"']
-    if args.dump_cfg:
-      dump_cfg = "true"
-      dump_cfg_path = args.dump_cfg
+      run_args.append(f'--debug-agent "{args.debug_agent}"')
+
+    dump_cfg = bool(args.dump_cfg)
+    dump_cfg_path = args.dump_cfg or ""
+
+    dev_mode = args.gdb or args.gdb_dex2oat
     if args.gdb:
-      run_args += ["--gdb"]
-      dev_mode = "yes"
+      run_args.append("--gdb")
     if args.gdb_dex2oat:
-      run_args += ["--gdb-dex2oat"]
-      dev_mode = "yes"
+      run_args.append("--gdb-dex2oat")
     if args.gdbserver_bin:
-      run_args += [f'--gdbserver-bin "{args.gdbserver_bin}"']
+      run_args.append(f'--gdbserver-bin "{args.gdbserver_bin}"')
     if args.gdbserver_port:
-      run_args += [f'--gdbserver-port "{args.gdbserver_port}"']
+      run_args.append(f'--gdbserver-port "{args.gdbserver_port}"')
     if args.gdbserver:
-      run_args += ["--gdbserver"]
-      dev_mode = "yes"
-    if args.strace:
-      strace = "yes"
+      run_args.append("--gdbserver")
+      dev_mode = True
+    strace = args.strace
+    strace_output = "strace-output.txt"
+    timeout = ""
+    if strace:
       run_args += [
           f'--invoke-with=strace --invoke-with=-o --invoke-with="{tmp_dir}/{strace_output}"'
       ]
@@ -529,8 +489,7 @@ if True:
       run_args += ["--jit"]
     if args.baseline:
       run_args += ["--baseline"]
-    if args.optimizing:
-      run_optimizing = "true"
+    run_optimizing = args.optimizing
     if args.no_verify:
       run_args += ["--no-verify"]
     if args.verify_soft_fail:
@@ -546,53 +505,47 @@ if True:
       run_args += ["--external-log-tags"]
     if args.invoke_with:
       run_args += [f'--invoke-with "{what}"' for what in args.invoke_with]
-    if args.create_runner:
+    create_runner = args.create_runner
+    if create_runner:
       run_args += ["--create-runner --dry-run"]
-      dev_mode = "yes"
-      never_clean = "yes"
-      create_runner = "yes"
-    if args.dev:
-      dev_mode = "yes"
-    if args.chroot:
-      chroot = args.chroot
-      run_args += [f'--chroot "{args.chroot}"']
+      dev_mode = True
+    dev_mode = dev_mode or args.dev
+    chroot = args.chroot or ""
+    if chroot:
+      run_args += [f'--chroot "{chroot}"']
     if args.simpleperf:
       run_args += ["--simpleperf"]
+    android_root = args.android_root or "/system"
     if args.android_root:
-      android_root = args.android_root
-      run_args += [f'--android-root "{args.android_root}"']
+      run_args += [f'--android-root "{android_root}"']
     if args.android_art_root:
       run_args += [f'--android-art-root "{args.android_art_root}"']
     if args.android_tzdata_root:
       run_args += [f'--android-tzdata-root "{args.android_tzdata_root}"']
-    if args.update:
-      update_mode = "yes"
+    update_mode = args.update
+    suffix64 = "64" if args.is64bit else ""
     if args.is64bit:
       run_args += ["--64"]
-      suffix64 = "64"
+    host_lib_root = ANDROID_HOST_OUT
     if args.bionic:
       # soong linux_bionic builds are 64bit only.
       run_args += ["--bionic --host --64"]
       suffix64 = "64"
-      target_mode = "no"
+      target_mode = False
       DEX_LOCATION = tmp_dir
       host_lib_root = f"{OUT_DIR}/soong/host/linux_bionic-x86"
-    if args.timeout:
-      timeout = args.timeout
-    if args.trace:
-      trace = "true"
-    if args.stream:
-      trace_stream = "true"
-    if args.always_clean:
-      always_clean = "yes"
-    if args.never_clean:
-      never_clean = "yes"
+
+    timeout = args.timeout or timeout
+    trace = args.trace
+    trace_stream = args.stream
+    always_clean = args.always_clean
+    never_clean = create_runner or args.never_clean
     if args.dex2oat_swap:
       run_args += ["--dex2oat-swap"]
     if args.instruction_set_features:
       run_args += [f'--instruction-set-features "{args.instruction_set_features}"']
-    if args.bisection_search:
-      bisection_search = "yes"
+
+    bisection_search = args.bisection_search
     if args.vdex:
       run_args += ["--vdex"]
     if args.dm:
@@ -624,36 +577,36 @@ if True:
         f'--runtime-option "-XX:ThreadSuspendTimeout={suspend_timeout}"'
     ]
 
-  if basic_verify == "true":
+  if basic_verify:
     # Set HspaceCompactForOOMMinIntervalMs to zero to run hspace compaction for OOM more frequently in tests.
     run_args += [
         "--runtime-option -Xgc:preverify --runtime-option -Xgc:postverify "
         "--runtime-option -XX:HspaceCompactForOOMMinIntervalMs=0"
     ]
-  if gc_verify == "true":
+  if gc_verify:
     run_args += [
         "--runtime-option -Xgc:preverify_rosalloc --runtime-option "
         "-Xgc:postverify_rosalloc"
     ]
-  if gc_stress == "true":
+  if gc_stress:
     run_args += [
         "--gc-stress --runtime-option -Xgc:gcstress --runtime-option -Xms2m "
         "--runtime-option -Xmx16m"
     ]
-  if jvmti_redefine_stress == "true":
+  if jvmti_redefine_stress:
     run_args += ["--no-app-image --jvmti-redefine-stress"]
-  if jvmti_step_stress == "true":
+  if jvmti_step_stress:
     run_args += ["--no-app-image --jvmti-step-stress"]
-  if jvmti_field_stress == "true":
+  if jvmti_field_stress:
     run_args += ["--no-app-image --jvmti-field-stress"]
-  if jvmti_trace_stress == "true":
+  if jvmti_trace_stress:
     run_args += ["--no-app-image --jvmti-trace-stress"]
-  if trace == "true":
+  if trace:
     run_args += [
         "--runtime-option -Xmethod-trace --runtime-option "
         "-Xmethod-trace-file-size:2000000"
     ]
-    if trace_stream == "true":
+    if trace_stream:
       # Streaming mode uses the file size as the buffer size. So output gets really large. Drop
       # the ability to analyze the file and just write to /dev/null.
       run_args += ["--runtime-option -Xmethod-trace-file:/dev/null"]
@@ -663,7 +616,7 @@ if True:
       run_args += [
           f'--runtime-option "-Xmethod-trace-file:{DEX_LOCATION}/trace.bin"'
       ]
-  elif trace_stream == "true":
+  elif trace_stream:
     error("Cannot use --stream without --trace.")
     sys.exit(1)
   if timeout:
@@ -681,9 +634,9 @@ if True:
     else:
       return "x86"
 
-  if target_mode == "no":
+  if not target_mode:
     if runtime == "jvm":
-      if prebuild_mode == "yes":
+      if prebuild_mode:
         error("--prebuild with --jvm is unsupported")
         sys.exit(1)
     else:
@@ -697,14 +650,14 @@ if True:
 
   ANDROID_PRODUCT_OUT = os.environ.get("ANDROID_PRODUCT_OUT")
   if runtime == "dalvik":
-    if target_mode == "no":
+    if not target_mode:
       framework = f"{ANDROID_PRODUCT_OUT}/system/framework"
       bpath = f"{framework}/core-icu4j.jar:{framework}/core-libart.jar:{framework}/core-oj.jar:{framework}/conscrypt.jar:{framework}/okhttp.jar:{framework}/bouncycastle.jar:{framework}/ext.jar"
       run_args += [f'--boot --runtime-option "-Xbootclasspath:{bpath}"']
     else:
       pass  # defaults to using target BOOTCLASSPATH
   elif runtime == "art":
-    if target_mode == "no":
+    if not target_mode:
       host_arch_name = guess_host_arch_name()
       run_args += [
           f'--boot "{ANDROID_HOST_OUT}/apex/art_boot_images/javalib/boot.art"'
@@ -722,7 +675,7 @@ if True:
           f'--runtime-option "-Djava.library.path=/data/nativetest{suffix64}/art/{target_arch_name}"'
       ]
       run_args += ['--boot "/system/framework/art_boot_images/boot.art"']
-    if relocate == "yes":
+    if relocate:
       run_args += ["--relocate"]
     else:
       run_args += ["--no-relocate"]
@@ -732,30 +685,30 @@ if True:
         f'--runtime-option "-Djava.library.path={ANDROID_HOST_OUT}/lib64:{ANDROID_HOST_OUT}/nativetest64"'
     ]
 
-  if have_image == "no":
+  if not have_image:
     if runtime != "art":
       error("--no-image is only supported on the art runtime")
       sys.exit(1)
     run_args += ["--no-image"]
 
-  if create_runner == "yes" and target_mode == "yes":
+  if create_runner and target_mode:
     error("--create-runner does not function for non --host tests")
-    usage = "yes"
+    usage = True
 
-  if dev_mode == "yes" and update_mode == "yes":
+  if dev_mode and update_mode:
     error("--dev and --update are mutually exclusive")
-    usage = "yes"
+    usage = True
 
-  if dev_mode == "yes" and quiet == "yes":
+  if dev_mode and quiet:
     error("--dev and --quiet are mutually exclusive")
-    usage = "yes"
+    usage = True
 
-  if bisection_search == "yes" and prebuild_mode == "yes":
+  if bisection_search and prebuild_mode:
     error("--bisection-search and --prebuild are mutually exclusive")
-    usage = "yes"
+    usage = True
 
 # TODO: Chroot-based bisection search is not supported yet (see below); implement it.
-  if bisection_search == "yes" and chroot:
+  if bisection_search and chroot:
     error("--chroot with --bisection-search is unsupported")
     sys.exit(1)
 
@@ -770,7 +723,7 @@ if True:
       test_dir = td2[0]
     else:
       error(f"{test_dir}: no such test directory")
-      usage = "yes"
+      usage = True
 
   os.chdir(test_dir)
   test_dir = os.getcwd()
@@ -782,20 +735,20 @@ if True:
   # Checker when compiled with Optimizing on host.
   # Additionally, if the user specifies that the CFG must be dumped, it will
   # run the checker for any type of test to generate the CFG.
-  if re.match("[0-9]+-checker-", TEST_NAME) or dump_cfg == "true":
-    if runtime == "art" and run_optimizing == "true":
+  if re.match("[0-9]+-checker-", TEST_NAME) or dump_cfg:
+    if runtime == "art" and run_optimizing:
       # In no-prebuild or no-image mode, the compiler only quickens so disable the checker.
-      if prebuild_mode == "yes":
-        run_checker = "yes"
+      if prebuild_mode:
+        run_checker = True
 
-        if target_mode == "no":
+        if not target_mode:
           cfg_output_dir = tmp_dir
           checker_args = f"--arch={host_arch_name.upper()}"
         else:
           cfg_output_dir = DEX_LOCATION
           checker_args = f"--arch={target_arch_name.upper()}"
 
-        if debuggable == "yes":
+        if debuggable:
           checker_args += " --debuggable"
 
         run_args += [
@@ -814,7 +767,7 @@ if True:
   m = re.match("[0-9]*([0-9][0-9])-.*", TEST_NAME)
   assert m, "Can not find test number in " + TEST_NAME
   SHARD = "HiddenApi" if "hiddenapi" in TEST_NAME else m.group(1)
-  if target_mode == "yes":
+  if target_mode:
     zip_file = f"{ANDROID_HOST_OUT}/etc/art/art-run-test-target-data-shard{SHARD}.zip"
     zip_entry = f"target/{TEST_NAME}/"
   elif runtime == "jvm":
@@ -830,24 +783,24 @@ if True:
     entry.rename(Path(tmp_dir) / entry.name)
 
   def clean_up(passed: bool):
-    if always_clean == "yes" or (passed and never_clean == "no"):
+    if always_clean or (passed and not never_clean):
       os.chdir(oldwd)
       shutil.rmtree(tmp_dir)
-      if target_mode == "yes":
+      if target_mode:
         if ON_VM:
           run(f"{SSH_CMD} \"rm -rf {chroot_dex_location}\"")
         else:
           run(f"adb shell rm -rf {chroot_dex_location}")
       print(f"{TEST_NAME} files deleted from host" +
-            (" and from target" if target_mode == "yes" else ""))
+            (" and from target" if target_mode else ""))
     else:
       print(f"{TEST_NAME} files left in {tmp_dir} on host" +
-            (f" and in {chroot_dex_location} on target" if target_mode == "yes" else ""))
+            (f" and in {chroot_dex_location} on target" if target_mode else ""))
     atexit.unregister(clean_up)
   # TODO: Run this in global try-finally once the script is more refactored.
   atexit.register(clean_up, passed=False)
 
-  ctx = RunTestContext(Path(tmp_dir), target_mode == "yes", chroot, DEX_LOCATION, TEST_NAME)
+  ctx = RunTestContext(Path(tmp_dir), target_mode, chroot, DEX_LOCATION, TEST_NAME)
   td_info = f"{test_dir}/{info}"
   for td_file in [td_info, ctx.expected_stdout, ctx.expected_stderr]:
     assert os.access(td_file, os.R_OK)
@@ -859,7 +812,7 @@ if True:
     parsed_args.stderr_file = os.path.join(DEX_LOCATION, test_stderr)
 
     ctx.run(f"cd {DEX_LOCATION}")
-    if target_mode != "yes":
+    if not target_mode:
       # Make "out" directory accessible from test directory.
       ctx.run(f"ln -s -f -t {DEX_LOCATION} {ANDROID_BUILD_TOP}/out")
     # Clear the stdout/stderr files (create empty files).
@@ -878,9 +831,8 @@ if True:
     return runner
 
   def do_dump_cfg():
-    assert run_optimizing == "true", ("The CFG can be dumped only in"
-                                      " optimizing mode")
-    if target_mode == "yes":
+    assert run_optimizing, "The CFG can be dumped only in optimizing mode"
+    if target_mode:
       if ON_VM:
         run(f'{SCP_CMD} "{SSH_USER}@${SSH_HOST}:{CHROOT}/{cfg_output_dir}/'
             f'{cfg_output} {dump_cfg_path}"')
@@ -912,7 +864,7 @@ if True:
     sys.exit(0)
 
   print(f"{test_dir}: Run...")
-  if target_mode == "yes":
+  if target_mode:
     # Prepare the on-device test directory
     if ON_VM:
       run(f"{SSH_CMD} 'rm -rf {chroot_dex_location} && mkdir -p {chroot_dex_location}'")
@@ -940,7 +892,7 @@ if True:
             fail_message=f"Runner {chroot_dex_location}/run.sh failed")
     finally:
       # Copy the generated CFG to the specified path.
-      if dump_cfg == "true":
+      if dump_cfg:
         do_dump_cfg()
 
     # Copy the on-device stdout/stderr to host.
@@ -956,7 +908,7 @@ if True:
   # NB: There is no exit code or return value.
   # Failing tests just raise python exception.
   os.chdir(tmp_dir)
-  if update_mode == "yes":
+  if update_mode:
     for src, dst in [(test_stdout, os.path.join(test_dir, ctx.expected_stdout.name)),
                      (test_stderr, os.path.join(test_dir, ctx.expected_stderr.name))]:
       if "[DO_NOT_UPDATE]" not in open(dst).readline():
@@ -970,12 +922,12 @@ if True:
   print("#################### stderr diff")
   proc_err = run(f'diff --strip-trailing-cr -u '
                  f'"{ctx.expected_stderr}" "{test_stderr}"', check=False)
-  if strace == "yes":
+  if strace:
     print("#################### strace output (trimmed to 3000 lines)")
     # Some tests do not run dalvikvm, in which case the trace does not exist.
     run(f'tail -n 3000 "{tmp_dir}/{strace_output}"', check=False)
   SANITIZE_HOST = os.environ.get("SANITIZE_HOST")
-  if target_mode == "no" and SANITIZE_HOST == "address":
+  if not target_mode and SANITIZE_HOST == "address":
     # Run the stack script to symbolize any ASAN aborts on the host for SANITIZE_HOST. The
     # tools used by the given ABI work for both x86 and x86-64.
     print("#################### symbolizer (trimmed to 3000 lines)")
@@ -989,8 +941,8 @@ if True:
               (["stderr"] if proc_err.returncode != 0 else []))
       fail("{} did not match the expected file".format(" and ".join(kind)))
 
-    if run_checker == "yes":
-      if target_mode == "yes":
+    if run_checker:
+      if target_mode:
         if ON_VM:
           run(f'{SCP_CMD} "{SSH_USER}@{SSH_HOST}:{CHROOT}/{cfg_output_dir}/'
               f'{cfg_output}" "{tmp_dir}"')
@@ -1000,7 +952,7 @@ if True:
           fail_message="CFG checker failed")
   finally:
     # Copy the generated CFG to the specified path.
-    if dump_cfg == "true":
+    if dump_cfg:
       do_dump_cfg()
 
   clean_up(passed=True)

@@ -1408,6 +1408,9 @@
       ]
     },
     {
+      "name": "art_standalone_dex2oat_cts_tests"
+    },
+    {
       "name": "art_standalone_dex2oat_tests"
     },
     {
@@ -2879,6 +2882,9 @@
           "exclude-filter": "JniCompilerTest*"
         }
       ]
+    },
+    {
+      "name": "art_standalone_dex2oat_cts_tests[com.google.android.art.apex]"
     },
     {
       "name": "art_standalone_dex2oat_tests[com.google.android.art.apex]"
@@ -4364,6 +4370,9 @@
       "name": "art_standalone_compiler_tests"
     },
     {
+      "name": "art_standalone_dex2oat_cts_tests"
+    },
+    {
       "name": "art_standalone_dex2oat_tests"
     },
     {
@@ -5839,6 +5848,9 @@
       "name": "art_standalone_compiler_tests"
     },
     {
+      "name": "art_standalone_dex2oat_cts_tests"
+    },
+    {
       "name": "art_standalone_dex2oat_tests"
     },
     {
@@ -5909,7 +5921,7 @@
       "name": "art-run-test-859-checker-var-handles-intrinsics"
     },
     {
-      "name": "art_standalone_dex2oat_cts_tests"
+      "name": "libnativebridge-lazy-tests"
     }
   ]
 }

@@ -269,6 +269,7 @@ art_gtest_user_module_names = [
     "art_standalone_odrefresh_tests",
     "art_standalone_runtime_tests",
     "art_standalone_sigchain_tests",
+    "libnativebridge-lazy-tests",
     "libnativebridge-tests",
     "libnativeloader_test",
 ]
@@ -289,7 +290,7 @@ art_gtest_module_names = sorted(art_gtest_user_module_names + art_gtest_eng_only
 # removing them from this set (in order to promote them to
 # presubmits).
 art_gtest_postsubmit_only_module_names = [
-    "art_standalone_dex2oat_cts_tests",
+    "libnativebridge-lazy-tests",
 ]
 
 # ART gtests not supported in MTS.

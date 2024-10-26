@@ -31,7 +31,7 @@ aconfig_declarations {
     visibility: [
         "//art:__subpackages__",
         "//libcore:__subpackages__",
-        "//frameworks/base", // Needed for exporting flags.
+        "//frameworks/base:__subpackages__", // Needed for exporting flags.
     ],
 }
 

@@ -1426,6 +1426,8 @@ class EXPORT Thread {
     }
   }
 
+  void UpdateTlsLowOverheadTraceEntrypoints(bool enable);
+
   uint64_t GetTraceClockBase() const {
     return tls64_.trace_clock_base;
   }

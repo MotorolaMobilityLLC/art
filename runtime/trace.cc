@@ -849,6 +849,14 @@ void Trace::Start(std::unique_ptr<File>&& trace_file_in,
                                                          the_trace_,
                                                          /*needs_interpreter=*/false);
     }
+
+    if (art_flags::always_enable_profile_code()) {
+      // Reset the trace low overhead trace entry points to be a nop.
+      MutexLock thread_list_mutex(self, *Locks::thread_list_lock_);
+      for (Thread* thread : Runtime::Current()->GetThreadList()->GetList()) {
+        thread->UpdateTlsLowOverheadTraceEntrypoints(/*enable= */ false);
+      }
+    }
   }
 
   // Can't call this when holding the mutator lock.
@@ -927,6 +935,10 @@ void Trace::StopTracing(bool flush_entries) {
           // processed in order.
           the_trace->trace_writer_->FlushBuffer(
               thread, /* is_sync= */ false, /* free_buffer= */ true);
+        }
+
+        if (art_flags::always_enable_profile_code()) {
+          thread->UpdateTlsLowOverheadTraceEntrypoints(/*enable= */ true);
         }
       }
       the_trace_ = nullptr;

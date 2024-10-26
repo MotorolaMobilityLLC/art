@@ -125,16 +125,6 @@ std::string UndefinedType::Dump() const REQUIRES_SHARED(Locks::mutator_lock_) {
   return "Undefined";
 }
 
-PreciseReferenceType::PreciseReferenceType(Handle<mirror::Class> klass,
-                                           const std::string_view& descriptor,
-                                           uint16_t cache_id)
-    : RegType(klass, descriptor, cache_id) {
-  // Note: no check for IsInstantiable() here. We may produce this in case an InstantiationError
-  //       would be thrown at runtime, but we need to continue verification and *not* create a
-  //       hard failure or abort.
-  CheckConstructorInvariants(this);
-}
-
 std::string UnresolvedMergedType::Dump() const {
   std::stringstream result;
   result << "UnresolvedMergedReferences(" << GetResolvedPart().Dump() << " | ";
@@ -184,12 +174,6 @@ std::string UnresolvedUninitializedThisRefType::Dump() const {
 std::string ReferenceType::Dump() const {
   std::stringstream result;
   result << "Reference: " << mirror::Class::PrettyDescriptor(GetClass());
-  return result.str();
-}
-
-std::string PreciseReferenceType::Dump() const {
-  std::stringstream result;
-  result << "Precise Reference: " << mirror::Class::PrettyDescriptor(GetClass());
   return result.str();
 }
 
@@ -328,10 +312,8 @@ const RegType& RegType::GetSuperClass(RegTypeCache* cache) const {
   if (!IsUnresolvedTypes()) {
     ObjPtr<mirror::Class> super_klass = GetClass()->GetSuperClass();
     if (super_klass != nullptr) {
-      // A super class of a precise type isn't precise as a precise type indicates the register
-      // holds exactly that type.
       std::string temp;
-      return cache->FromClass(super_klass->GetDescriptor(&temp), super_klass, false);
+      return cache->FromClass(super_klass->GetDescriptor(&temp), super_klass);
     } else {
       return cache->Zero();
     }
@@ -339,7 +321,7 @@ const RegType& RegType::GetSuperClass(RegTypeCache* cache) const {
     if (!IsUnresolvedMergedReference() && !IsUnresolvedSuperClass() &&
         GetDescriptor()[0] == '[') {
       // Super class of all arrays is Object.
-      return cache->JavaLangObject(true);
+      return cache->JavaLangObject();
     } else {
       return cache->FromUnresolvedSuperClass(*this);
     }
@@ -667,7 +649,7 @@ const RegType& RegType::Merge(const RegType& incoming_type,
     } else if (IsZeroOrNull() || incoming_type.IsZeroOrNull()) {
       return SelectNonConstant2(*this, incoming_type);  // 0 MERGE ref => ref
     } else if (IsJavaLangObject() || incoming_type.IsJavaLangObject()) {
-      return reg_types->JavaLangObject(false);  // Object MERGE ref => Object
+      return reg_types->JavaLangObject();  // Object MERGE ref => Object
     } else if (IsUnresolvedTypes() || incoming_type.IsUnresolvedTypes()) {
       // We know how to merge an unresolved type with itself, 0 or Object. In this case we
       // have two sub-classes and don't know how to merge. Create a new string-based unresolved
@@ -718,14 +700,14 @@ const RegType& RegType::Merge(const RegType& incoming_type,
                                                join_class,
                                                incoming_type.GetClass());
       }
-      if (GetClass() == join_class && !IsPreciseReference()) {
+      if (GetClass() == join_class) {
         return *this;
-      } else if (incoming_type.GetClass() == join_class && !incoming_type.IsPreciseReference()) {
+      } else if (incoming_type.GetClass() == join_class) {
         return incoming_type;
       } else {
         std::string temp;
         const char* descriptor = join_class->GetDescriptor(&temp);
-        return reg_types->FromClass(descriptor, join_class, /* precise= */ false);
+        return reg_types->FromClass(descriptor, join_class);
       }
     }
   } else {

@@ -300,10 +300,6 @@ class ShadowFrame {
     return OFFSETOF_MEMBER(ShadowFrame, vregs_);
   }
 
-  static constexpr size_t ResultRegisterOffset() {
-    return OFFSETOF_MEMBER(ShadowFrame, result_register_);
-  }
-
   static constexpr size_t DexPCPtrOffset() {
     return OFFSETOF_MEMBER(ShadowFrame, dex_pc_ptr_);
   }
@@ -334,10 +330,6 @@ class ShadowFrame {
 
   void SetDexPCPtr(uint16_t* dex_pc_ptr) {
     dex_pc_ptr_ = dex_pc_ptr;
-  }
-
-  JValue* GetResultRegister() {
-    return result_register_;
   }
 
   bool NeedsNotifyPop() const {
@@ -403,7 +395,6 @@ class ShadowFrame {
   ShadowFrame(uint32_t num_vregs, ArtMethod* method, uint32_t dex_pc)
       : link_(nullptr),
         method_(method),
-        result_register_(nullptr),
         dex_pc_ptr_(nullptr),
         dex_instructions_(nullptr),
         number_of_vregs_(num_vregs),
@@ -439,7 +430,6 @@ class ShadowFrame {
   // Link to previous shadow frame or null.
   ShadowFrame* link_;
   ArtMethod* method_;
-  JValue* result_register_;
   const uint16_t* dex_pc_ptr_;
   // Dex instruction base of the code item.
   const uint16_t* dex_instructions_;

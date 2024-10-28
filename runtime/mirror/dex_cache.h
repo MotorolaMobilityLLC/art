@@ -274,12 +274,14 @@ class MANAGED DexCache final : public Object {
                 "String dex cache size is not a power of 2.");
 
   // Size of field dex cache. Needs to be a power of 2 for entrypoint assumptions to hold.
-  static constexpr size_t kDexCacheFieldCacheSize = 1024;
+  // Set to the maximum number of field IDs to always use a direct array.
+  static constexpr size_t kDexCacheFieldCacheSize = 65536;
   static_assert(IsPowerOfTwo(kDexCacheFieldCacheSize),
                 "Field dex cache size is not a power of 2.");
 
   // Size of method dex cache. Needs to be a power of 2 for entrypoint assumptions to hold.
-  static constexpr size_t kDexCacheMethodCacheSize = 1024;
+  // Set to the maximum number of method IDs to always use a direct array.
+  static constexpr size_t kDexCacheMethodCacheSize = 65536;
   static_assert(IsPowerOfTwo(kDexCacheMethodCacheSize),
                 "Method dex cache size is not a power of 2.");
 
@@ -392,6 +394,8 @@ class MANAGED DexCache final : public Object {
     return number_of_elements <= dex_cache_size;
   }
 
+  // Returns to the OS memory used for dex cache arrays.
+  void ReclaimMemory() REQUIRES_SHARED(Locks::mutator_lock_);
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
 #define DEFINE_ARRAY(name, array_kind, getter_setter, type, ids, alloc_kind) \

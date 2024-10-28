@@ -358,6 +358,11 @@ class Libraries {
       int retries = 0;
       static constexpr int MAX_RETRIES = 5;
       while (!Locks::jni_libraries_lock_->ExclusiveTryLock(self)) {
+        if (Runtime::Current()->IsZygote()) {
+          // Do not risk deferring to the child processes.
+          Locks::jni_libraries_lock_->ExclusiveLock(self);
+          break;
+        }
         if (++retries > MAX_RETRIES) {
           // We do not want to block indefinitely here, for fear of timeouts. See b/374209523.
           LOG(WARNING) << "Deferring native library unloading due to contention";

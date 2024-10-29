@@ -266,7 +266,7 @@ static void ReclaimMemoryInternal(uint64_t address, size_t size) {
   if (page_end == page_begin) {
     return;
   }
-  bool res = madvise(page_begin, page_end - page_begin, MADV_DONTNEED);
+  int res = madvise(page_begin, page_end - page_begin, MADV_DONTNEED);
   if (res == -1) {
     PLOG(WARNING) << "madvise failed";
   }

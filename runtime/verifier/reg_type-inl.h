@@ -19,8 +19,8 @@
 
 #include "reg_type.h"
 
-#include "base/arena_allocator.h"
 #include "base/casts.h"
+#include "base/scoped_arena_allocator.h"
 #include "method_verifier.h"
 #include "mirror/class.h"
 #include "verifier_deps.h"
@@ -158,7 +158,7 @@ inline bool RegType::IsStrictlyAssignableFrom(const RegType& src, MethodVerifier
   return AssignableFrom(*this, src, true, verifier);
 }
 
-inline void* RegType::operator new(size_t size, ArenaAllocator* allocator) {
+inline void* RegType::operator new(size_t size, ScopedArenaAllocator* allocator) {
   return allocator->Alloc(size, kArenaAllocMisc);
 }
 

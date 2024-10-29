@@ -21,9 +21,9 @@
 #include <string_view>
 #include <vector>
 
-#include "base/arena_containers.h"
 #include "base/casts.h"
 #include "base/macros.h"
+#include "base/scoped_arena_containers.h"
 #include "dex/primitive.h"
 #include "gc_root.h"
 #include "handle_scope.h"
@@ -211,13 +211,14 @@ class RegTypeCache {
   std::string_view AddString(const std::string_view& str);
 
   // Arena allocator.
-  ArenaAllocator allocator_;
+  ArenaStack arena_stack_;
+  ScopedArenaAllocator allocator_;
 
   // The actual storage for the RegTypes.
-  ArenaVector<const RegType*> entries_;
+  ScopedArenaVector<const RegType*> entries_;
 
   // Fast lookup for quickly finding entries that have a matching class.
-  ArenaVector<std::pair<Handle<mirror::Class>, const RegType*>> klass_entries_;
+  ScopedArenaVector<std::pair<Handle<mirror::Class>, const RegType*>> klass_entries_;
 
   // Handle scope containing classes.
   VariableSizedHandleScope handles_;

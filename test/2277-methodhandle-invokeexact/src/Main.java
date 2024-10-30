@@ -33,6 +33,8 @@ public class Main {
       Multi.$noinline$testMHFromMain(OPTIONAL_GET);
       $noinline$testWithArgs();
       $noinline$nullchecks();
+      $noinline$interfaceChecks();
+      $noinline$abstractClass();
     }
 
     private static void $noinline$nullchecks() throws Throwable {
@@ -43,6 +45,16 @@ public class Main {
 
       try {
         VOID_METHOD.invokeExact((Main) null);
+        unreachable("Should throw WMTE: input is of wrong type");
+      } catch (WrongMethodTypeException expected) {}
+
+      try {
+        INTERFACE_DEFAULT_METHOD.invokeExact((I) null);
+        unreachable("Receiver is null, should throw NPE");
+      } catch (NullPointerException expected) {}
+
+      try {
+        INTERFACE_DEFAULT_METHOD.invokeExact((A) null);
         unreachable("Should throw WMTE: input is of wrong type");
       } catch (WrongMethodTypeException expected) {}
 
@@ -160,6 +172,56 @@ public class Main {
       assertEquals(55L, lsum);
     }
 
+    private static void $noinline$interfaceChecks() throws Throwable {
+      FooBarImpl instance = new FooBarImpl();
+
+      String result = null;
+      result = (String) FOO_NONDEFAULT.invokeExact((Foo) instance);
+      assertEquals("FooBarImpl.nonDefault", result);
+
+      result = (String) FOOBARIMPL_NONDEFAULT.invokeExact(instance);
+      assertEquals("FooBarImpl.nonDefault", result);
+
+      result = (String) BAR_DEFAULT.invokeExact((Bar) instance);
+      assertEquals("Bar.defaultToOverride", result);
+
+      result = (String) FOO_DEFAULT.invokeExact((Foo) instance);
+      assertEquals("Bar.defaultToOverride", result);
+
+      result = (String) FOOBARIMPL_DEFAULT.invokeExact(instance);
+      assertEquals("Bar.defaultToOverride", result);
+
+      result = (String) FOO_NONOVERRIDDEN_DEFAULT.invokeExact((Foo) instance);
+      assertEquals("Foo.nonOverriddenDefault", result);
+
+      result = (String) BAR_NONOVERRIDDEN_DEFAULT.invokeExact((Bar) instance);
+      assertEquals("Foo.nonOverriddenDefault", result);
+    }
+
+    private static void $noinline$abstractClass() throws Throwable {
+      FooBarImpl instance = new FooBarImpl();
+
+      String result = null;
+      result = (String) FOOBAR_DEFINEDINABSTRACT.invokeExact((FooBar) instance);
+      assertEquals("FooBar.definedInAbstract", result);
+
+      result = (String) FOOBARIMPL_DEFINEDINABSTRACT.invokeExact(instance);
+      assertEquals("FooBar.definedInAbstract", result);
+
+      FooBar fooBar = new FooBar() {
+        @Override
+        public String nonDefault() {
+          return "anonymous.nonDefault";
+        }
+      };
+
+      result = (String) FOOBAR_DEFINEDINABSTRACT.invokeExact(fooBar);
+      assertEquals("FooBar.definedInAbstract", result);
+
+      result = (String) FOOBAR_NONDEFAULT.invokeExact(fooBar);
+      assertEquals("anonymous.nonDefault", result);
+    }
+
     private static void assertEquals(Object expected, Object actual) {
       if (!Objects.equals(expected, actual)) {
         throw new AssertionError("Expected: " + expected + ", got: " + actual);
@@ -217,6 +279,17 @@ public class Main {
     private static final MethodHandle SUM_4IJ;
     private static final MethodHandle SUM_5IJ;
 
+    private static final MethodHandle FOO_NONDEFAULT;
+    private static final MethodHandle FOOBARIMPL_NONDEFAULT;
+    private static final MethodHandle FOO_DEFAULT;
+    private static final MethodHandle BAR_DEFAULT;
+    private static final MethodHandle FOOBAR_DEFINEDINABSTRACT;
+    private static final MethodHandle FOOBAR_NONDEFAULT;
+    private static final MethodHandle FOOBARIMPL_DEFINEDINABSTRACT;
+    private static final MethodHandle FOOBARIMPL_DEFAULT;
+    private static final MethodHandle FOO_NONOVERRIDDEN_DEFAULT;
+    private static final MethodHandle BAR_NONOVERRIDDEN_DEFAULT;
+
     static {
       try {
         VOID_METHOD = MethodHandles.lookup()
@@ -263,27 +336,48 @@ public class Main {
         SUM_10I = MethodHandles.lookup()
             .findVirtual(Sums.class, "sum", methodType(int.class, repeat(10, int.class)));
 
-        SUM_IJ  = MethodHandles.lookup()
+        SUM_IJ = MethodHandles.lookup()
             .findVirtual(Sums.class, "sum", methodType(long.class, int.class, long.class));
         SUM_2IJ  = MethodHandles.lookup()
             .findVirtual(Sums.class,
                          "sum",
                          methodType(long.class, repeat(2, int.class, long.class)));
-        SUM_3IJ  = MethodHandles.lookup()
+        SUM_3IJ = MethodHandles.lookup()
             .findVirtual(Sums.class,
                          "sum",
                          methodType(long.class, repeat(3, int.class, long.class)));
-        SUM_4IJ  = MethodHandles.lookup()
+        SUM_4IJ = MethodHandles.lookup()
             .findVirtual(Sums.class,
                          "sum",
                          methodType(long.class, repeat(4, int.class, long.class)));
-        SUM_5IJ  = MethodHandles.lookup()
+        SUM_5IJ = MethodHandles.lookup()
             .findVirtual(Sums.class,
                          "sum",
                          methodType(long.class, repeat(5, int.class, long.class)));
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+
+        FOO_NONDEFAULT = MethodHandles.lookup()
+            .findVirtual(Foo.class, "nonDefault", methodType(String.class));
+        FOOBARIMPL_NONDEFAULT = MethodHandles.lookup()
+            .findVirtual(FooBarImpl.class, "nonDefault", methodType(String.class));
+        FOO_DEFAULT = MethodHandles.lookup()
+            .findVirtual(Foo.class, "defaultToOverride", methodType(String.class));
+        BAR_DEFAULT = MethodHandles.lookup()
+            .findVirtual(Bar.class, "defaultToOverride", methodType(String.class));
+        FOOBAR_DEFINEDINABSTRACT = MethodHandles.lookup()
+            .findVirtual(FooBar.class, "definedInAbstract", methodType(String.class));
+        FOOBAR_NONDEFAULT = MethodHandles.lookup()
+            .findVirtual(FooBar.class, "nonDefault", methodType(String.class));
+        FOOBARIMPL_DEFINEDINABSTRACT = MethodHandles.lookup()
+            .findVirtual(FooBarImpl.class, "definedInAbstract", methodType(String.class));
+        FOOBARIMPL_DEFAULT = MethodHandles.lookup()
+            .findVirtual(FooBarImpl.class, "defaultToOverride", methodType(String.class));
+        FOO_NONOVERRIDDEN_DEFAULT = MethodHandles.lookup()
+            .findVirtual(Foo.class, "nonOverriddenDefault", methodType(String.class));
+        BAR_NONOVERRIDDEN_DEFAULT = MethodHandles.lookup()
+            .findVirtual(Bar.class, "nonOverriddenDefault", methodType(String.class));
+      } catch (Exception e) {
+          throw new RuntimeException(e);
+      }
     }
 
     private static Class<?>[] repeat(int times, Class<?> clazz) {
@@ -301,6 +395,40 @@ public class Main {
       return classes;
     }
 
+    static interface Foo {
+      default String defaultToOverride() {
+        return "Foo.defaultToOverride";
+      }
+
+      default String nonOverriddenDefault() {
+        return "Foo.nonOverriddenDefault";
+      }
+
+      String nonDefault();
+    }
+
+    static interface Bar extends Foo {
+      @Override
+      default String defaultToOverride() {
+        return "Bar.defaultToOverride";
+      }
+    }
+
+    static abstract class FooBar implements Foo, Bar {
+      public String definedInAbstract() {
+        return "FooBar.definedInAbstract";
+      }
+    }
+
+    static class FooBarImpl extends FooBar {
+      @Override
+      public String nonDefault() {
+        return "FooBarImpl.nonDefault";
+      }
+    }
+
+    static class MyRuntimeException extends RuntimeException {}
+
     static interface I {
       public default void defaultMethod() {
         STATUS = "I.defaultMethod";
@@ -314,8 +442,6 @@ public class Main {
         return "boo";
       }
     }
-
-    static class MyRuntimeException extends RuntimeException {}
 
     static class A extends B implements I {
         public int field;

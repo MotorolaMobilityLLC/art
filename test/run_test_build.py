@@ -19,14 +19,11 @@ This scripts compiles Java files which are needed to execute run-tests.
 It is intended to be used only from soong genrule.
 """
 
-import argparse
 import functools
-import glob
+import json
 import os
 import pathlib
 import re
-import shlex
-import shutil
 import subprocess
 import sys
 import zipfile
@@ -35,15 +32,15 @@ from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
 from fcntl import lockf, LOCK_EX, LOCK_NB
 from importlib.machinery import SourceFileLoader
-from os import environ, getcwd, chdir, cpu_count, chmod
+from os import environ, getcwd, cpu_count
 from os.path import relpath
 from pathlib import Path
 from pprint import pprint
-from re import match
 from shutil import copytree, rmtree
-from subprocess import run
+from subprocess import PIPE, run
 from tempfile import TemporaryDirectory, NamedTemporaryFile
 from typing import Dict, List, Union, Set, Optional
+from multiprocessing import cpu_count
 
 USE_RBE = 100  # Percentage of tests that can use RBE (between 0 and 100)
 
@@ -513,6 +510,30 @@ class BuildTestContext:
       else:
         zip(Path(self.test_name + ".jar"), Path("classes.dex"))
 
+# Create bash scripts that can fully execute the run tests.
+# This can be used in CI to execute the tests without running `testrunner.py`.
+# This takes into account any custom behaviour defined in per-test `run.py`.
+# We generate distinct scripts for all of the pre-defined variants.
+def create_ci_runner_scripts(mode, test_names):
+  with TemporaryDirectory() as tmpdir:
+    python = sys.executable
+    script = 'art/test/testrunner/testrunner.py'
+    envs = {
+      "ANDROID_BUILD_TOP": str(Path(getcwd()).absolute()),
+      "ART_TEST_RUN_FROM_SOONG": "true",
+      # TODO: Make the runner scripts target agnostic.
+      #       The only dependency is setting of "-Djava.library.path".
+      "TARGET_ARCH": "arm64",
+      "TARGET_2ND_ARCH": "arm",
+    }
+    args = [
+      f"--run-test-option=--create-runner={tmpdir}",
+      f"-j={cpu_count()}",
+      f"--{mode}",
+    ]
+    run([python, script] + args + test_names, env=envs, check=True)
+    runners = {r.name: r.read_text().split("\n") for r in Path(tmpdir).glob("*")}
+    return [{"name": name, "runner": bash} for name, bash in runners.items()]
 
 # If we build just individual shard, we want to split the work among all the cores,
 # but if the build system builds all shards, we don't want to overload the machine.
@@ -550,11 +571,7 @@ def main() -> None:
   android_build_top = Path(getcwd()).absolute()
   ziproot = args.out.absolute().parent / "zip"
   test_dir_regex = re.compile(args.test_dir_regex) if args.test_dir_regex else re.compile(".*")
-  srcdirs = set(
-    s.parents[-4].absolute()
-    for s in args.srcs
-    if test_dir_regex.search(str(s))
-  )
+  srcdirs = set(s.parents[-4].absolute() for s in args.srcs if test_dir_regex.search(str(s)))
 
   # Special hidden-api shard: If the --hiddenapi flag is provided, build only
   # hiddenapi tests. Otherwise exclude all hiddenapi tests from normal shards.
@@ -575,19 +592,26 @@ def main() -> None:
     os.chdir(invalid_tmpdir)
     os.chmod(invalid_tmpdir, 0)
     with ThreadPoolExecutor(cpu_count() if use_multiprocessing(args.mode) else 1) as pool:
-      jobs = {}
-      for ctx in tests:
-        jobs[ctx.test_name] = pool.submit(ctx.build)
+      jobs = {ctx.test_name: pool.submit(ctx.build) for ctx in tests}
       for test_name, job in jobs.items():
         try:
           job.result()
         except Exception as e:
           raise Exception("Failed to build " + test_name) from e
 
-  # Create the final zip file which contains the content of the temporary directory.
-  proc = run([android_build_top / args.soong_zip, "-o", android_build_top / args.out,
-              "-C", ziproot, "-D", ziproot], check=True)
+  if args.mode == "target":
+    os.chdir(android_build_top)
+    test_names = [ctx.test_name for ctx in tests]
+    data = create_ci_runner_scripts(args.mode, test_names)
+    dst = ziproot / "runner" / args.out.with_suffix(".json").name
+    dst.parent.mkdir(parents=True)
+    text = json.dumps(data, ensure_ascii=False, indent=2)
+    Path(dst).write_text(text)
 
+  # Create the final zip file which contains the content of the temporary directory.
+  soong_zip = android_build_top / args.soong_zip
+  zip_file = android_build_top / args.out
+  run([soong_zip, "-o", zip_file, "-C", ziproot, "-D", ziproot], check=True)
 
 if __name__ == "__main__":
   main()

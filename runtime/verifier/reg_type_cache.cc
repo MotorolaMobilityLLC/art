@@ -268,6 +268,7 @@ RegTypeCache::RegTypeCache(Thread* self,
       class_loader_(class_loader),
       dex_file_(dex_file),
       entries_for_type_index_(allocator_.AllocArray<const RegType*>(dex_file->NumTypeIds())),
+      last_uninitialized_this_type_(nullptr),
       can_load_classes_(can_load_classes),
       can_suspend_(can_suspend) {
   DCHECK(can_suspend || !can_load_classes) << "Cannot load classes if suspension is disabled!";
@@ -393,89 +394,59 @@ const RegType& RegTypeCache::FromUnresolvedSuperClass(const RegType& child) {
 }
 
 const UninitializedType& RegTypeCache::Uninitialized(const RegType& type) {
-  UninitializedType* entry = nullptr;
-  const std::string_view& descriptor(type.GetDescriptor());
-  if (type.IsUnresolvedTypes()) {
-    for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
-      const RegType* cur_entry = entries_[i];
-      if (cur_entry->IsUnresolvedAndUninitializedReference() &&
-          (cur_entry->GetDescriptor() == descriptor)) {
-        return *down_cast<const UnresolvedUninitializedRefType*>(cur_entry);
+  auto get_or_create_uninitialized_type =
+    [&](auto& ref_type) REQUIRES_SHARED(Locks::mutator_lock_) {
+      using RefType = std::remove_const_t<std::remove_reference_t<decltype(ref_type)>>;
+      static_assert(std::is_same_v<RefType, ReferenceType> ||
+                    std::is_same_v<RefType, UnresolvedReferenceType>);
+      using UninitRefType =
+          std::remove_const_t<std::remove_pointer_t<decltype(ref_type.GetUninitializedType())>>;
+      static_assert(std::is_same_v<RefType, ReferenceType>
+          ? std::is_same_v<UninitRefType, UninitializedReferenceType>
+          : std::is_same_v<UninitRefType, UnresolvedUninitializedRefType>);
+      const UninitRefType* uninit_ref_type = ref_type.GetUninitializedType();
+      if (uninit_ref_type == nullptr) {
+        Handle<mirror::Class> klass =
+            std::is_same_v<RefType, ReferenceType> ? ref_type.GetClassHandle() : null_handle_;
+        uninit_ref_type = new (&allocator_) UninitRefType(
+            klass, type.GetDescriptor(), entries_.size(), &ref_type);
+        // Add `uninit_ref_type` to `entries_` but do not unnecessarily cache it in the
+        // `klass_entries_` even for resolved types. We can retrieve it directly from `ref_type`.
+        entries_.push_back(uninit_ref_type);
+        ref_type.SetUninitializedType(uninit_ref_type);
       }
-    }
-    entry = new (&allocator_) UnresolvedUninitializedRefType(null_handle_,
-                                                             descriptor,
-                                                             entries_.size());
+      return uninit_ref_type;
+    };
+
+  if (type.IsReference()) {
+    return *get_or_create_uninitialized_type(down_cast<const ReferenceType&>(type));
   } else {
-    ObjPtr<mirror::Class> klass = type.GetClass();
-    for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
-      const RegType* cur_entry = entries_[i];
-      if (cur_entry->IsUninitializedReference() &&
-          cur_entry->GetClass() == klass) {
-        return *down_cast<const UninitializedReferenceType*>(cur_entry);
-      }
-    }
-    entry = new (&allocator_) UninitializedReferenceType(handles_.NewHandle(klass),
-                                                         descriptor,
-                                                         entries_.size());
+    DCHECK(type.IsUnresolvedReference());
+    return *get_or_create_uninitialized_type(down_cast<const UnresolvedReferenceType&>(type));
   }
-  return AddEntry(entry);
 }
 
 const RegType& RegTypeCache::FromUninitialized(const RegType& uninit_type) {
-  RegType* entry;
-
-  if (uninit_type.IsUnresolvedTypes()) {
-    const std::string_view& descriptor(uninit_type.GetDescriptor());
-    for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
-      const RegType* cur_entry = entries_[i];
-      if (cur_entry->IsUnresolvedReference() &&
-          cur_entry->GetDescriptor() == descriptor) {
-        return *cur_entry;
-      }
-    }
-    entry = new (&allocator_) UnresolvedReferenceType(null_handle_, descriptor, entries_.size());
+  if (uninit_type.IsUninitializedReference()) {
+    return *down_cast<const UninitializedReferenceType&>(uninit_type).GetInitializedType();
+  } else if (uninit_type.IsUnresolvedAndUninitializedReference()) {
+    return *down_cast<const UnresolvedUninitializedRefType&>(uninit_type).GetInitializedType();
+  } else if (uninit_type.IsUninitializedThisReference()) {
+    return *down_cast<const UninitializedThisReferenceType&>(uninit_type).GetInitializedType();
   } else {
-    ObjPtr<mirror::Class> klass = uninit_type.GetClass();
-    if (uninit_type.IsUninitializedThisReference() && !klass->IsFinal()) {
-      for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
-        const RegType* cur_entry = entries_[i];
-        if (cur_entry->IsReference() && cur_entry->GetClass() == klass) {
-          return *cur_entry;
-        }
-      }
-      entry = new (&allocator_) ReferenceType(handles_.NewHandle(klass), "", entries_.size());
-    } else if (!klass->IsPrimitive()) {
-      // We're uninitialized because of allocation, look for or create a reference type.
-      // Note: we do not check whether the given klass is actually instantiable (besides being
-      //       primitive), that is, we allow interfaces and abstract classes here. The reasoning is
-      //       twofold:
-      //       1) The "new-instance" instruction to generate the uninitialized type will already
-      //          queue an instantiation error. This is a soft error that must be thrown at runtime,
-      //          and could potentially change if the class is resolved differently at runtime.
-      //       2) Checking whether the klass is instantiable and using conflict may produce a hard
-      //          error when the value is used, which leads to a VerifyError, which is not the
-      //          correct semantics.
-      for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
-        const RegType* cur_entry = entries_[i];
-        if (cur_entry->IsReference() && cur_entry->GetClass() == klass) {
-          return *cur_entry;
-        }
-      }
-      entry = new (&allocator_) ReferenceType(handles_.NewHandle(klass),
-                                              uninit_type.GetDescriptor(),
-                                              entries_.size());
-    } else {
-      return Conflict();
-    }
+    DCHECK(uninit_type.IsUnresolvedAndUninitializedThisReference()) << uninit_type;
+    return *down_cast<const UnresolvedUninitializedThisRefType&>(uninit_type).GetInitializedType();
   }
-  return AddEntry(entry);
 }
 
 const UninitializedType& RegTypeCache::UninitializedThisArgument(const RegType& type) {
+  if (last_uninitialized_this_type_ != nullptr && last_uninitialized_this_type_->Equals(type)) {
+    return *last_uninitialized_this_type_;
+  }
+
   UninitializedType* entry;
   const std::string_view& descriptor(type.GetDescriptor());
-  if (type.IsUnresolvedTypes()) {
+  if (type.IsUnresolvedReference()) {
     for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
       const RegType* cur_entry = entries_[i];
       if (cur_entry->IsUnresolvedAndUninitializedThisReference() &&
@@ -484,8 +455,12 @@ const UninitializedType& RegTypeCache::UninitializedThisArgument(const RegType& 
       }
     }
     entry = new (&allocator_) UnresolvedUninitializedThisRefType(
-        null_handle_, descriptor, entries_.size());
+        null_handle_,
+        descriptor,
+        entries_.size(),
+        down_cast<const UnresolvedReferenceType*>(&type));
   } else {
+    DCHECK(type.IsReference());
     ObjPtr<mirror::Class> klass = type.GetClass();
     for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
       const RegType* cur_entry = entries_[i];
@@ -493,11 +468,14 @@ const UninitializedType& RegTypeCache::UninitializedThisArgument(const RegType& 
         return *down_cast<const UninitializedType*>(cur_entry);
       }
     }
-    entry = new (&allocator_) UninitializedThisReferenceType(handles_.NewHandle(klass),
-                                                             descriptor,
-                                                             entries_.size());
+    entry = new (&allocator_) UninitializedThisReferenceType(
+        type.GetClassHandle(), descriptor, entries_.size(), down_cast<const ReferenceType*>(&type));
   }
-  return AddEntry(entry);
+  last_uninitialized_this_type_ = entry;
+  // Add `entry` to `entries_` but do not unnecessarily  cache it in `klass_entries_` even
+  // for resolved types.
+  entries_.push_back(entry);
+  return *entry;
 }
 
 const ConstantType& RegTypeCache::FromCat1NonSmallConstant(int32_t value, bool precise) {

@@ -3131,9 +3131,9 @@ HBasicBlock* HGraph::TransformLoopForVectorization(HBasicBlock* header,
   return new_pre_header;
 }
 
-static void CheckAgainstUpperBound(ReferenceTypeInfo rti, ReferenceTypeInfo upper_bound_rti)
-    REQUIRES_SHARED(Locks::mutator_lock_) {
+static void CheckAgainstUpperBound(ReferenceTypeInfo rti, ReferenceTypeInfo upper_bound_rti) {
   if (rti.IsValid()) {
+    ScopedObjectAccess soa(Thread::Current());
     DCHECK(upper_bound_rti.IsSupertypeOf(rti))
         << " upper_bound_rti: " << upper_bound_rti
         << " rti: " << rti;
@@ -3146,7 +3146,6 @@ static void CheckAgainstUpperBound(ReferenceTypeInfo rti, ReferenceTypeInfo uppe
 void HInstruction::SetReferenceTypeInfo(ReferenceTypeInfo rti) {
   if (kIsDebugBuild) {
     DCHECK_EQ(GetType(), DataType::Type::kReference);
-    ScopedObjectAccess soa(Thread::Current());
     DCHECK(rti.IsValid()) << "Invalid RTI for " << DebugName();
     if (IsBoundType()) {
       // Having the test here spares us from making the method virtual just for
@@ -3174,7 +3173,6 @@ bool HBoundType::InstructionDataEquals(const HInstruction* other) const {
 
 void HBoundType::SetUpperBound(const ReferenceTypeInfo& upper_bound, bool can_be_null) {
   if (kIsDebugBuild) {
-    ScopedObjectAccess soa(Thread::Current());
     DCHECK(upper_bound.IsValid());
     DCHECK(!upper_bound_.IsValid()) << "Upper bound should only be set once.";
     CheckAgainstUpperBound(GetReferenceTypeInfo(), upper_bound);

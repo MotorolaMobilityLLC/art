@@ -91,14 +91,13 @@ static_assert(kPerThreadBufSize > kMinBufSize);
 // entries in per-thread buffer, the scaling factor is 6.
 static constexpr size_t kScalingFactorEncodedEntries = 6;
 
-TraceClockSource Trace::default_clock_source_ = kDefaultTraceClockSource;
+// The key identifying the tracer to update instrumentation.
+static constexpr const char* kTracerInstrumentationKey = "Tracer";
 
 Trace* Trace::the_trace_ = nullptr;
 pthread_t Trace::sampling_pthread_ = 0U;
 std::unique_ptr<std::vector<ArtMethod*>> Trace::temp_stack_trace_;
 
-// The key identifying the tracer to update instrumentation.
-static constexpr const char* kTracerInstrumentationKey = "Tracer";
 
 static TraceAction DecodeTraceAction(uint32_t tmid) {
   return static_cast<TraceAction>(tmid & kTraceMethodActionMask);
@@ -362,16 +361,6 @@ std::vector<ArtMethod*>* Trace::AllocStackTrace() {
 void Trace::FreeStackTrace(std::vector<ArtMethod*>* stack_trace) {
   stack_trace->clear();
   temp_stack_trace_.reset(stack_trace);
-}
-
-void Trace::SetDefaultClockSource(TraceClockSource clock_source) {
-#if defined(__linux__)
-  default_clock_source_ = clock_source;
-#else
-  if (clock_source != TraceClockSource::kWall) {
-    LOG(WARNING) << "Ignoring tracing request to use CPU time.";
-  }
-#endif
 }
 
 static uint16_t GetTraceVersion(TraceClockSource clock_source, int version) {

@@ -2050,9 +2050,6 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
     trace_config_->clock_source = runtime_options.GetOrDefault(Opt::MethodTraceClock);
   }
 
-  // TODO: Remove this in a follow up CL. This isn't used anywhere.
-  Trace::SetDefaultClockSource(runtime_options.GetOrDefault(Opt::ProfileClock));
-
   if (GetHeap()->HasBootImageSpace()) {
     const ImageHeader& image_header = GetHeap()->GetBootImageSpaces()[0]->GetImageHeader();
     ObjPtr<mirror::ObjectArray<mirror::Object>> boot_image_live_objects =

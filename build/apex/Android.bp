@@ -386,10 +386,12 @@ cc_defaults {
     },
 }
 
-genrule {
+java_genrule {
     name: "art-check-release-apex-gen",
+    host_supported: true,
+    device_supported: false,
     defaults: ["art-check-apex-gen-defaults"],
-    srcs: [":com.android.art"],
+    device_common_srcs: [":com.android.art"],
     cmd: art_check_apex_gen_stem +
         " --flavor release" +
         " $(in)" +
@@ -404,10 +406,12 @@ cc_prebuilt_binary {
     srcs: [":art-check-release-apex-gen"],
 }
 
-genrule {
+java_genrule {
     name: "art-check-debug-apex-gen",
+    host_supported: true,
+    device_supported: false,
     defaults: ["art-check-apex-gen-defaults"],
-    srcs: [":com.android.art.debug"],
+    device_common_srcs: [":com.android.art.debug"],
     cmd: art_check_apex_gen_stem +
         " --flavor debug" +
         " $(in)" +
@@ -422,10 +426,12 @@ cc_prebuilt_binary {
     srcs: [":art-check-debug-apex-gen"],
 }
 
-genrule {
+java_genrule {
     name: "art-check-testing-apex-gen",
+    host_supported: true,
+    device_supported: false,
     defaults: ["art-check-apex-gen-defaults"],
-    srcs: [":com.android.art.testing"],
+    device_common_srcs: [":com.android.art.testing"],
     cmd: art_check_apex_gen_stem +
         " --flavor testing" +
         " $(in)" +
@@ -440,25 +446,15 @@ cc_prebuilt_binary {
     srcs: [":art-check-testing-apex-gen"],
 }
 
-// sdk module types have 3 (maybe 4 for windows?) variants: linux, android, and common_os.
-// common_os depends on the linux/android variants and packages their artifacts into a zip file.
-// We want access to that zip file in art_release_zip, so we need to depend on only the common_os
-// variant of art-module-host-exports, which is what sdk_genrule does. Since sdk_genrule only has
-// 1 variant, we can then depend on it from a different type of genrule like regular genrule.
-sdk_genrule {
-    name: "art-module-host-exports-for-genrule",
-    srcs: [":art-module-host-exports"],
-    out: ["art-module-host-exports-current.zip"],
-    cmd: "cp $(in) $(out)",
-}
-
 // A zip containing ART binaries and ART bootclasspath jars.
 // At the time of writing, this is only for Compiler Explorer (https://godbolt.org).
-genrule {
+java_genrule {
     name: "art_release_zip",
     srcs: [
-        ":art-module-host-exports-for-genrule",
         ":com.android.art",
+    ],
+    common_os_srcs: [
+        ":art-module-host-exports",
     ],
     out: [
         "art_release.zip",
@@ -482,7 +478,7 @@ genrule {
         "-f $(genDir)/extracted/javalib/bouncycastle.jar " +
         "-f $(genDir)/extracted/javalib/apache-xml.jar && " +
 
-        "$(location merge_zips) $(out) $(out).tmp $(location :art-module-host-exports-for-genrule)",
+        "$(location merge_zips) $(out) $(out).tmp $(location :art-module-host-exports)",
     dist: {
         targets: ["droidcore"],
     },

@@ -24,10 +24,11 @@ from default_run import get_target_arch
 from importlib.machinery import SourceFileLoader
 from inspect import currentframe, getframeinfo, FrameInfo
 from pathlib import Path
-from shutil import copyfile
+from shutil import copyfile, copytree
 from testrunner import env
 from typing import Optional, Dict, List
 from zipfile import ZipFile
+from hashlib import sha1
 
 COLOR = (os.environ.get("LUCI_CONTEXT") == None)  # Disable colors on LUCI.
 COLOR_BLUE = '\033[94m' if COLOR else ''
@@ -107,10 +108,9 @@ if True:
   os.chdir(progdir)
   test_dir = "test-{}".format(os.getpid())
   TMPDIR = os.environ.get("TMPDIR")
-  USER = os.environ.get("USER")
   PYTHON3 = os.environ.get("PYTHON3")
   if not TMPDIR:
-    tmp_dir = f"/tmp/{USER}/{test_dir}"
+    tmp_dir = f"/tmp/art/{test_dir}"
   else:
     tmp_dir = f"{TMPDIR}/{test_dir}"
   checker = f"{progdir}/../tools/checker/checker.py"
@@ -336,7 +336,7 @@ if True:
   argp.add_argument("--random-profile", action='store_true')
   argp.add_argument("--dex2oat-jobs", type=int,
                     help="Number of dex2oat jobs.")
-  argp.add_argument("--create-runner", action='store_true',
+  argp.add_argument("--create-runner", type=Path, metavar='output_dir',
                     help="Creates a runner script for use with other tools.")
   argp.add_argument("--dev", action='store_true',
                     help="Development mode (dumps to stdout).")
@@ -691,10 +691,6 @@ if True:
       sys.exit(1)
     run_args += ["--no-image"]
 
-  if create_runner and target_mode:
-    error("--create-runner does not function for non --host tests")
-    usage = True
-
   if dev_mode and update_mode:
     error("--dev and --update are mutually exclusive")
     usage = True
@@ -761,26 +757,38 @@ if True:
   resource.setrlimit(resource.RLIMIT_FSIZE, (file_ulimit * 1024, resource.RLIM_INFINITY))
 
   # Extract run-test data from the zip file.
-  shutil.rmtree(tmp_dir)
-  os.makedirs(f"{tmp_dir}/.unzipped")
-  os.chdir(tmp_dir)
-  m = re.match("[0-9]*([0-9][0-9])-.*", TEST_NAME)
-  assert m, "Can not find test number in " + TEST_NAME
-  SHARD = "HiddenApi" if "hiddenapi" in TEST_NAME else m.group(1)
-  if target_mode:
-    zip_file = f"{ANDROID_HOST_OUT}/etc/art/art-run-test-target-data-shard{SHARD}.zip"
-    zip_entry = f"target/{TEST_NAME}/"
-  elif runtime == "jvm":
-    zip_file = f"{ANDROID_HOST_OUT}/etc/art/art-run-test-jvm-data-shard{SHARD}.zip"
-    zip_entry = f"jvm/{TEST_NAME}/"
-  else:
-    zip_file = f"{ANDROID_HOST_OUT}/etc/art/art-run-test-host-data-shard{SHARD}.zip"
-    zip_entry = f"host/{TEST_NAME}/"
-  zip = ZipFile(zip_file, "r")
-  zip_entries = [e for e in zip.namelist() if e.startswith(zip_entry)]
-  zip.extractall(Path(tmp_dir) / ".unzipped", members=zip_entries)
-  for entry in (Path(tmp_dir) / ".unzipped" / zip_entry).iterdir():
-    entry.rename(Path(tmp_dir) / entry.name)
+  def unzip():
+    shutil.rmtree(tmp_dir)
+    if env.ART_TEST_RUN_FROM_SOONG:
+      # We already have the unzipped copy of the data.
+      assert target_mode
+      src = Path(ANDROID_BUILD_TOP) / "out" / "zip" / "target" / TEST_NAME
+      assert src.exists(), src
+      copytree(src, tmp_dir)
+      os.chdir(tmp_dir)
+      return
+    os.makedirs(f"{tmp_dir}/.unzipped")
+    os.chdir(tmp_dir)
+    m = re.match("[0-9]*([0-9][0-9])-.*", TEST_NAME)
+    assert m, "Can not find test number in " + TEST_NAME
+    SHARD = "HiddenApi" if "hiddenapi" in TEST_NAME else m.group(1)
+    zip_dir = f"{ANDROID_HOST_OUT}/etc/art"
+    if target_mode:
+      zip_file = f"{zip_dir}/art-run-test-target-data-shard{SHARD}.zip"
+      zip_entry = f"target/{TEST_NAME}/"
+    elif runtime == "jvm":
+      zip_file = f"{zip_dir}/art-run-test-jvm-data-shard{SHARD}.zip"
+      zip_entry = f"jvm/{TEST_NAME}/"
+    else:
+      zip_file = f"{zip_dir}/art-run-test-host-data-shard{SHARD}.zip"
+      zip_entry = f"host/{TEST_NAME}/"
+    zip = ZipFile(zip_file, "r")
+    zip_entries = [e for e in zip.namelist() if e.startswith(zip_entry)]
+    zip.extractall(Path(tmp_dir) / ".unzipped", members=zip_entries)
+    for entry in (Path(tmp_dir) / ".unzipped" / zip_entry).iterdir():
+      entry.rename(Path(tmp_dir) / entry.name)
+
+  unzip()
 
   def clean_up(passed: bool):
     if always_clean or (passed and not never_clean):
@@ -797,8 +805,6 @@ if True:
       print(f"{TEST_NAME} files left in {tmp_dir} on host" +
             (f" and in {chroot_dex_location} on target" if target_mode else ""))
     atexit.unregister(clean_up)
-  # TODO: Run this in global try-finally once the script is more refactored.
-  atexit.register(clean_up, passed=False)
 
   ctx = RunTestContext(Path(tmp_dir), target_mode, chroot, DEX_LOCATION, TEST_NAME)
   td_info = f"{test_dir}/{info}"
@@ -850,18 +856,32 @@ if True:
   print(f"{test_dir}: Create runner script...")
   runner = create_runner_script()
 
+  if args.create_runner:
+    # TODO: Generate better unique names.
+    name = [a for a in sys.argv[1:] if not a.startswith("--create-runner")]
+    hash = sha1((" ".join(name)).encode()).digest().hex()[:8]
+    dst = args.create_runner / f"{TEST_NAME}-{hash}"
+    assert not dst.exists(), dst
+    copyfile(runner, dst)
+
   # Script debugging feature - just export the runner script into a directory,
   # so that it can be compared before/after runner script refactoring.
   save_runner_dir = os.environ.get("RUN_TEST_DEBUG__SAVE_RUNNER_DIR")
   if save_runner_dir:
-    name = urllib.parse.quote(" ".join(sys.argv[1:]), safe=' ')
+    name = [a for a in sys.argv[1:] if not a.startswith("--create-runner")]
+    name = urllib.parse.quote(" ".join(name), safe=' ')
     dst = Path(save_runner_dir) / TEST_NAME / name
     os.makedirs(dst.parent, exist_ok=True)
     txt = runner.read_text()
     txt = txt.replace(Path(tmp_dir).name, "${TMP_DIR}")  # Make it deterministic.
     txt = re.sub('\[run-test:\d+\]', '[run-test:(line-number)]', txt)
     dst.write_text(txt)
+
+  if args.create_runner or save_runner_dir:
     sys.exit(0)
+
+  # TODO: Run this in global try-finally once the script is more refactored.
+  atexit.register(clean_up, passed=False)
 
   print(f"{test_dir}: Run...")
   if target_mode:

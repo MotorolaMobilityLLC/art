@@ -185,7 +185,7 @@ cc_library_headers {
 
 art_cc_defaults {
     name: "art_profman_tests_defaults",
-    data: [
+    device_common_data: [
         ":art-gtest-jars-ProfileTestMultiDex",
     ],
     header_libs: ["profman_headers"],

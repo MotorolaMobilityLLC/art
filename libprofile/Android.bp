@@ -180,7 +180,7 @@ art_cc_library {
 // TODO: Remove CommonRuntimeTest dependency from these tests.
 art_cc_defaults {
     name: "art_libprofile_tests_defaults",
-    data: [
+    device_common_data: [
         ":art-gtest-jars-ManyMethods",
         ":art-gtest-jars-MultiDex",
         ":art-gtest-jars-ProfileTestMultiDex",

@@ -83,7 +83,7 @@ art_cc_defaults {
         "file_utils_test.cc",
         "path_utils_test.cc",
     ],
-    data: [
+    device_common_data: [
         ":art-gtest-jars-Main",
         ":art-gtest-jars-Nested",
     ],

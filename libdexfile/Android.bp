@@ -309,7 +309,7 @@ art_cc_defaults {
         "dex/type_lookup_table_test.cc",
         "dex/utf_test.cc",
     ],
-    data: [
+    device_common_data: [
         ":art-gtest-jars-GetMethodSignature",
         ":art-gtest-jars-Lookup",
         ":art-gtest-jars-Main",

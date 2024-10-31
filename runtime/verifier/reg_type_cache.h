@@ -144,7 +144,7 @@ class RegTypeCache {
   const ReferenceType& JavaLangThrowable() REQUIRES_SHARED(Locks::mutator_lock_);
   const ReferenceType& JavaLangObject() REQUIRES_SHARED(Locks::mutator_lock_);
 
-  const UninitializedType& Uninitialized(const RegType& type, uint32_t allocation_pc)
+  const UninitializedType& Uninitialized(const RegType& type)
       REQUIRES_SHARED(Locks::mutator_lock_);
   // Create an uninitialized 'this' argument for the given type.
   const UninitializedType& UninitializedThisArgument(const RegType& type)

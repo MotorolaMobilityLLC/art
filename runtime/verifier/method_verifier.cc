@@ -2427,12 +2427,11 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
             << "new-instance on primitive, interface or abstract class" << res_type;
         // Soft failure so carry on to set register type.
       }
-      const RegType& uninit_type = reg_types_.Uninitialized(res_type, work_insn_idx_);
-      // Any registers holding previous allocations from this address that have not yet been
-      // initialized must be marked invalid.
-      work_line_->MarkUninitRefsAsInvalid(this, uninit_type);
-      // add the new uninitialized reference to the register state
-      work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_21c(), uninit_type);
+      const RegType& uninit_type = reg_types_.Uninitialized(res_type);
+      // Add the new uninitialized reference to the register state and record the allocation dex pc.
+      uint32_t vA = inst->VRegA_21c();
+      work_line_->DCheckUniqueNewInstanceDexPc(this, work_insn_idx_);
+      work_line_->SetRegisterTypeForNewInstance(vA, uninit_type, work_insn_idx_);
       break;
     }
     case Instruction::NEW_ARRAY:
@@ -2878,7 +2877,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
          * allowing the latter only if the "this" argument is the same as the "this" argument to
          * this method (which implies that we're in a constructor ourselves).
          */
-        const RegType& this_type = work_line_->GetInvocationThis(this, inst);
+        const RegType& this_type = GetInvocationThis(inst);
         if (this_type.IsConflict())  // failure.
           break;
 
@@ -2908,7 +2907,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
          * Replace the uninitialized reference with an initialized one. We need to do this for all
          * registers that have the same object instance in them, not just the "this" register.
          */
-        work_line_->MarkRefsAsInitialized(this, this_type);
+        work_line_->MarkRefsAsInitialized(this, inst->VRegC());
       }
       const RegType& return_type = reg_types_.FromTypeIndex(return_type_idx);
       if (!return_type.IsLowHalf()) {
@@ -2953,7 +2952,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       /* Get the type of the "this" arg, which should either be a sub-interface of called
        * interface or Object (see comments in RegType::JoinClass).
        */
-      const RegType& this_type = work_line_->GetInvocationThis(this, inst);
+      const RegType& this_type = GetInvocationThis(inst);
       if (this_type.IsZeroOrNull()) {
         /* null pointer always passes (and always fails at runtime) */
       } else {
@@ -3831,7 +3830,7 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgsFromIterator(
    * rigorous check here (which is okay since we have to do it at runtime).
    */
   if (method_type != METHOD_STATIC) {
-    const RegType& actual_arg_type = work_line_->GetInvocationThis(this, inst);
+    const RegType& actual_arg_type = GetInvocationThis(inst);
     if (actual_arg_type.IsConflict()) {  // GetInvocationThis failed.
       CHECK(flags_.have_pending_hard_failure_);
       return nullptr;
@@ -4142,7 +4141,7 @@ bool MethodVerifier<kVerifierDebug>::CheckSignaturePolymorphicMethod(ArtMethod* 
 
 template <bool kVerifierDebug>
 bool MethodVerifier<kVerifierDebug>::CheckSignaturePolymorphicReceiver(const Instruction* inst) {
-  const RegType& this_type = work_line_->GetInvocationThis(this, inst);
+  const RegType& this_type = GetInvocationThis(inst);
   if (this_type.IsZeroOrNull()) {
     /* null pointer always passes (and always fails at run time) */
     return true;
@@ -5217,6 +5216,24 @@ static FailureKind FailureKindMax(FailureKind fk1, FailureKind fk2) {
 void MethodVerifier::FailureData::Merge(const MethodVerifier::FailureData& fd) {
   kind = FailureKindMax(kind, fd.kind);
   types |= fd.types;
+}
+
+const RegType& MethodVerifier::GetInvocationThis(const Instruction* inst) {
+  DCHECK(inst->IsInvoke());
+  const size_t args_count = inst->VRegA();
+  if (args_count < 1) {
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invoke lacks 'this'";
+    return reg_types_.Conflict();
+  }
+  const uint32_t this_reg = inst->VRegC();
+  const RegType& this_type = work_line_->GetRegisterType(this, this_reg);
+  if (!this_type.IsReferenceTypes()) {
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "tried to get class from non-reference register v" << this_reg
+        << " (type=" << this_type << ")";
+    return reg_types_.Conflict();
+  }
+  return this_type;
 }
 
 }  // namespace verifier

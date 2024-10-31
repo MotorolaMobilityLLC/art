@@ -159,8 +159,7 @@ std::string UnresolvedReferenceType::Dump() const {
 std::string UnresolvedUninitializedRefType::Dump() const {
   std::stringstream result;
   result << "Unresolved And Uninitialized Reference: "
-      << PrettyDescriptor(std::string(GetDescriptor()).c_str())
-      << " Allocation PC: " << GetAllocationPc();
+      << PrettyDescriptor(std::string(GetDescriptor()).c_str());
   return result.str();
 }
 
@@ -180,14 +179,12 @@ std::string ReferenceType::Dump() const {
 std::string UninitializedReferenceType::Dump() const {
   std::stringstream result;
   result << "Uninitialized Reference: " << mirror::Class::PrettyDescriptor(GetClass());
-  result << " Allocation PC: " << GetAllocationPc();
   return result.str();
 }
 
 std::string UninitializedThisReferenceType::Dump() const {
   std::stringstream result;
   result << "Uninitialized This Reference: " << mirror::Class::PrettyDescriptor(GetClass());
-  result << "Allocation PC: " << GetAllocationPc();
   return result.str();
 }
 
@@ -725,11 +722,9 @@ void RegType::CheckInvariants() const {
 }
 
 void UninitializedThisReferenceType::CheckInvariants() const {
-  CHECK_EQ(GetAllocationPc(), 0U) << *this;
 }
 
 void UnresolvedUninitializedThisRefType::CheckInvariants() const {
-  CHECK_EQ(GetAllocationPc(), 0U) << *this;
   CHECK(!descriptor_.empty()) << *this;
   CHECK(!HasClass()) << *this;
 }

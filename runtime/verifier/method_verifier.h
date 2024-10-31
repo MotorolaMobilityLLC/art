@@ -57,8 +57,6 @@ class DexCache;
 namespace verifier {
 
 class MethodVerifier;
-class RegisterLine;
-using RegisterLineArenaUniquePtr = std::unique_ptr<RegisterLine, RegisterLineArenaDelete>;
 class RegType;
 class RegTypeCache;
 struct ScopedNewLine;
@@ -253,6 +251,16 @@ class MethodVerifier {
                                   std::string* hard_failure_msg)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
+  /*
+   * Get the "this" pointer from a non-static method invocation. This returns the RegType so the
+   * caller can decide whether it needs the reference to be initialized or not.
+   *
+   * The argument count is in vA, and the first argument is in vC, for both "simple" and "range"
+   * versions. We just need to make sure vA is >= 1 and then return vC.
+   */
+  const RegType& GetInvocationThis(const Instruction* inst)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
   // For VerifierDepsTest. TODO: Refactor.
 
   // Run verification on the method. Returns true if verification completes and false if the input
@@ -342,6 +350,7 @@ class MethodVerifier {
 
   friend class art::Thread;
   friend class ClassVerifier;
+  friend class RegisterLineTest;
   friend class VerifierDepsTest;
 
   DISALLOW_COPY_AND_ASSIGN(MethodVerifier);

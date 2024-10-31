@@ -24,4 +24,7 @@ def run(ctx, args):
   ctx.default_run(args, verify_soft_fail=True, secondary_compilation=False)
 
   ctx.run(fr"sed -i -E '/(JNI_OnLoad|JNI_OnUnload)/d' '{args.stdout_file}'")
-  ctx.run(fr"sed -i -E '/^dalvikvm(32|64) E [^]]+]/d' '{args.stderr_file}'")
+
+  # Delete hiddenapi's denial errors which go to stderr on host.
+  if args.host:
+    ctx.run(fr"sed -i -E '/ E dalvikvm.* hiddenapi: /d' '{args.stderr_file}'")

@@ -204,7 +204,13 @@ class MemberSignature {
 
   bool DoesPrefixMatchAny(const std::vector<std::string>& exemptions);
 
-  void WarnAboutAccess(AccessMethod access_method, ApiList list, bool access_denied);
+  void WarnAboutAccess(AccessMethod access_method,
+                       ApiList list,
+                       bool access_denied,
+                       uint32_t runtime_flags,
+                       const AccessContext& caller_context,
+                       const AccessContext& callee_context,
+                       EnforcementPolicy policy) REQUIRES_SHARED(Locks::mutator_lock_);
 
   void LogAccessToEventLog(uint32_t sampled_value, AccessMethod access_method, bool access_denied);
 
@@ -222,16 +228,21 @@ uint32_t GetDexFlags(T* member) REQUIRES_SHARED(Locks::mutator_lock_);
 
 // Handler of detected core platform API violations. Returns true if access to
 // `member` should be denied.
-template<typename T>
+template <typename T>
 bool HandleCorePlatformApiViolation(T* member,
+                                    uint32_t runtime_flags,
                                     const AccessContext& caller_context,
+                                    const AccessContext& callee_context,
                                     AccessMethod access_method,
-                                    EnforcementPolicy policy)
-    REQUIRES_SHARED(Locks::mutator_lock_);
+                                    EnforcementPolicy policy) REQUIRES_SHARED(Locks::mutator_lock_);
 
-template<typename T>
-bool ShouldDenyAccessToMemberImpl(T* member, ApiList api_list, AccessMethod access_method)
-    REQUIRES_SHARED(Locks::mutator_lock_);
+template <typename T>
+bool ShouldDenyAccessToMemberImpl(T* member,
+                                  ApiList api_list,
+                                  uint32_t runtime_flags,
+                                  const AccessContext& caller_context,
+                                  const AccessContext& callee_context,
+                                  AccessMethod access_method) REQUIRES_SHARED(Locks::mutator_lock_);
 
 inline ArtField* GetInterfaceMemberIfProxy(ArtField* field) { return field; }
 

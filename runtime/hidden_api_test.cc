@@ -191,7 +191,7 @@ class HiddenApiTest : public CommonRuntimeTest {
     // This is only used for log messages, so its state doesn't matter.
     const hiddenapi::AccessContext placeholder_context(/* is_trusted= */ false);
 
-    // Choose parameters such that there are no side effects (AccessMethod::kNone)
+    // Choose parameters such that there are no side effects (AccessMethod::kCheck)
     // and that the member is not on the exemptions list (here we choose one which
     // is not even in boot class path).
     return ShouldDenyAccessToMemberImpl(/* member= */ class1_field1_,
@@ -199,7 +199,7 @@ class HiddenApiTest : public CommonRuntimeTest {
                                         /* runtime_flags= */ 0,
                                         /* caller_context= */ placeholder_context,
                                         /* callee_context= */ placeholder_context,
-                                        /* access_method= */ hiddenapi::AccessMethod::kNone);
+                                        hiddenapi::AccessMethod::kCheck);
   }
 
   void TestLocation(const std::string& location, hiddenapi::Domain expected_domain) {

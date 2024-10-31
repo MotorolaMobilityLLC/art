@@ -1962,7 +1962,7 @@ ObjPtr<Method> Class::GetDeclaredMethodInternal(
   }
   auto h_args = hs.NewHandle(args);
   Handle<Class> h_klass = hs.NewHandle(klass);
-  constexpr hiddenapi::AccessMethod access_method = hiddenapi::AccessMethod::kNone;
+  constexpr hiddenapi::AccessMethod access_method = hiddenapi::AccessMethod::kCheckWithPolicy;
   ArtMethod* result = nullptr;
   bool result_hidden = false;
   for (auto& m : h_klass->GetDeclaredVirtualMethods(kPointerSize)) {

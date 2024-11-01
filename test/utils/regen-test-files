@@ -240,6 +240,8 @@ known_failing_tests = frozenset([
 postsubmit_only_tests = frozenset([
     "858-checker-unsafe",
     "859-checker-var-handles-intrinsics",
+    "2282-checker-always-throws-try-catch",
+    "2283-checker-remove-null-check",
 ])
 
 known_failing_on_hwasan_tests = frozenset([

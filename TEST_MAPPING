@@ -5915,6 +5915,12 @@
   ],
   "postsubmit": [
     {
+      "name": "art-run-test-2282-checker-always-throws-try-catch"
+    },
+    {
+      "name": "art-run-test-2283-checker-remove-null-check"
+    },
+    {
       "name": "art-run-test-858-checker-unsafe"
     },
     {

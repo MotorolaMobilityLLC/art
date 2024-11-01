@@ -1473,6 +1473,9 @@
       "name": "art_standalone_sigchain_tests"
     },
     {
+      "name": "libnativebridge-lazy-tests"
+    },
+    {
       "name": "libnativebridge-tests"
     },
     {
@@ -2953,6 +2956,9 @@
     },
     {
       "name": "art_standalone_sigchain_tests[com.google.android.art.apex]"
+    },
+    {
+      "name": "libnativebridge-lazy-tests[com.google.android.art.apex]"
     },
     {
       "name": "libnativebridge-tests[com.google.android.art.apex]"
@@ -4442,6 +4448,9 @@
       "name": "art_standalone_sigchain_tests"
     },
     {
+      "name": "libnativebridge-lazy-tests"
+    },
+    {
       "name": "libnativebridge-tests"
     },
     {
@@ -5923,6 +5932,9 @@
       "name": "art_standalone_sigchain_tests"
     },
     {
+      "name": "libnativebridge-lazy-tests"
+    },
+    {
       "name": "libnativebridge-tests"
     },
     {
@@ -5943,9 +5955,6 @@
     },
     {
       "name": "art-run-test-2283-checker-remove-null-check"
-    },
-    {
-      "name": "libnativebridge-lazy-tests"
     }
   ]
 }

@@ -238,8 +238,8 @@ known_failing_tests = frozenset([
 # removing them from this set (in order to promote them to
 # presubmits).
 postsubmit_only_tests = frozenset([
-    "858-checker-unsafe",
-    "859-checker-var-handles-intrinsics",
+    "2282-checker-always-throws-try-catch",
+    "2283-checker-remove-null-check",
 ])
 
 known_failing_on_hwasan_tests = frozenset([
@@ -290,7 +290,6 @@ art_gtest_module_names = sorted(art_gtest_user_module_names + art_gtest_eng_only
 # removing them from this set (in order to promote them to
 # presubmits).
 art_gtest_postsubmit_only_module_names = [
-    "libnativebridge-lazy-tests",
 ]
 
 # ART gtests not supported in MTS.

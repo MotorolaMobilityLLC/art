@@ -39,8 +39,8 @@ class Class;
 class ClassLoader;
 }  // namespace mirror
 
+class ArenaAllocator;
 class ArenaBitVector;
-class ScopedArenaAllocator;
 
 namespace verifier {
 
@@ -257,8 +257,8 @@ class RegType {
     return ::operator new(size);
   }
 
-  static void* operator new(size_t size, ArenaAllocator* allocator) = delete;
-  static void* operator new(size_t size, ScopedArenaAllocator* allocator);
+  static void* operator new(size_t size, ArenaAllocator* allocator);
+  static void* operator new(size_t size, ScopedArenaAllocator* allocator) = delete;
 
   enum class AssignmentType {
     kBoolean,
@@ -767,24 +767,15 @@ class UninitializedType : public RegType {
  public:
   UninitializedType(Handle<mirror::Class> klass,
                     const std::string_view& descriptor,
-                    uint32_t allocation_pc,
                     uint16_t cache_id)
-      : RegType(klass, descriptor, cache_id), allocation_pc_(allocation_pc) {}
+      : RegType(klass, descriptor, cache_id) {}
 
   bool IsUninitializedTypes() const override;
   bool IsNonZeroReferenceTypes() const override;
 
-  uint32_t GetAllocationPc() const {
-    DCHECK(IsUninitializedTypes());
-    return allocation_pc_;
-  }
-
   AssignmentType GetAssignmentTypeImpl() const override {
     return AssignmentType::kReference;
   }
-
- private:
-  const uint32_t allocation_pc_;
 };
 
 // Similar to ReferenceType but not yet having been passed to a constructor.
@@ -792,10 +783,9 @@ class UninitializedReferenceType final : public UninitializedType {
  public:
   UninitializedReferenceType(Handle<mirror::Class> klass,
                              const std::string_view& descriptor,
-                             uint32_t allocation_pc,
                              uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, allocation_pc, cache_id) {
+      : UninitializedType(klass, descriptor, cache_id) {
     CheckConstructorInvariants(this);
   }
 
@@ -812,10 +802,9 @@ class UnresolvedUninitializedRefType final : public UninitializedType {
  public:
   UnresolvedUninitializedRefType(Handle<mirror::Class> klass,
                                  const std::string_view& descriptor,
-                                 uint32_t allocation_pc,
                                  uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, allocation_pc, cache_id) {
+      : UninitializedType(klass, descriptor, cache_id) {
     CheckConstructorInvariants(this);
   }
 
@@ -837,7 +826,7 @@ class UninitializedThisReferenceType final : public UninitializedType {
                                  const std::string_view& descriptor,
                                  uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, 0, cache_id) {
+      : UninitializedType(klass, descriptor, cache_id) {
     CheckConstructorInvariants(this);
   }
 
@@ -857,7 +846,7 @@ class UnresolvedUninitializedThisRefType final : public UninitializedType {
                                      const std::string_view& descriptor,
                                      uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, 0, cache_id) {
+      : UninitializedType(klass, descriptor, cache_id) {
     CheckConstructorInvariants(this);
   }
 

@@ -128,6 +128,15 @@ class RegisterLine {
   void SetResultRegisterTypeWide(const RegType& new_type1, const RegType& new_type2)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
+  /*
+   * Set register type for a `new-instance` instruction.
+   * For `new-instance`, we additionally record the allocation dex pc for vreg `vdst`.
+   * This is used to keep track of registers that hold the same uninitialized reference,
+   * so that we can update them all when a constructor is called on any of them.
+   */
+  void SetRegisterTypeForNewInstance(uint32_t vdst, const RegType& uninit_type, uint32_t dex_pc)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
   // Get the type of register vsrc.
   const RegType& GetRegisterType(MethodVerifier* verifier, uint32_t vsrc) const;
 
@@ -142,13 +151,7 @@ class RegisterLine {
                               const RegType& check_type2)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  void CopyFromLine(const RegisterLine* src) {
-    DCHECK_EQ(num_regs_, src->num_regs_);
-    memcpy(&line_, &src->line_, num_regs_ * sizeof(uint16_t));
-    monitors_ = src->monitors_;
-    reg_to_lock_depths_ = src->reg_to_lock_depths_;
-    this_initialized_ = src->this_initialized_;
-  }
+  void CopyFromLine(const RegisterLine* src);
 
   std::string Dump(MethodVerifier* verifier) const REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -159,20 +162,19 @@ class RegisterLine {
   }
 
   /*
-   * We're creating a new instance of class C at address A. Any registers holding instances
-   * previously created at address A must be initialized by now. If not, we mark them as "conflict"
-   * to prevent them from being used (otherwise, MarkRefsAsInitialized would mark the old ones and
-   * the new ones at the same time).
+   * In debug mode, assert that the register line does not contain an uninitialized register
+   * type for a `new-instance` allocation at a specific dex pc. We do this check before recording
+   * the uninitialized register type and dex pc for a `new-instance` instruction.
    */
-  void MarkUninitRefsAsInvalid(MethodVerifier* verifier, const RegType& uninit_type)
+  void DCheckUniqueNewInstanceDexPc(MethodVerifier* verifier, uint32_t dex_pc)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   /*
-   * Update all registers holding "uninit_type" to instead hold the corresponding initialized
-   * reference type. This is called when an appropriate constructor is invoked -- all copies of
-   * the reference must be marked as initialized.
+   * Update all registers holding the uninitialized type currently recorded for vreg `vsrc` to
+   * instead hold the corresponding initialized reference type. This is called when an appropriate
+   * constructor is invoked -- all copies of the reference must be marked as initialized.
    */
-  void MarkRefsAsInitialized(MethodVerifier* verifier, const RegType& uninit_type)
+  void MarkRefsAsInitialized(MethodVerifier* verifier, uint32_t vsrc)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   /*
@@ -215,21 +217,6 @@ class RegisterLine {
 
   // Return how many bytes of memory a register line uses.
   ALWAYS_INLINE static size_t ComputeSize(size_t num_regs);
-
-  /*
-   * Get the "this" pointer from a non-static method invocation. This returns the RegType so the
-   * caller can decide whether it needs the reference to be initialized or not. (Can also return
-   * kRegTypeZero if the reference can only be zero at this point.)
-   *
-   * The argument count is in vA, and the first argument is in vC, for both "simple" and "range"
-   * versions. We just need to make sure vA is >= 1 and then return vC.
-   * allow_failure will return Conflict() instead of causing a verification failure if there is an
-   * error.
-   */
-  const RegType& GetInvocationThis(MethodVerifier* verifier,
-                                   const Instruction* inst,
-                                   bool allow_failure = false)
-      REQUIRES_SHARED(Locks::mutator_lock_);
 
   /*
    * Verify types for a simple two-register instruction (e.g. "neg-int").
@@ -382,6 +369,12 @@ class RegisterLine {
   }
 
  private:
+  // For uninitialized types we need to check for allocation dex pc mismatch when merging.
+  // This does not apply to uninitialized "this" reference types.
+  static bool NeedsAllocationDexPc(const RegType& reg_type);
+
+  void EnsureAllocationDexPcsAvailable();
+
   void CopyRegToLockDepth(size_t dst, size_t src) {
     auto it = reg_to_lock_depths_.find(src);
     if (it != reg_to_lock_depths_.end()) {
@@ -420,11 +413,16 @@ class RegisterLine {
 
   RegisterLine(size_t num_regs, ScopedArenaAllocator& allocator, RegTypeCache* reg_types);
 
-  // Storage for the result register's type, valid after an invocation.
-  uint16_t result_[2];
+  static constexpr uint32_t kNoDexPc = static_cast<uint32_t>(-1);
 
   // Length of reg_types_
   const uint32_t num_regs_;
+
+  // Storage for the result register's type, valid after an invocation.
+  uint16_t result_[2];
+
+  // Track allocation dex pcs for `new-instance` results moved to other registers.
+  uint32_t* allocation_dex_pcs_;
 
   // A stack of monitor enter locations.
   ScopedArenaVector<uint32_t> monitors_;
@@ -440,6 +438,8 @@ class RegisterLine {
   // An array of RegType Ids associated with each dex register.
   uint16_t line_[1];
 
+  friend class RegisterLineArenaDelete;
+
   DISALLOW_COPY_AND_ASSIGN(RegisterLine);
 };
 
@@ -447,6 +447,8 @@ class RegisterLineArenaDelete : public ArenaDelete<RegisterLine> {
  public:
   void operator()(RegisterLine* ptr) const;
 };
+
+using RegisterLineArenaUniquePtr = std::unique_ptr<RegisterLine, RegisterLineArenaDelete>;
 
 }  // namespace verifier
 }  // namespace art

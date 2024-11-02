@@ -19,6 +19,7 @@
 
 #include "base/bit_vector-inl.h"
 #include "class_root-inl.h"
+#include "dex/dex_file.h"
 #include "mirror/class-inl.h"
 #include "mirror/method_handle_impl.h"
 #include "mirror/method_type.h"
@@ -44,6 +45,14 @@ inline const ConstantType& RegTypeCache::FromCat1Const(int32_t value, bool preci
     return *down_cast<const ConstantType*>(entries_[value - kMinSmallConstant]);
   }
   return FromCat1NonSmallConstant(value, precise);
+}
+
+inline const RegType& RegTypeCache::FromTypeIndex(dex::TypeIndex type_index) {
+  DCHECK_LT(type_index.index_, dex_file_->NumTypeIds());
+  if (entries_for_type_index_[type_index.index_] != nullptr) {
+    return *entries_for_type_index_[type_index.index_];
+  }
+  return FromTypeIndexUncached(type_index);
 }
 
 inline const BooleanType& RegTypeCache::Boolean() {
@@ -124,39 +133,43 @@ inline const ImpreciseConstType& RegTypeCache::PosShortConstant() {
 }
 
 inline const ReferenceType& RegTypeCache::JavaLangClass() {
-  const RegType* result = &FromClass("Ljava/lang/Class;", GetClassRoot<mirror::Class>());
+  const RegType* result = &FromClass(GetClassRoot<mirror::Class>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/Class;"));
   DCHECK(result->IsReference());
   return *down_cast<const ReferenceType*>(result);
 }
 
 inline const ReferenceType& RegTypeCache::JavaLangString() {
-  const RegType* result = &FromClass("Ljava/lang/String;", GetClassRoot<mirror::String>());
+  const RegType* result = &FromClass(GetClassRoot<mirror::String>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/String;"));
   DCHECK(result->IsReference());
   return *down_cast<const ReferenceType*>(result);
 }
 
 inline const ReferenceType& RegTypeCache::JavaLangInvokeMethodHandle() {
-  const RegType* result = &FromClass("Ljava/lang/invoke/MethodHandle;",
-                                     GetClassRoot<mirror::MethodHandle>());
+  const RegType* result = &FromClass(GetClassRoot<mirror::MethodHandle>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/invoke/MethodHandle;"));
   DCHECK(result->IsReference());
   return *down_cast<const ReferenceType*>(result);
 }
 
 inline const ReferenceType& RegTypeCache::JavaLangInvokeMethodType() {
-  const RegType* result = &FromClass("Ljava/lang/invoke/MethodType;",
-                                     GetClassRoot<mirror::MethodType>());
+  const RegType* result = &FromClass(GetClassRoot<mirror::MethodType>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/invoke/MethodType;"));
   DCHECK(result->IsReference());
   return *down_cast<const ReferenceType*>(result);
 }
 
 inline const ReferenceType& RegTypeCache::JavaLangThrowable() {
-  const RegType* result = &FromClass("Ljava/lang/Throwable;", GetClassRoot<mirror::Throwable>());
+  const RegType* result = &FromClass(GetClassRoot<mirror::Throwable>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/Throwable;"));
   DCHECK(result->IsReference());
   return *down_cast<const ReferenceType*>(result);
 }
 
 inline const ReferenceType& RegTypeCache::JavaLangObject() {
-  const RegType* result = &FromClass("Ljava/lang/Object;", GetClassRoot<mirror::Object>());
+  const RegType* result = &FromClass(GetClassRoot<mirror::Object>());
+  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/Object;"));
   DCHECK(result->IsReference());
   return *down_cast<const ReferenceType*>(result);
 }

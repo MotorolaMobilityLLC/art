@@ -113,7 +113,7 @@ FailureKind ClassVerifier::VerifyClass(Thread* self,
 
   if (accessor.NumMethods() != 0u) {
     ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
-    RegTypeCache reg_types(self, linker, arena_pool);
+    RegTypeCache reg_types(self, linker, arena_pool, class_loader, dex_file);
     for (const ClassAccessor::Method& method : accessor.GetMethods()) {
       int64_t* previous_idx = &previous_method_idx[method.IsStaticOrDirect() ? 0u : 1u];
       self->AllowThreadSuspension();
@@ -131,9 +131,7 @@ FailureKind ClassVerifier::VerifyClass(Thread* self,
                                        &reg_types,
                                        verifier_deps,
                                        method_idx,
-                                       dex_file,
                                        dex_cache,
-                                       class_loader,
                                        class_def,
                                        method.GetCodeItem(),
                                        method.GetAccessFlags(),

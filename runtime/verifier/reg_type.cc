@@ -159,8 +159,7 @@ std::string UnresolvedReferenceType::Dump() const {
 std::string UnresolvedUninitializedRefType::Dump() const {
   std::stringstream result;
   result << "Unresolved And Uninitialized Reference: "
-      << PrettyDescriptor(std::string(GetDescriptor()).c_str())
-      << " Allocation PC: " << GetAllocationPc();
+      << PrettyDescriptor(std::string(GetDescriptor()).c_str());
   return result.str();
 }
 
@@ -180,14 +179,12 @@ std::string ReferenceType::Dump() const {
 std::string UninitializedReferenceType::Dump() const {
   std::stringstream result;
   result << "Uninitialized Reference: " << mirror::Class::PrettyDescriptor(GetClass());
-  result << " Allocation PC: " << GetAllocationPc();
   return result.str();
 }
 
 std::string UninitializedThisReferenceType::Dump() const {
   std::stringstream result;
   result << "Uninitialized This Reference: " << mirror::Class::PrettyDescriptor(GetClass());
-  result << "Allocation PC: " << GetAllocationPc();
   return result.str();
 }
 
@@ -312,8 +309,7 @@ const RegType& RegType::GetSuperClass(RegTypeCache* cache) const {
   if (!IsUnresolvedTypes()) {
     ObjPtr<mirror::Class> super_klass = GetClass()->GetSuperClass();
     if (super_klass != nullptr) {
-      std::string temp;
-      return cache->FromClass(super_klass->GetDescriptor(&temp), super_klass);
+      return cache->FromClass(super_klass);
     } else {
       return cache->Zero();
     }
@@ -705,9 +701,7 @@ const RegType& RegType::Merge(const RegType& incoming_type,
       } else if (incoming_type.GetClass() == join_class) {
         return incoming_type;
       } else {
-        std::string temp;
-        const char* descriptor = join_class->GetDescriptor(&temp);
-        return reg_types->FromClass(descriptor, join_class);
+        return reg_types->FromClass(join_class);
       }
     }
   } else {
@@ -728,11 +722,9 @@ void RegType::CheckInvariants() const {
 }
 
 void UninitializedThisReferenceType::CheckInvariants() const {
-  CHECK_EQ(GetAllocationPc(), 0U) << *this;
 }
 
 void UnresolvedUninitializedThisRefType::CheckInvariants() const {
-  CHECK_EQ(GetAllocationPc(), 0U) << *this;
   CHECK(!descriptor_.empty()) << *this;
   CHECK(!HasClass()) << *this;
 }

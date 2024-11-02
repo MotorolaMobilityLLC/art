@@ -426,7 +426,7 @@ art_cc_library_static {
 
 art_cc_defaults {
     name: "art_dex2oat_tests_defaults",
-    data: [
+    device_common_data: [
         ":art-gtest-jars-AbstractMethod",
         ":art-gtest-jars-ArrayClassWithUnresolvedComponent",
         ":art-gtest-jars-DefaultMethods",

@@ -35,6 +35,7 @@
 #include "entrypoints/entrypoint_utils-inl.h"
 #include "entrypoints/runtime_asm_entrypoints.h"
 #include "gc/space/image_space.h"
+#include "gc/task_processor.h"
 #include "interpreter/interpreter.h"
 #include "jit-inl.h"
 #include "jit_code_cache.h"
@@ -1476,40 +1477,25 @@ ScopedJitSuspend::~ScopedJitSuspend() {
   }
 }
 
-static void* RunPollingThread(void* arg) {
-  Jit* jit = reinterpret_cast<Jit*>(arg);
-  do {
-    sleep(10);
-  } while (!jit->GetCodeCache()->GetZygoteMap()->IsCompilationNotified());
+class MapBootImageMethodsTask : public gc::HeapTask {
+ public:
+  explicit MapBootImageMethodsTask(uint64_t target_run_time) : gc::HeapTask(target_run_time) {}
 
-  // We will suspend other threads: we can only do that if we're attached to the
-  // runtime.
-  Runtime* runtime = Runtime::Current();
-  bool thread_attached = runtime->AttachCurrentThread(
-      "BootImagePollingThread",
-      /* as_daemon= */ true,
-      /* thread_group= */ nullptr,
-      /* create_peer= */ false);
-  CHECK(thread_attached);
-
-  if (getpriority(PRIO_PROCESS, 0 /* this thread */) == 0) {
-    // Slightly reduce thread priority, mostly so the suspend logic notices that we're
-    // not a high priority thread, and can time out more slowly. May fail on host.
-    (void)setpriority(PRIO_PROCESS, 0 /* this thread */, 1);
-  } else {
-    PLOG(ERROR) << "Unexpected BootImagePollingThread priority: " << getpriority(PRIO_PROCESS, 0);
-  }
-  {
+  void Run(Thread* self ATTRIBUTE_UNUSED) override {
+    Runtime* runtime = Runtime::Current();
+    if (!runtime->GetJit()->GetCodeCache()->GetZygoteMap()->IsCompilationNotified()) {
+      // Add a new task that will execute in 10 seconds.
+      static constexpr uint64_t kWaitTimeNs = MsToNs(10000);  // 10 seconds
+      runtime->GetHeap()->AddHeapTask(new MapBootImageMethodsTask(NanoTime() + kWaitTimeNs));
+      return;
+    }
     // Prevent other threads from running while we are remapping the boot image
     // ArtMethod's. Native threads might still be running, but they cannot
     // change the contents of ArtMethod's.
     ScopedSuspendAll ssa(__FUNCTION__);
     runtime->GetJit()->MapBootImageMethods();
   }
-
-  Runtime::Current()->DetachCurrentThread();
-  return nullptr;
-}
+};
 
 void Jit::PostForkChildAction(bool is_system_server, bool is_zygote) {
   // Clear the potential boot tasks inherited from the zygote.
@@ -1521,19 +1507,8 @@ void Jit::PostForkChildAction(bool is_system_server, bool is_zygote) {
   Runtime* const runtime = Runtime::Current();
   // Check if we'll need to remap the boot image methods.
   if (!is_zygote && fd_methods_ != -1) {
-    // Create a thread that will poll the status of zygote compilation, and map
-    // the private mapping of boot image methods.
-    // For child zygote, we instead query IsCompilationNotified() post zygote fork.
-    zygote_mapping_methods_.ResetInForkedProcess();
-    pthread_t polling_thread;
-    pthread_attr_t attr;
-    CHECK_PTHREAD_CALL(pthread_attr_init, (&attr), "new thread");
-    CHECK_PTHREAD_CALL(pthread_attr_setdetachstate, (&attr, PTHREAD_CREATE_DETACHED),
-                       "PTHREAD_CREATE_DETACHED");
-    CHECK_PTHREAD_CALL(
-        pthread_create,
-        (&polling_thread, &attr, RunPollingThread, reinterpret_cast<void*>(this)),
-        "Methods maps thread");
+    Runtime::Current()->GetHeap()->AddHeapTask(
+        new MapBootImageMethodsTask(NanoTime() + MsToNs(10000)));
   }
 
   if (is_zygote || runtime->IsSafeMode()) {

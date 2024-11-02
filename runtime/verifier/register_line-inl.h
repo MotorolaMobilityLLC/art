@@ -87,6 +87,16 @@ inline void RegisterLine::SetResultRegisterTypeWide(const RegType& new_type1,
   result_[1] = new_type2.GetId();
 }
 
+inline void RegisterLine::SetRegisterTypeForNewInstance(uint32_t vdst,
+                                                        const RegType& uninit_type,
+                                                        uint32_t dex_pc) {
+  DCHECK_LT(vdst, num_regs_);
+  DCHECK(NeedsAllocationDexPc(uninit_type));
+  SetRegisterType<LockOp::kClear>(vdst, uninit_type);
+  EnsureAllocationDexPcsAvailable();
+  allocation_dex_pcs_[vdst] = dex_pc;
+}
+
 inline void RegisterLine::CopyRegister1(MethodVerifier* verifier, uint32_t vdst, uint32_t vsrc,
                                  TypeCategory cat) {
   DCHECK(cat == kTypeCategory1nr || cat == kTypeCategoryRef);
@@ -96,6 +106,8 @@ inline void RegisterLine::CopyRegister1(MethodVerifier* verifier, uint32_t vdst,
         << type << "'";
     return;
   }
+  // FIXME: If `vdst == vsrc`, we clear locking information before we try to copy it below. Adding
+  // `move-object v1, v1` to the middle of `OK.runStraightLine()` in run-test 088 makes it fail.
   SetRegisterType<LockOp::kClear>(vdst, type);
   if (!type.IsConflict() &&                                  // Allow conflicts to be copied around.
       ((cat == kTypeCategory1nr && !type.IsCategory1Types()) ||
@@ -104,6 +116,10 @@ inline void RegisterLine::CopyRegister1(MethodVerifier* verifier, uint32_t vdst,
                                                  << " cat=" << static_cast<int>(cat);
   } else if (cat == kTypeCategoryRef) {
     CopyRegToLockDepth(vdst, vsrc);
+    if (allocation_dex_pcs_ != nullptr) {
+      // Copy allocation dex pc for uninitialized types. (Copy unused value for other types.)
+      allocation_dex_pcs_[vdst] = allocation_dex_pcs_[vsrc];
+    }
   }
 }
 
@@ -117,6 +133,10 @@ inline void RegisterLine::CopyRegister2(MethodVerifier* verifier, uint32_t vdst,
   } else {
     SetRegisterTypeWide(vdst, type_l, type_h);
   }
+}
+
+inline bool RegisterLine::NeedsAllocationDexPc(const RegType& reg_type) {
+  return reg_type.IsUninitializedReference() || reg_type.IsUnresolvedAndUninitializedReference();
 }
 
 inline bool RegisterLine::VerifyRegisterType(MethodVerifier* verifier, uint32_t vsrc,
@@ -155,6 +175,30 @@ inline bool RegisterLine::VerifyRegisterType(MethodVerifier* verifier, uint32_t 
   return true;
 }
 
+inline void RegisterLine::DCheckUniqueNewInstanceDexPc(MethodVerifier* verifier, uint32_t dex_pc) {
+  if (kIsDebugBuild && allocation_dex_pcs_ != nullptr) {
+    // Note: We do not clear the `allocation_dex_pcs_` entries when copying data from
+    // a register line without `allocation_dex_pcs_`, or when we merge types and find
+    // a conflict, so the same dex pc can remain in the `allocation_dex_pcs_` array
+    // but it cannot be recorded for a `new-instance` uninitialized type.
+    RegTypeCache* reg_types = verifier->GetRegTypeCache();
+    for (uint32_t i = 0; i != num_regs_; ++i) {
+      if (NeedsAllocationDexPc(reg_types->GetFromId(line_[i]))) {
+        CHECK_NE(allocation_dex_pcs_[i], dex_pc) << i << " " << reg_types->GetFromId(line_[i]);
+      }
+    }
+  }
+}
+
+inline void RegisterLine::EnsureAllocationDexPcsAvailable() {
+  DCHECK_NE(num_regs_, 0u);
+  if (allocation_dex_pcs_ == nullptr) {
+    ScopedArenaAllocatorAdapter<uint32_t> allocator(monitors_.get_allocator());
+    allocation_dex_pcs_ = allocator.allocate(num_regs_);
+    std::fill_n(allocation_dex_pcs_, num_regs_, kNoDexPc);
+  }
+}
+
 inline void RegisterLine::VerifyMonitorStackEmpty(MethodVerifier* verifier) const {
   if (MonitorStackDepth() != 0) {
     verifier->Fail(VERIFY_ERROR_LOCKING, /*pending_exc=*/ false);
@@ -180,6 +224,7 @@ inline RegisterLine::RegisterLine(size_t num_regs,
                                   ScopedArenaAllocator& allocator,
                                   RegTypeCache* reg_types)
     : num_regs_(num_regs),
+      allocation_dex_pcs_(nullptr),
       monitors_(allocator.Adapter(kArenaAllocVerifier)),
       reg_to_lock_depths_(std::less<uint32_t>(),
                           allocator.Adapter(kArenaAllocVerifier)),
@@ -211,8 +256,18 @@ inline void RegisterLine::ClearRegToLockDepth(size_t reg, size_t depth) {
 
 inline void RegisterLineArenaDelete::operator()(RegisterLine* ptr) const {
   if (ptr != nullptr) {
+    uint32_t num_regs = ptr->NumRegs();
+    uint32_t* allocation_dex_pcs = ptr->allocation_dex_pcs_;
     ptr->~RegisterLine();
-    ProtectMemory(ptr, RegisterLine::ComputeSize(ptr->NumRegs()));
+    ProtectMemory(ptr, RegisterLine::ComputeSize(num_regs));
+    if (allocation_dex_pcs != nullptr) {
+      struct AllocationDexPcsDelete : ArenaDelete<uint32_t> {
+        void operator()(uint32_t* ptr, size_t size) {
+          ProtectMemory(ptr, size);
+        }
+      };
+      AllocationDexPcsDelete()(allocation_dex_pcs, num_regs * sizeof(*allocation_dex_pcs));
+    }
   }
 }
 

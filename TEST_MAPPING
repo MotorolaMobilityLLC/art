@@ -1382,6 +1382,12 @@
       "name": "art-run-test-857-default-access"
     },
     {
+      "name": "art-run-test-858-checker-unsafe"
+    },
+    {
+      "name": "art-run-test-859-checker-var-handles-intrinsics"
+    },
+    {
       "name": "art-run-test-963-default-range-smali"
     },
     {
@@ -1465,6 +1471,9 @@
     },
     {
       "name": "art_standalone_sigchain_tests"
+    },
+    {
+      "name": "libnativebridge-lazy-tests"
     },
     {
       "name": "libnativebridge-tests"
@@ -2858,6 +2867,12 @@
       "name": "art-run-test-857-default-access[com.google.android.art.apex]"
     },
     {
+      "name": "art-run-test-858-checker-unsafe[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-859-checker-var-handles-intrinsics[com.google.android.art.apex]"
+    },
+    {
       "name": "art-run-test-963-default-range-smali[com.google.android.art.apex]"
     },
     {
@@ -2941,6 +2956,9 @@
     },
     {
       "name": "art_standalone_sigchain_tests[com.google.android.art.apex]"
+    },
+    {
+      "name": "libnativebridge-lazy-tests[com.google.android.art.apex]"
     },
     {
       "name": "libnativebridge-tests[com.google.android.art.apex]"
@@ -4349,6 +4367,12 @@
       "name": "art-run-test-857-default-access"
     },
     {
+      "name": "art-run-test-858-checker-unsafe"
+    },
+    {
+      "name": "art-run-test-859-checker-var-handles-intrinsics"
+    },
+    {
       "name": "art-run-test-963-default-range-smali"
     },
     {
@@ -4422,6 +4446,9 @@
     },
     {
       "name": "art_standalone_sigchain_tests"
+    },
+    {
+      "name": "libnativebridge-lazy-tests"
     },
     {
       "name": "libnativebridge-tests"
@@ -5827,6 +5854,12 @@
       "name": "art-run-test-857-default-access"
     },
     {
+      "name": "art-run-test-858-checker-unsafe"
+    },
+    {
+      "name": "art-run-test-859-checker-var-handles-intrinsics"
+    },
+    {
       "name": "art-run-test-963-default-range-smali"
     },
     {
@@ -5899,6 +5932,9 @@
       "name": "art_standalone_sigchain_tests"
     },
     {
+      "name": "libnativebridge-lazy-tests"
+    },
+    {
       "name": "libnativebridge-tests"
     },
     {
@@ -5915,13 +5951,10 @@
   ],
   "postsubmit": [
     {
-      "name": "art-run-test-858-checker-unsafe"
+      "name": "art-run-test-2282-checker-always-throws-try-catch"
     },
     {
-      "name": "art-run-test-859-checker-var-handles-intrinsics"
-    },
-    {
-      "name": "libnativebridge-lazy-tests"
+      "name": "art-run-test-2283-checker-remove-null-check"
     }
   ]
 }

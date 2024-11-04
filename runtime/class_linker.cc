@@ -4827,47 +4827,6 @@ void ClassLinker::MoveClassTableToPreZygote() {
   VisitClassLoaders(&visitor);
 }
 
-// Look up classes by hash and descriptor and put all matching ones in the result array.
-class LookupClassesVisitor : public ClassLoaderVisitor {
- public:
-  LookupClassesVisitor(const char* descriptor,
-                       size_t hash,
-                       std::vector<ObjPtr<mirror::Class>>* result)
-     : descriptor_(descriptor),
-       hash_(hash),
-       result_(result) {}
-
-  void Visit(ObjPtr<mirror::ClassLoader> class_loader)
-      REQUIRES_SHARED(Locks::classlinker_classes_lock_, Locks::mutator_lock_) override {
-    ClassTable* const class_table = class_loader->GetClassTable();
-    ObjPtr<mirror::Class> klass = class_table->Lookup(descriptor_, hash_);
-    // Add `klass` only if `class_loader` is its defining (not just initiating) class loader.
-    if (klass != nullptr && klass->GetClassLoader() == class_loader) {
-      result_->push_back(klass);
-    }
-  }
-
- private:
-  const char* const descriptor_;
-  const size_t hash_;
-  std::vector<ObjPtr<mirror::Class>>* const result_;
-};
-
-void ClassLinker::LookupClasses(const char* descriptor,
-                                std::vector<ObjPtr<mirror::Class>>& result) {
-  result.clear();
-  Thread* const self = Thread::Current();
-  ReaderMutexLock mu(self, *Locks::classlinker_classes_lock_);
-  const size_t hash = ComputeModifiedUtf8Hash(descriptor);
-  ObjPtr<mirror::Class> klass = boot_class_table_->Lookup(descriptor, hash);
-  if (klass != nullptr) {
-    DCHECK(klass->GetClassLoader() == nullptr);
-    result.push_back(klass);
-  }
-  LookupClassesVisitor visitor(descriptor, hash, &result);
-  VisitClassLoaders(&visitor);
-}
-
 bool ClassLinker::AttemptSupertypeVerification(Thread* self,
                                                verifier::VerifierDeps* verifier_deps,
                                                Handle<mirror::Class> klass,

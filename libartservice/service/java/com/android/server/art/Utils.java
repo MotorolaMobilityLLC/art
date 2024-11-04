@@ -73,7 +73,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 /** @hide */
 @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
@@ -143,7 +142,7 @@ public final class Utils {
                         -> Abi.create(name, VMRuntime.getInstructionSet(name),
                                 name.equals(pkgPrimaryAbi.name())))
                 .sorted(Comparator.comparing(Abi::isPrimaryAbi).reversed())
-                .collect(Collectors.toList());
+                .toList();
     }
 
     @NonNull

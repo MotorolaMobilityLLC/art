@@ -215,7 +215,7 @@ public class DumpHelper {
         List<DexLoader> otherApps =
                 dexLoaders.stream()
                         .filter(loader -> DexUseManagerLocal.isLoaderOtherApp(loader, packageName))
-                        .collect(Collectors.toList());
+                        .toList();
         if (!otherApps.isEmpty()) {
             ipw.printf("used by other apps: [%s]\n",
                     otherApps.stream()

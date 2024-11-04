@@ -247,11 +247,6 @@ class ClassLinker {
       REQUIRES(!Locks::classlinker_classes_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Finds all the classes with the given descriptor, regardless of ClassLoader.
-  void LookupClasses(const char* descriptor, std::vector<ObjPtr<mirror::Class>>& classes)
-      REQUIRES(!Locks::classlinker_classes_lock_)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
   ObjPtr<mirror::Class> LookupPrimitiveClass(char type) REQUIRES_SHARED(Locks::mutator_lock_);
   ObjPtr<mirror::Class> FindPrimitiveClass(char type) REQUIRES_SHARED(Locks::mutator_lock_);
 

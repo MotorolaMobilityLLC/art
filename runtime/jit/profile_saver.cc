@@ -1100,7 +1100,7 @@ static void AddTrackedLocationsToMap(const std::string& output_filename,
   // We should find a better way which allows us to do the tracking based on full paths.
   for (const std::string& path : code_paths) {
     size_t last_sep_index = path.find_last_of('/');
-    if (last_sep_index == path.size() - 1) {
+    if (path.empty() || last_sep_index == path.size() - 1) {
       // Should not happen, but anyone can register code paths so better be prepared and ignore
       // such locations.
       continue;
@@ -1113,14 +1113,8 @@ static void AddTrackedLocationsToMap(const std::string& output_filename,
     code_paths_and_filenames.push_back(filename);
   }
 
-  auto it = map->find(output_filename);
-  if (it == map->end()) {
-    map->Put(
-        output_filename,
-        std::set<std::string>(code_paths_and_filenames.begin(), code_paths_and_filenames.end()));
-  } else {
-    it->second.insert(code_paths_and_filenames.begin(), code_paths_and_filenames.end());
-  }
+  auto it = map->FindOrAdd(output_filename);
+  it->second.insert(code_paths_and_filenames.begin(), code_paths_and_filenames.end());
 }
 
 void ProfileSaver::AddTrackedLocations(const std::string& output_filename,
@@ -1196,9 +1190,8 @@ void ProfileSaver::ResolveTrackedLocations() {
   for (const auto& it : locations_to_be_resolved) {
     const std::string& filename = it.first;
     const std::set<std::string>& locations = it.second;
-    auto resolved_locations_it = resolved_locations_map.Put(
-        filename,
-        std::vector<std::string>(locations.size()));
+    auto resolved_locations_it = resolved_locations_map.Put(filename, std::vector<std::string>());
+    resolved_locations_it->second.reserve(locations.size());
 
     for (const auto& location : locations) {
       UniqueCPtr<const char[]> location_real(realpath(location.c_str(), nullptr));

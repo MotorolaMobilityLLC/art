@@ -2416,10 +2416,10 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     }
     case Instruction::NEW_INSTANCE: {
       const RegType& res_type = ResolveClass<CheckAccess::kYes>(dex::TypeIndex(inst->VRegB_21c()));
-      if (res_type.IsConflict()) {
-        DCHECK_NE(failures_.size(), 0U);
-        break;  // bad class
-      }
+      // Dex file verifier ensures that all valid type indexes reference valid descriptors and the
+      // `CheckNewInstance()` ensures that the descriptor starts with an `L` before we get to the
+      // code flow verification. So, we should not see a conflict (void) or a primitive type here.
+      DCHECK(res_type.IsReference() || res_type.IsUnresolvedReference()) << res_type;
       // TODO: check Compiler::CanAccessTypeWithoutChecks returns false when res_type is unresolved
       // can't create an instance of an interface or abstract class */
       if (!res_type.IsInstantiableTypes()) {

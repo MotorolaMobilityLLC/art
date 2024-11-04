@@ -178,11 +178,8 @@ void ProfileSaver::Run() {
     uint64_t min_save_period_ns = MsToNs(force_first_save ? options_.GetMinFirstSaveMs() :
                                                                   options_.GetMinSavePeriodMs());
     while (min_save_period_ns * 0.9 > sleep_time) {
-      {
-        MutexLock mu(self, wait_lock_);
-        period_condition_.TimedWait(self, NsToMs(min_save_period_ns - sleep_time), 0);
-        sleep_time = NanoTime() - sleep_start;
-      }
+      sleep(NsToMs(min_save_period_ns * 0.9 - sleep_time));
+      sleep_time = NanoTime() - sleep_start;
       // Check if the thread was woken up for shutdown.
       if (ShuttingDown(self)) {
         break;

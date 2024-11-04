@@ -230,6 +230,9 @@ class RegTypeCache {
   // Fast lookup by type index.
   const RegType** const entries_for_type_index_;
 
+  // Cache last uninitialized "this" type used for constructors.
+  const UninitializedType* last_uninitialized_this_type_;
+
   // Whether or not we're allowed to load classes.
   const bool can_load_classes_;
 

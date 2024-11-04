@@ -45,7 +45,9 @@ class ArenaBitVector;
 namespace verifier {
 
 class MethodVerifier;
+class ReferenceType;
 class RegTypeCache;
+class UnresolvedReferenceType;
 
 /*
  * RegType holds information about the "type" of data held in a register.
@@ -783,9 +785,11 @@ class UninitializedReferenceType final : public UninitializedType {
  public:
   UninitializedReferenceType(Handle<mirror::Class> klass,
                              const std::string_view& descriptor,
-                             uint16_t cache_id)
+                             uint16_t cache_id,
+                             const ReferenceType* initialized_type)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, cache_id) {
+      : UninitializedType(klass, descriptor, cache_id),
+        initialized_type_(initialized_type) {
     CheckConstructorInvariants(this);
   }
 
@@ -793,7 +797,15 @@ class UninitializedReferenceType final : public UninitializedType {
 
   bool HasClassVirtual() const override { return true; }
 
+  const ReferenceType* GetInitializedType() const {
+    return initialized_type_;
+  }
+
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+
+ private:
+  // The corresponding initialized type to transition to after a constructor call.
+  const ReferenceType* const initialized_type_;
 };
 
 // Similar to UnresolvedReferenceType but not yet having been passed to a
@@ -802,9 +814,11 @@ class UnresolvedUninitializedRefType final : public UninitializedType {
  public:
   UnresolvedUninitializedRefType(Handle<mirror::Class> klass,
                                  const std::string_view& descriptor,
-                                 uint16_t cache_id)
+                                 uint16_t cache_id,
+                                 const UnresolvedReferenceType* initialized_type)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, cache_id) {
+      : UninitializedType(klass, descriptor, cache_id),
+        initialized_type_(initialized_type) {
     CheckConstructorInvariants(this);
   }
 
@@ -812,10 +826,17 @@ class UnresolvedUninitializedRefType final : public UninitializedType {
 
   bool IsUnresolvedTypes() const override { return true; }
 
+  const UnresolvedReferenceType* GetInitializedType() const {
+    return initialized_type_;
+  }
+
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
   void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
+
+  // The corresponding initialized type to transition to after a constructor call.
+  const UnresolvedReferenceType* const initialized_type_;
 };
 
 // Similar to UninitializedReferenceType but special case for the this argument
@@ -824,9 +845,11 @@ class UninitializedThisReferenceType final : public UninitializedType {
  public:
   UninitializedThisReferenceType(Handle<mirror::Class> klass,
                                  const std::string_view& descriptor,
-                                 uint16_t cache_id)
+                                 uint16_t cache_id,
+                                 const ReferenceType* initialized_type)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, cache_id) {
+      : UninitializedType(klass, descriptor, cache_id),
+        initialized_type_(initialized_type) {
     CheckConstructorInvariants(this);
   }
 
@@ -834,19 +857,28 @@ class UninitializedThisReferenceType final : public UninitializedType {
 
   bool HasClassVirtual() const override { return true; }
 
+  const ReferenceType* GetInitializedType() const {
+    return initialized_type_;
+  }
+
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
   void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
+
+  // The corresponding initialized type to transition to after a constructor call.
+  const ReferenceType* initialized_type_;
 };
 
 class UnresolvedUninitializedThisRefType final : public UninitializedType {
  public:
   UnresolvedUninitializedThisRefType(Handle<mirror::Class> klass,
                                      const std::string_view& descriptor,
-                                     uint16_t cache_id)
+                                     uint16_t cache_id,
+                                     const UnresolvedReferenceType* initialized_type)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, cache_id) {
+      : UninitializedType(klass, descriptor, cache_id),
+        initialized_type_(initialized_type) {
     CheckConstructorInvariants(this);
   }
 
@@ -854,10 +886,17 @@ class UnresolvedUninitializedThisRefType final : public UninitializedType {
 
   bool IsUnresolvedTypes() const override { return true; }
 
+  const UnresolvedReferenceType* GetInitializedType() const {
+    return initialized_type_;
+  }
+
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
   void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
+
+  // The corresponding initialized type to transition to after a constructor call.
+  const UnresolvedReferenceType* initialized_type_;
 };
 
 // A type of register holding a reference to an Object of type GetClass or a
@@ -867,7 +906,8 @@ class ReferenceType final : public RegType {
   ReferenceType(Handle<mirror::Class> klass,
                 const std::string_view& descriptor,
                 uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : RegType(klass, descriptor, cache_id) {
+      : RegType(klass, descriptor, cache_id),
+        uninitialized_type_(nullptr) {
     CheckConstructorInvariants(this);
   }
 
@@ -877,11 +917,24 @@ class ReferenceType final : public RegType {
 
   bool HasClassVirtual() const override { return true; }
 
-  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
   AssignmentType GetAssignmentTypeImpl() const override {
     return AssignmentType::kReference;
   }
+
+  const UninitializedReferenceType* GetUninitializedType() const {
+    return uninitialized_type_;
+  }
+
+  void SetUninitializedType(const UninitializedReferenceType* uninitialized_type) const {
+    uninitialized_type_ = uninitialized_type;
+  }
+
+  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+
+ private:
+  // The corresponding uninitialized type created from this type for a `new-instance` instruction.
+  // This member is mutable because it's a part of the type cache, not part of the type itself.
+  mutable const UninitializedReferenceType* uninitialized_type_;
 };
 
 // Common parent of unresolved types.
@@ -909,7 +962,8 @@ class UnresolvedReferenceType final : public UnresolvedType {
                           const std::string_view& descriptor,
                           uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UnresolvedType(cls, descriptor, cache_id) {
+      : UnresolvedType(cls, descriptor, cache_id),
+        uninitialized_type_(nullptr) {
     CheckConstructorInvariants(this);
   }
 
@@ -917,10 +971,22 @@ class UnresolvedReferenceType final : public UnresolvedType {
 
   bool IsUnresolvedTypes() const override { return true; }
 
+  const UnresolvedUninitializedRefType* GetUninitializedType() const {
+    return uninitialized_type_;
+  }
+
+  void SetUninitializedType(const UnresolvedUninitializedRefType* uninitialized_type) const {
+    uninitialized_type_ = uninitialized_type;
+  }
+
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
   void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
+
+  // The corresponding uninitialized type created from this type for a `new-instance` instruction.
+  // This member is mutable because it's a part of the type cache, not part of the type itself.
+  mutable const UnresolvedUninitializedRefType* uninitialized_type_;
 };
 
 // Type representing the super-class of an unresolved type.

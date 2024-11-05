@@ -1222,8 +1222,7 @@ bool Jit::CompileMethodFromProfile(Thread* self,
                                    Handle<mirror::ClassLoader> class_loader,
                                    bool add_to_queue,
                                    bool compile_after_boot) {
-  ArtMethod* method = class_linker->ResolveMethodWithoutInvokeType(
-      method_idx, dex_cache, class_loader);
+  ArtMethod* method = class_linker->ResolveMethodId(method_idx, dex_cache, class_loader);
   if (method == nullptr) {
     self->ClearException();
     return false;

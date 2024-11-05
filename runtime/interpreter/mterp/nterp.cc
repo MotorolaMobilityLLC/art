@@ -332,10 +332,8 @@ extern "C" size_t NterpGetMethod(Thread* self, ArtMethod* caller, const uint16_t
 
   ClassLinker* const class_linker = Runtime::Current()->GetClassLinker();
   ArtMethod* resolved_method = caller->SkipAccessChecks()
-      ? class_linker->ResolveMethod<ClassLinker::ResolveMode::kNoChecks>(
-            self, method_index, caller, invoke_type)
-      : class_linker->ResolveMethod<ClassLinker::ResolveMode::kCheckICCEAndIAE>(
-            self, method_index, caller, invoke_type);
+      ? class_linker->ResolveMethodId(method_index, caller)
+      : class_linker->ResolveMethodWithChecks(method_index, caller, invoke_type);
   if (resolved_method == nullptr) {
     DCHECK(self->IsExceptionPending());
     return 0;

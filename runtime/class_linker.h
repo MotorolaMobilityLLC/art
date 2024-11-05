@@ -334,13 +334,6 @@ class ClassLinker {
                                            ObjPtr<mirror::ClassLoader> class_loader)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Determine whether a dex cache result should be trusted, or an IncompatibleClassChangeError
-  // check and IllegalAccessError check should be performed even after a hit.
-  enum class ResolveMode {  // private.
-    kNoChecks,
-    kCheckICCEAndIAE
-  };
-
   // Look up a previously resolved method with the given index.
   ArtMethod* LookupResolvedMethod(uint32_t method_idx,
                                   ObjPtr<mirror::DexCache> dex_cache,
@@ -363,27 +356,26 @@ class ClassLinker {
                                     uint32_t method_idx)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  // Resolve a method with a given ID from the DexFile associated with the given DexCache
-  // and ClassLoader, storing the result in DexCache. The ClassLinker and ClassLoader are
-  // used as in ResolveType. What is unique is the method type argument which is used to
-  // determine if this method is a direct, static, or virtual method.
-  template <ResolveMode kResolveMode>
-  ArtMethod* ResolveMethod(uint32_t method_idx,
-                           Handle<mirror::DexCache> dex_cache,
-                           Handle<mirror::ClassLoader> class_loader,
-                           ArtMethod* referrer,
-                           InvokeType type)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      REQUIRES(!Locks::dex_lock_, !Roles::uninterruptible_);
+  // Check invoke type against the referenced class. Throws IncompatibleClassChangeError
+  // and returns true on mismatch (kInterface on a non-interface class,
+  // kVirtual on interface, kDefault on interface for dex files not supporting default methods),
+  // otherwise returns false.
+  static bool ThrowIfInvokeClassMismatch(ObjPtr<mirror::Class> cls,
+                                         const DexFile& dex_file,
+                                         InvokeType type)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
-  template <ResolveMode kResolveMode>
-  ArtMethod* ResolveMethod(Thread* self, uint32_t method_idx, ArtMethod* referrer, InvokeType type)
+  ArtMethod* ResolveMethodWithChecks(uint32_t method_idx, ArtMethod* referrer, InvokeType type)
       REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!Locks::dex_lock_, !Roles::uninterruptible_);
 
   EXPORT ArtMethod* ResolveMethodId(uint32_t method_idx,
                                     Handle<mirror::DexCache> dex_cache,
                                     Handle<mirror::ClassLoader> class_loader)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      REQUIRES(!Locks::dex_lock_, !Roles::uninterruptible_);
+
+  ArtMethod* ResolveMethodId(uint32_t method_idx, ArtMethod* referrer)
       REQUIRES_SHARED(Locks::mutator_lock_)
       REQUIRES(!Locks::dex_lock_, !Roles::uninterruptible_);
 
@@ -1407,23 +1399,6 @@ class ClassLinker {
                           bool ignore_copied_methods,
                           /*out*/bool* new_conflict,
                           /*out*/ArtMethod** imt) REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // Check invoke type against the referenced class. Throws IncompatibleClassChangeError
-  // (if `kThrowOnError`) and returns true on mismatch (kInterface on a non-interface class,
-  // kVirtual on interface, kDefault on interface for dex files not supporting default methods),
-  // otherwise returns false.
-  template <bool kThrowOnError, typename ClassGetter>
-  static bool CheckInvokeClassMismatch(ObjPtr<mirror::DexCache> dex_cache,
-                                       InvokeType type,
-                                       ClassGetter class_getter)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  // Helper that feeds the above function with `ClassGetter` doing `LookupResolvedType()`.
-  template <bool kThrow>
-  bool CheckInvokeClassMismatch(ObjPtr<mirror::DexCache> dex_cache,
-                                InvokeType type,
-                                uint32_t method_idx,
-                                ObjPtr<mirror::ClassLoader> class_loader)
-      REQUIRES_SHARED(Locks::mutator_lock_);
 
   ObjPtr<mirror::IfTable> GetArrayIfTable() REQUIRES_SHARED(Locks::mutator_lock_);
 

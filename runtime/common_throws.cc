@@ -418,6 +418,16 @@ void ThrowNoSuchMethodError(InvokeType type,
   ThrowException("Ljava/lang/NoSuchMethodError;", c, msg.str().c_str());
 }
 
+void ThrowNoSuchMethodError(ObjPtr<mirror::Class> c,
+                            std::string_view name,
+                            const Signature& signature) {
+  std::ostringstream msg;
+  std::string temp;
+  msg << "No method " << name << signature
+      << " in class " << c->GetDescriptor(&temp) << " or its super classes";
+  ThrowException("Ljava/lang/NoSuchMethodError;", c, msg.str().c_str());
+}
+
 // NullPointerException
 
 void ThrowNullPointerExceptionForFieldAccess(ArtField* field, ArtMethod* method, bool is_read) {

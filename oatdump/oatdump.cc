@@ -2803,10 +2803,11 @@ class IMTDumper {
            class_def_index != dex_file->NumClassDefs();
            ++class_def_index) {
         const dex::ClassDef& class_def = dex_file->GetClassDef(class_def_index);
-        const char* descriptor = dex_file->GetClassDescriptor(class_def);
-        h_klass.Assign(class_linker->FindClass(self, descriptor, h_class_loader));
+        h_klass.Assign(
+            class_linker->FindClass(self, *dex_file, class_def.class_idx_, h_class_loader));
         if (h_klass == nullptr) {
-          std::cerr << "Warning: could not load " << descriptor << std::endl;
+          std::cerr << "Warning: could not load "
+                    << dex_file->GetTypeDescriptor(class_def.class_idx_) << std::endl;
           continue;
         }
 
@@ -2929,8 +2930,8 @@ class IMTDumper {
       descriptor = DotToDescriptor(class_name.c_str());
     }
 
-    ObjPtr<mirror::Class> klass =
-        runtime->GetClassLinker()->FindClass(self, descriptor.c_str(), h_loader);
+    ObjPtr<mirror::Class> klass = runtime->GetClassLinker()->FindClass(
+        self, descriptor.c_str(), descriptor.length(), h_loader);
 
     if (klass == nullptr) {
       self->ClearException();

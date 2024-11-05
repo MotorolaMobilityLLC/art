@@ -1115,10 +1115,8 @@ class RegTypeClassJoinTest : public RegTypeTest {
     Handle<mirror::ClassLoader> class_loader(
         hs.NewHandle(soa.Decode<mirror::ClassLoader>(jclass_loader)));
 
-    Handle<mirror::Class> c1(hs.NewHandle(
-        class_linker_->FindClass(soa.Self(), in1, class_loader)));
-    Handle<mirror::Class> c2(hs.NewHandle(
-        class_linker_->FindClass(soa.Self(), in2, class_loader)));
+    Handle<mirror::Class> c1 = hs.NewHandle(FindClass(in1, class_loader));
+    Handle<mirror::Class> c2 = hs.NewHandle(FindClass(in2, class_loader));
     ASSERT_TRUE(c1 != nullptr);
     ASSERT_TRUE(c2 != nullptr);
     const DexFile* dex_file = &c1->GetDexFile();

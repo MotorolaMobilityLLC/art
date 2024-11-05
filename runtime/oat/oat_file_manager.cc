@@ -724,10 +724,8 @@ class BackgroundVerificationTask final : public Task {
         StackHandleScope<2> hs(self);
         Handle<mirror::ClassLoader> h_loader(hs.NewHandle(
             soa.Decode<mirror::ClassLoader>(class_loader_)));
-        Handle<mirror::Class> h_class(hs.NewHandle<mirror::Class>(class_linker->FindClass(
-            self,
-            dex_file->GetClassDescriptor(class_def),
-            h_loader)));
+        Handle<mirror::Class> h_class =
+            hs.NewHandle(class_linker->FindClass(self, *dex_file, class_def.class_idx_, h_loader));
 
         if (h_class == nullptr) {
           DCHECK(self->IsExceptionPending());

@@ -782,9 +782,10 @@ HInliner::InlineCacheType HInliner::GetInlineCacheAOT(
   Thread* self = Thread::Current();
   for (const dex::TypeIndex& type_index : dex_pc_data.classes) {
     const DexFile* dex_file = caller_compilation_unit_.GetDexFile();
-    const char* descriptor = pci->GetTypeDescriptor(dex_file, type_index);
-    ObjPtr<mirror::Class> clazz =
-        class_linker->FindClass(self, descriptor, caller_compilation_unit_.GetClassLoader());
+    size_t descriptor_length;
+    const char* descriptor = pci->GetTypeDescriptor(dex_file, type_index, &descriptor_length);
+    ObjPtr<mirror::Class> clazz = class_linker->FindClass(
+        self, descriptor, descriptor_length, caller_compilation_unit_.GetClassLoader());
     if (clazz == nullptr) {
       self->ClearException();  // Clean up the exception left by type resolution.
       VLOG(compiler) << "Could not find class from inline cache in AOT mode "

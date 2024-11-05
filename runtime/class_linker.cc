@@ -2878,8 +2878,9 @@ void ClassLinker::FinishCoreArrayClassSetup(ClassRoot array_root) {
   ObjPtr<mirror::Class> array_class = GetClassRoot(array_root, this);
   FinishArrayClassSetup(array_class);
 
-  std::string temp;
-  const char* descriptor = array_class->GetDescriptor(&temp);
+  std::string descriptor;
+  const char* raw_descriptor = array_class->GetDescriptor(&descriptor);
+  DCHECK(raw_descriptor == descriptor.c_str());
   size_t hash = ComputeModifiedUtf8Hash(descriptor);
   ObjPtr<mirror::Class> existing = InsertClass(descriptor, array_class, hash);
   CHECK(existing == nullptr);
@@ -3243,18 +3244,31 @@ bool ClassLinker::FindClassInBaseDexClassLoaderClassPath(
 }
 
 ObjPtr<mirror::Class> ClassLinker::FindClass(Thread* self,
-                                             const char* descriptor,
+                                             const DexFile& dex_file,
+                                             dex::TypeIndex type_index,
                                              Handle<mirror::ClassLoader> class_loader) {
-  DCHECK_NE(*descriptor, '\0') << "descriptor is empty string";
+  dex::StringIndex descriptor_idx = dex_file.GetTypeId(type_index).descriptor_idx_;
+  uint32_t utf16_length;
+  const char* descriptor = dex_file.GetStringDataAndUtf16Length(descriptor_idx, &utf16_length);
+  size_t descriptor_length = DexFile::Utf8Length(descriptor, utf16_length);
+  return FindClass(self, descriptor, descriptor_length, class_loader);
+}
+
+ObjPtr<mirror::Class> ClassLinker::FindClass(Thread* self,
+                                             const char* descriptor,
+                                             size_t descriptor_length,
+                                             Handle<mirror::ClassLoader> class_loader) {
+  DCHECK_EQ(strlen(descriptor), descriptor_length);
+  DCHECK_NE(descriptor_length, 0u) << "descriptor is empty string";
   DCHECK(self != nullptr);
   self->AssertNoPendingException();
   self->PoisonObjectPointers();  // For DefineClass, CreateArrayClass, etc...
-  if (descriptor[1] == '\0') {
+  if (descriptor_length == 1u) {
     // only the descriptors of primitive types should be 1 character long, also avoid class lookup
     // for primitive classes that aren't backed by dex files.
     return FindPrimitiveClass(descriptor[0]);
   }
-  const std::string_view sv_descriptor(descriptor);
+  const std::string_view sv_descriptor(descriptor, descriptor_length);
   const size_t hash = ComputeModifiedUtf8Hash(sv_descriptor);
   // Find the class in the loaded classes table.
   ObjPtr<mirror::Class> klass = LookupClass(self, sv_descriptor, hash, class_loader.Get());
@@ -3264,11 +3278,11 @@ ObjPtr<mirror::Class> ClassLinker::FindClass(Thread* self,
   // Class is not yet loaded.
   if (descriptor[0] != '[' && class_loader == nullptr) {
     // Non-array class and the boot class loader, search the boot class path.
-    ClassPathEntry pair = FindInClassPath(descriptor, hash, boot_class_path_);
+    ClassPathEntry pair = FindInClassPath(sv_descriptor, hash, boot_class_path_);
     if (pair.second != nullptr) {
       return DefineClass(self,
                          descriptor,
-                         sv_descriptor.length(),
+                         descriptor_length,
                          hash,
                          ScopedNullHandle<mirror::ClassLoader>(),
                          *pair.first,
@@ -3286,14 +3300,14 @@ ObjPtr<mirror::Class> ClassLinker::FindClass(Thread* self,
   ObjPtr<mirror::Class> result_ptr;
   bool descriptor_equals;
   if (descriptor[0] == '[') {
-    result_ptr = CreateArrayClass(self, descriptor, hash, class_loader);
+    result_ptr = CreateArrayClass(self, descriptor, descriptor_length, hash, class_loader);
     DCHECK_EQ(result_ptr == nullptr, self->IsExceptionPending());
     DCHECK(result_ptr == nullptr || result_ptr->DescriptorEquals(sv_descriptor));
     descriptor_equals = true;
   } else {
     ScopedObjectAccessUnchecked soa(self);
     bool known_hierarchy = FindClassInBaseDexClassLoader(
-        self, descriptor, sv_descriptor.length(), hash, class_loader, &result_ptr);
+        self, descriptor, descriptor_length, hash, class_loader, &result_ptr);
     if (result_ptr != nullptr) {
       // The chain was understood and we found the class. We still need to add the class to
       // the class table to protect from racy programs that can try and redefine the path list
@@ -3329,13 +3343,13 @@ ObjPtr<mirror::Class> ClassLinker::FindClass(Thread* self,
       // instead of "Ljava/lang/String;", the message below using the "dot" names would be
       // "class loader [...] returned class java.lang.String instead of java.lang.String".
       if (UNLIKELY(descriptor[0] != 'L') ||
-          UNLIKELY(descriptor[sv_descriptor.length() - 1] != ';') ||
-          UNLIKELY(memchr(descriptor + 1, '.', sv_descriptor.length() - 2) != nullptr)) {
+          UNLIKELY(descriptor[descriptor_length - 1] != ';') ||
+          UNLIKELY(memchr(descriptor + 1, '.', descriptor_length - 2) != nullptr)) {
         ThrowNoClassDefFoundError("Invalid descriptor: %s.", descriptor);
         return nullptr;
       }
 
-      std::string class_name_string(sv_descriptor.substr(1u, sv_descriptor.length() - 2u));
+      std::string class_name_string(sv_descriptor.substr(1u, descriptor_length - 2u));
       std::replace(class_name_string.begin(), class_name_string.end(), '/', '.');
       if (known_hierarchy &&
           fast_class_not_found_exceptions_ &&
@@ -3580,11 +3594,11 @@ ObjPtr<mirror::Class> ClassLinker::DefineClass(Thread* self,
   klass->SetIfTable(GetClassRoot<mirror::Object>(this)->GetIfTable());
 
   // Add the newly loaded class to the loaded classes table.
-  ObjPtr<mirror::Class> existing = InsertClass(descriptor, klass.Get(), hash);
+  ObjPtr<mirror::Class> existing = InsertClass(sv_descriptor, klass.Get(), hash);
   if (existing != nullptr) {
     // We failed to insert because we raced with another thread. Calling EnsureResolved may cause
     // this thread to block.
-    return sdc.Finish(EnsureResolved(self, descriptor, existing));
+    return sdc.Finish(EnsureResolved(self, sv_descriptor, existing));
   }
 
   // Load the fields and other things after we are inserted in the table. This is so that we don't
@@ -4585,7 +4599,7 @@ void ClassLinker::CreatePrimitiveClass(Thread* self,
   DCHECK_EQ(primitive_class->NumMethods(), 0u);
   // Primitive classes are initialized during single threaded startup, so visibly initialized.
   primitive_class->SetStatusForPrimitiveOrArray(ClassStatus::kVisiblyInitialized);
-  const char* descriptor = Primitive::Descriptor(type);
+  std::string_view descriptor(Primitive::Descriptor(type));
   ObjPtr<mirror::Class> existing = InsertClass(descriptor,
                                                primitive_class,
                                                ComputeModifiedUtf8Hash(descriptor));
@@ -4612,10 +4626,12 @@ inline ObjPtr<mirror::IfTable> ClassLinker::GetArrayIfTable() {
 // Returns null with an exception raised on failure.
 ObjPtr<mirror::Class> ClassLinker::CreateArrayClass(Thread* self,
                                                     const char* descriptor,
+                                                    size_t descriptor_length,
                                                     size_t hash,
                                                     Handle<mirror::ClassLoader> class_loader) {
   // Identify the underlying component type
   CHECK_EQ('[', descriptor[0]);
+  std::string_view sv_descriptor(descriptor, descriptor_length);
   StackHandleScope<2> hs(self);
 
   // This is to prevent the calls to ClassLoad and ClassPrepare which can cause java/user-supplied
@@ -4629,14 +4645,16 @@ ObjPtr<mirror::Class> ClassLinker::CreateArrayClass(Thread* self,
     return nullptr;
   }
 
-  MutableHandle<mirror::Class> component_type(hs.NewHandle(FindClass(self, descriptor + 1,
-                                                                     class_loader)));
+  MutableHandle<mirror::Class> component_type =
+      hs.NewHandle(FindClass(self, descriptor + 1, descriptor_length - 1, class_loader));
   if (component_type == nullptr) {
     DCHECK(self->IsExceptionPending());
     // We need to accept erroneous classes as component types. Under AOT, we
     // don't accept them as we cannot encode the erroneous class in an image.
-    const size_t component_hash = ComputeModifiedUtf8Hash(descriptor + 1);
-    component_type.Assign(LookupClass(self, descriptor + 1, component_hash, class_loader.Get()));
+    std::string_view component_descriptor = sv_descriptor.substr(1u);
+    const size_t component_hash = ComputeModifiedUtf8Hash(component_descriptor);
+    component_type.Assign(
+        LookupClass(self, component_descriptor, component_hash, class_loader.Get()));
     if (component_type == nullptr || Runtime::Current()->IsAotCompiler()) {
       DCHECK(self->IsExceptionPending());
       return nullptr;
@@ -4667,7 +4685,7 @@ ObjPtr<mirror::Class> ClassLinker::CreateArrayClass(Thread* self,
   // other threads.)
   if (class_loader.Get() != component_type->GetClassLoader()) {
     ObjPtr<mirror::Class> new_class =
-        LookupClass(self, descriptor, hash, component_type->GetClassLoader());
+        LookupClass(self, sv_descriptor, hash, component_type->GetClassLoader());
     if (new_class != nullptr) {
       return new_class;
     }
@@ -4711,7 +4729,7 @@ ObjPtr<mirror::Class> ClassLinker::CreateArrayClass(Thread* self,
     return nullptr;
   }
 
-  ObjPtr<mirror::Class> existing = InsertClass(descriptor, new_class.Get(), hash);
+  ObjPtr<mirror::Class> existing = InsertClass(sv_descriptor, new_class.Get(), hash);
   if (existing == nullptr) {
     // We postpone ClassLoad and ClassPrepare events to this point in time to avoid
     // duplicate events in case of races. Array classes don't really follow dedicated
@@ -5271,8 +5289,9 @@ ObjPtr<mirror::Class> ClassLinker::CreateProxyClass(ScopedObjectAccessAlreadyRun
   // Object has an empty iftable, copy it for that reason.
   temp_klass->SetIfTable(GetClassRoot<mirror::Object>(this)->GetIfTable());
   mirror::Class::SetStatus(temp_klass, ClassStatus::kIdx, self);
-  std::string storage;
-  const char* descriptor = temp_klass->GetDescriptor(&storage);
+  std::string descriptor;
+  const char* raw_descriptor = temp_klass->GetDescriptor(&descriptor);
+  DCHECK(raw_descriptor == descriptor.c_str());
   const size_t hash = ComputeModifiedUtf8Hash(descriptor);
 
   // Needs to be before we insert the class so that the allocator field is set.
@@ -5396,7 +5415,7 @@ ObjPtr<mirror::Class> ClassLinker::CreateProxyClass(ScopedObjectAccessAlreadyRun
     // The new class will replace the old one in the class table.
     Handle<mirror::ObjectArray<mirror::Class>> h_interfaces(
         hs.NewHandle(soa.Decode<mirror::ObjectArray<mirror::Class>>(interfaces)));
-    if (!LinkClass(self, descriptor, temp_klass, h_interfaces, &klass)) {
+    if (!LinkClass(self, descriptor.c_str(), temp_klass, h_interfaces, &klass)) {
       if (!temp_klass->IsErroneous()) {
         mirror::Class::SetStatus(temp_klass, ClassStatus::kErrorUnresolved, self);
       }
@@ -9910,7 +9929,7 @@ ObjPtr<mirror::Class> ClassLinker::DoLookupResolvedType(dex::TypeIndex type_idx,
                                                         ObjPtr<mirror::ClassLoader> class_loader) {
   DCHECK(dex_cache->GetClassLoader() == class_loader);
   const DexFile& dex_file = *dex_cache->GetDexFile();
-  const char* descriptor = dex_file.GetTypeDescriptor(type_idx);
+  std::string_view descriptor = dex_file.GetTypeDescriptorView(type_idx);
   ObjPtr<mirror::Class> type = LookupResolvedType(descriptor, class_loader);
   if (type != nullptr) {
     DCHECK(type->IsResolved());
@@ -9919,11 +9938,11 @@ ObjPtr<mirror::Class> ClassLinker::DoLookupResolvedType(dex::TypeIndex type_idx,
   return type;
 }
 
-ObjPtr<mirror::Class> ClassLinker::LookupResolvedType(const char* descriptor,
+ObjPtr<mirror::Class> ClassLinker::LookupResolvedType(std::string_view descriptor,
                                                       ObjPtr<mirror::ClassLoader> class_loader) {
-  DCHECK_NE(*descriptor, '\0') << "descriptor is empty string";
+  DCHECK(!descriptor.empty()) << "descriptor is empty string";
   ObjPtr<mirror::Class> type = nullptr;
-  if (descriptor[1] == '\0') {
+  if (descriptor.length() == 1u) {
     // only the descriptors of primitive types should be 1 character long, also avoid class lookup
     // for primitive classes that aren't backed by dex files.
     type = LookupPrimitiveClass(descriptor[0]);
@@ -9958,8 +9977,8 @@ ObjPtr<mirror::Class> ClassLinker::DoResolveType(dex::TypeIndex type_idx,
                                                  Handle<mirror::ClassLoader> class_loader) {
   DCHECK(dex_cache->GetClassLoader() == class_loader.Get());
   Thread* self = Thread::Current();
-  const char* descriptor = dex_cache->GetDexFile()->GetTypeDescriptor(type_idx);
-  ObjPtr<mirror::Class> resolved = FindClass(self, descriptor, class_loader);
+  const DexFile* dex_file = dex_cache->GetDexFile();
+  ObjPtr<mirror::Class> resolved = FindClass(self, *dex_file, type_idx, class_loader);
   if (resolved != nullptr) {
     // TODO: we used to throw here if resolved's class loader was not the
     //       boot class loader. This was to permit different classes with the
@@ -9967,14 +9986,15 @@ ObjPtr<mirror::Class> ClassLinker::DoResolveType(dex::TypeIndex type_idx,
     dex_cache->SetResolvedType(type_idx, resolved);
   } else {
     CHECK(self->IsExceptionPending())
-        << "Expected pending exception for failed resolution of: " << descriptor;
+        << "Expected pending exception for failed resolution of: "
+        << dex_file->GetTypeDescriptor(type_idx);
     // Convert a ClassNotFoundException to a NoClassDefFoundError.
     StackHandleScope<1> hs(self);
     Handle<mirror::Throwable> cause(hs.NewHandle(self->GetException()));
     if (cause->InstanceOf(GetClassRoot(ClassRoot::kJavaLangClassNotFoundException, this))) {
       DCHECK(resolved == nullptr);  // No Handle needed to preserve resolved.
       self->ClearException();
-      ThrowNoClassDefFoundError("Failed resolution of: %s", descriptor);
+      ThrowNoClassDefFoundError("Failed resolution of: %s", dex_file->GetTypeDescriptor(type_idx));
       self->GetException()->SetCause(cause.Get());
     }
   }

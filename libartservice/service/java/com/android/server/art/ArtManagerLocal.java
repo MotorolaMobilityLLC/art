@@ -484,7 +484,14 @@ public final class ArtManagerLocal {
             });
         }
         BatchDexoptParams params = builder.build();
-        Utils.check(params.getDexoptParams().getReason().equals(reason));
+        DexoptParams dexoptParams = params.getDexoptParams();
+        Utils.check(dexoptParams.getReason().equals(reason));
+        if (dexoptParams.getSplitName() != null) {
+            AsLog.w("`setSplitName` is not supported in `BatchDexoptStartCallback`. The value is "
+                    + "ignored");
+            params = builder.setDexoptParams(dexoptParams.toBuilder().setSplitName(null).build())
+                             .build();
+        }
 
         ExecutorService dexoptExecutor =
                 Executors.newFixedThreadPool(ReasonMapping.getConcurrencyForReason(reason));

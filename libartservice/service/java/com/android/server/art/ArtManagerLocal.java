@@ -471,6 +471,17 @@ public final class ArtManagerLocal {
             @NonNull CancellationSignal cancellationSignal,
             @Nullable @CallbackExecutor Executor progressCallbackExecutor,
             @Nullable Map<Integer, Consumer<OperationProgress>> progressCallbacks) {
+        return dexoptPackagesWithParams(snapshot, reason, cancellationSignal,
+                progressCallbackExecutor, progressCallbacks, null /* params */);
+    }
+
+    /** @hide */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @NonNull
+    public BatchDexoptParams getBatchDexoptParams(
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot,
+            @NonNull @BatchDexoptReason String reason,
+            @NonNull CancellationSignal cancellationSignal) {
         List<String> defaultPackages =
                 Collections.unmodifiableList(getDefaultPackages(snapshot, reason));
         DexoptParams defaultDexoptParams = new DexoptParams.Builder(reason).build();
@@ -492,7 +503,22 @@ public final class ArtManagerLocal {
             params = builder.setDexoptParams(dexoptParams.toBuilder().setSplitName(null).build())
                              .build();
         }
+        return params;
+    }
 
+    /** @hide */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    @NonNull
+    public Map<Integer, DexoptResult> dexoptPackagesWithParams(
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot,
+            @NonNull @BatchDexoptReason String reason,
+            @NonNull CancellationSignal cancellationSignal,
+            @Nullable @CallbackExecutor Executor progressCallbackExecutor,
+            @Nullable Map<Integer, Consumer<OperationProgress>> progressCallbacks,
+            @Nullable BatchDexoptParams params) {
+        if (params == null) {
+            params = getBatchDexoptParams(snapshot, reason, cancellationSignal);
+        }
         ExecutorService dexoptExecutor =
                 Executors.newFixedThreadPool(ReasonMapping.getConcurrencyForReason(reason));
         Map<Integer, DexoptResult> dexoptResults = new HashMap<>();
@@ -1653,7 +1679,7 @@ public final class ArtManagerLocal {
         @NonNull
         public synchronized PreRebootDexoptJob getPreRebootDexoptJob() {
             if (mPrDexoptJob == null) {
-                mPrDexoptJob = new PreRebootDexoptJob(mContext);
+                mPrDexoptJob = new PreRebootDexoptJob(mContext, mArtManagerLocal);
             }
             return mPrDexoptJob;
         }

@@ -193,6 +193,9 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
             case "pr-dexopt-job": {
                 return handlePrDexoptJob(pw);
             }
+            case "configure-batch-dexopt": {
+                return handleConfigureBatchDexopt(pw);
+            }
             default:
                 pw.printf("Error: Unknown 'art' sub-command '%s'\n", subcmd);
                 pw.println("See 'pm help' for help");
@@ -841,6 +844,39 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         return 0;
     }
 
+    private int handleConfigureBatchDexopt(@NonNull PrintWriter pw) {
+        String inputReason = null;
+        List<String> packages = new ArrayList<>();
+
+        String opt;
+        while ((opt = getNextOption()) != null) {
+            switch (opt) {
+                case "-r":
+                    inputReason = getNextArgRequired();
+                    break;
+                case "--package":
+                    packages.add(getNextArgRequired());
+                    break;
+                default:
+                    pw.println("Error: Unknown option: " + opt);
+                    return 1;
+            }
+        }
+
+        // Variables used in lambda needs to be effectively final.
+        String finalInputReason = inputReason;
+        mArtManagerLocal.setBatchDexoptStartCallback(
+                Runnable::run, (snapshot, reason, defaultPackages, builder, cancellationSignal) -> {
+                    if (reason.equals(finalInputReason)) {
+                        if (!packages.isEmpty()) {
+                            builder.setPackages(packages);
+                        }
+                    }
+                });
+
+        return 0;
+    }
+
     @Override
     public void onHelp() {
         // No one should call this. The help text should be printed by the `onHelp` handler of `cmd
@@ -1029,6 +1065,20 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         pw.println("    Options:");
         pw.println("      --slot SLOT The slot that contains the OTA update, '_a' or '_b'. If not");
         pw.println("        specified, the job is for a Mainline update");
+        pw.println();
+        pw.println("  configure-batch-dexopt -r REASON [--package PACKAGE_NAME]...");
+        pw.println("    Configure batch dexopt parameters to be applied when the given reason is");
+        pw.println("    used.");
+        pw.println("    Once called, this command overwrites any configuration done through");
+        pw.println("    'ArtManagerLocal.setBatchDexoptStartCallback' or through this command for");
+        pw.println("    all reasons. In other words, configurations for other reasons are reset");
+        pw.println("    to the default.");
+        pw.println("    Valid values for REASON: 'first-boot', 'boot-after-ota',");
+        pw.println("    'boot-after-mainline-update', 'bg-dexopt', 'ab-ota'");
+        pw.println("    Options:");
+        pw.println("      --package PACKAGE_NAME The package name to dexopt. This flag can be");
+        pw.println("        passed multiple times, to specify multiple packages. If not");
+        pw.println("        specified, the default package list will be used.");
     }
 
     private void enforceRootOrShell() {

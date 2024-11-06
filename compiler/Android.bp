@@ -175,6 +175,7 @@ art_cc_defaults {
         "optimizing/loop_analysis.cc",
         "optimizing/loop_optimization.cc",
         "optimizing/nodes.cc",
+        "optimizing/nodes_vector.cc",
         "optimizing/optimization.cc",
         "optimizing/optimizing_compiler.cc",
         "optimizing/parallel_move_resolver.cc",

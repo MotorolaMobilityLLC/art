@@ -84,6 +84,15 @@ static jboolean Unsafe_compareAndSetLong(JNIEnv* env, jobject, jobject javaObj, 
   return success ? JNI_TRUE : JNI_FALSE;
 }
 
+static jlong Unsafe_compareAndExchangeLong(
+    JNIEnv* env, jobject, jobject javaObj, jlong offset, jlong expectedValue, jlong newValue) {
+  ScopedFastNativeObjectAccess soa(env);
+  ObjPtr<mirror::Object> obj = soa.Decode<mirror::Object>(javaObj);
+  // JNI must use non transactional mode.
+  return obj->CaeFieldStrongSequentiallyConsistent64<false>(
+      MemberOffset(offset), expectedValue, newValue);
+}
+
 static jboolean Unsafe_compareAndSwapLong(JNIEnv* env, jobject obj, jobject javaObj, jlong offset,
                                           jlong expectedValue, jlong newValue) {
   // compareAndSetLong has the same semantics as compareAndSwapLong, except for
@@ -514,6 +523,7 @@ static JNINativeMethod gMethods[] = {
         Unsafe, compareAndSwapObject, "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z"),
     FAST_NATIVE_METHOD(Unsafe, compareAndSetInt, "(Ljava/lang/Object;JII)Z"),
     FAST_NATIVE_METHOD(Unsafe, compareAndSetLong, "(Ljava/lang/Object;JJJ)Z"),
+    FAST_NATIVE_METHOD(Unsafe, compareAndExchangeLong, "(Ljava/lang/Object;JJJ)J"),
     FAST_NATIVE_METHOD(Unsafe,
                        compareAndSetReference,
                        "(Ljava/lang/Object;JLjava/lang/Object;Ljava/lang/Object;)Z"),

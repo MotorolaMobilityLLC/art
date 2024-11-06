@@ -64,7 +64,7 @@ art_cc_binary {
         "libartservice",
         "libarttools",
         "libbase",
-        "libdexfile",
+        "libdexfile#impl",
     ],
     apex_available: [
         "com.android.art",

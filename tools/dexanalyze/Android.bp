@@ -42,7 +42,7 @@ art_cc_binary {
     name: "dexanalyze",
     defaults: ["dexanalyze-defaults"],
     shared_libs: [
-        "libdexfile",
+        "libdexfile#impl",
         "libartbase",
         "libbase",
     ],

@@ -258,9 +258,12 @@ def add_builder(name,
       short_name = short_name.replace("-debug", "-dbg")
       short_name = short_name.replace("-ndebug", "-ndbg")
       category = short_name.split("-")
-    else:
-      category = default_name.split(".")
-      category = [category[0] + "." + category[1]] + category[2:]
+
+    category = default_name.replace(".", "|")
+    category = category.replace("host|", "host.")
+    category = category.replace("target|", "target.")
+    category = category.replace("ngen|cmc|", "ngen-cmc|")
+    category = category.split("|")
 
     product = None
     if arch == "arm":
@@ -317,25 +320,25 @@ def add_builder(name,
                hidden=hidden)
 
 def add_builders():
-  add_builder("angler-armv7-debug", 'target', 'arm', 32, debug=True)
-  add_builder("angler-armv7-non-gen-cc", 'target', 'arm', 32, debug=True, cmc=True, ngen=True)
-  add_builder("angler-armv7-ndebug", 'target', 'arm', 32)
-  add_builder("angler-armv8-debug", 'target', 'arm', 64, debug=True)
-  add_builder("angler-armv8-non-gen-cc", 'target', 'arm', 64, debug=True, cmc=True, ngen=True)
-  add_builder("angler-armv8-ndebug", 'target', 'arm', 64)
+  add_builder("target.arm.debug.32", 'target', 'arm', 32, debug=True)
+  add_builder("target.arm.ngen.cmc.debug.32", 'target', 'arm', 32, debug=True, cmc=True, ngen=True)
+  add_builder("target.arm.ndebug.32", 'target', 'arm', 32)
+  add_builder("target.arm.debug.64", 'target', 'arm', 64, debug=True)
+  add_builder("target.arm.ngen.cmc.debug.64", 'target', 'arm', 64, debug=True, cmc=True, ngen=True)
+  add_builder("target.arm.ndebug.64", 'target', 'arm', 64)
   for bitness in [32, 64]:
     for debug in [True, False]:
       add_builder('', 'target', 'arm', bitness, debug, gcstress=True)
       add_builder('', 'target', 'arm', bitness, debug, poisoning=True)
-  add_builder("host-x86-cms", 'host', 'x86', 32, debug=True, cmc=True, ngen=True)
+  add_builder("host.x86.ngen.cmc.debug.32", 'host', 'x86', 32, debug=True, cmc=True, ngen=True)
   for bitness in [32, 64]:
     add_builder('', 'host', 'x86', bitness, debug=True)
     add_builder('', 'host', 'x86', bitness)
     add_builder('', 'host', 'x86', bitness, debug=True, gcstress=True)
     add_builder('', 'host', 'x86', bitness, debug=True, poisoning=True)
-  add_builder("host-x86_64-cms", 'host', 'x86', 64, cmc=True, debug=True, ngen=True)
-  add_builder("host-x86_64-non-gen-cc", 'host', 'x86', 64, debug=True, ngen=True)
-  add_builder("qemu-armv8-ndebug", 'qemu', 'arm', 64)
-  add_builder("qemu-riscv64-ndebug", 'qemu', 'riscv', 64)
+  add_builder("host.x86.ngen.cmc.debug.64", 'host', 'x86', 64, cmc=True, debug=True, ngen=True)
+  add_builder("host.x86.ngen.debug.64", 'host', 'x86', 64, debug=True, ngen=True)
+  add_builder("qemu.arm.ndebug.64", 'qemu', 'arm', 64)
+  add_builder("qemu.riscv.ndebug.64", 'qemu', 'riscv', 64)
 
 add_builders()

@@ -219,15 +219,14 @@ def ci_builder(name, category, short_name, dimensions, properties={}, hidden=Fal
             short_name = short_name,
         )
 
-def add_builder(name,
-                mode,
+def add_builder(mode,
                 arch,
                 bitness,
-                debug=False,
+                ndebug=False,
                 ngen=False,
                 cmc=False,
                 gcstress=False,
-                poisoning=False,
+                poison=False,
                 hidden=False):
     def check_arg(value, valid_values):
       if value not in valid_values:
@@ -236,34 +235,22 @@ def add_builder(name,
     check_arg(arch, ["arm", "x86", "riscv"])
     check_arg(bitness, [32, 64])
 
-    # Automatically create name based on the configuaration.
-    default_name = mode + '.' + arch
-    default_name += '.gsctress' if gcstress else ''
-    default_name += '.poison' if poisoning else ''
-    default_name += '.ngen' if ngen else ''
-    default_name += '.cmc' if cmc else ''
-    default_name += '.debug' if debug else '.ndebug'
-    default_name += '.' + str(bitness)
+    # Create builder name based on the configuaration parameters.
+    name = mode + '.' + arch
+    name += '.gsctress' if gcstress else ''
+    name += '.poison' if poison else ''
+    name += '.ngen' if ngen else ''
+    name += '.cmc' if cmc else ''
+    name += '.ndebug' if ndebug else '.debug'
+    name += '.' + str(bitness)
 
-    # Create abbreviated named which is used to create the LUCI console header.
-    # TODO: Rename the builders to remove old device names and make it more uniform.
-    if name:
-      short_name = name
-      short_name = short_name.replace("-x86-poison-debug", "-x86-psn")
-      short_name = short_name.replace("-x86-gcstress-debug", "-x86-gcs")
-      short_name = short_name.replace("-x86_64-poison-debug", "-x86_64-psn")
-      short_name = short_name.replace("-x86_64", "-x64")
-      short_name = short_name.replace("-ndebug-build_only", "-bo")
-      short_name = short_name.replace("-non-gen-cc", "-ngen")
-      short_name = short_name.replace("-debug", "-dbg")
-      short_name = short_name.replace("-ndebug", "-ndbg")
-      category = short_name.split("-")
-
-    category = default_name.replace(".", "|")
+    # Define the LUCI console category (the tree layout).
+    # The "|" splits the tree node into sub-categories.
+    # Merge some name parts to reduce the tree depth.
+    category = name.replace(".", "|")
     category = category.replace("host|", "host.")
     category = category.replace("target|", "target.")
     category = category.replace("ngen|cmc|", "ngen-cmc|")
-    category = category.split("|")
 
     product = None
     if arch == "arm":
@@ -292,53 +279,46 @@ def add_builder(name,
       dimensions |= {"cores": "16"}
 
     testrunner_args = ['--verbose', '--host'] if mode == 'host' else ['--target', '--verbose']
-    testrunner_args += ['--debug'] if debug else ['--ndebug']
+    testrunner_args += ['--ndebug'] if ndebug else ['--debug']
     testrunner_args += ['--gcstress'] if gcstress else []
-
-    name = name or default_name
 
     properties = {
         "builder_group": "client.art",
         "bitness": bitness,
         "build_only": ("build_only" in name),
-        "debug": debug,
+        "debug": not ndebug,
         "device": None if mode == "host" else "-".join(name.split("-")[:2]),
         "on_virtual_machine": mode == "qemu",
         "product": product,
         "concurrent_collector": not cmc,
         "generational_cc": not ngen,
         "gcstress": gcstress,
-        "heap_poisoning": poisoning,
+        "heap_poisoning": poison,
         "testrunner_args": testrunner_args,
     }
 
-    ci_builder(name,
-               category="|".join(category[:-1]),
-               short_name=category[-1],
+    ci_builder(name=name,
+               category="|".join(category.split("|")[:-1]),
+               short_name=category.split("|")[-1],
                dimensions=dimensions,
                properties={k:v for k, v in properties.items() if v},
                hidden=hidden)
 
 def add_builders():
-  add_builder("target.arm.debug.32", 'target', 'arm', 32, debug=True)
-  add_builder("target.arm.ngen.cmc.debug.32", 'target', 'arm', 32, debug=True, cmc=True, ngen=True)
-  add_builder("target.arm.ndebug.32", 'target', 'arm', 32)
-  add_builder("target.arm.debug.64", 'target', 'arm', 64, debug=True)
-  add_builder("target.arm.ngen.cmc.debug.64", 'target', 'arm', 64, debug=True, cmc=True, ngen=True)
-  add_builder("target.arm.ndebug.64", 'target', 'arm', 64)
-  for bitness in [32, 64]:
-    for debug in [True, False]:
-      add_builder('', 'target', 'arm', bitness, debug, gcstress=True)
-      add_builder('', 'target', 'arm', bitness, debug, poisoning=True)
-  add_builder("host.x86.ngen.cmc.debug.32", 'host', 'x86', 32, debug=True, cmc=True, ngen=True)
-  for bitness in [32, 64]:
-    add_builder('', 'host', 'x86', bitness, debug=True)
-    add_builder('', 'host', 'x86', bitness)
-    add_builder('', 'host', 'x86', bitness, debug=True, gcstress=True)
-    add_builder('', 'host', 'x86', bitness, debug=True, poisoning=True)
-  add_builder("host.x86.ngen.cmc.debug.64", 'host', 'x86', 64, cmc=True, debug=True, ngen=True)
-  add_builder("host.x86.ngen.debug.64", 'host', 'x86', 64, debug=True, ngen=True)
-  add_builder("qemu.arm.ndebug.64", 'qemu', 'arm', 64)
-  add_builder("qemu.riscv.ndebug.64", 'qemu', 'riscv', 64)
+  for mode, arch in [("target", "arm"), ("host", "x86")]:
+    for bitness in [32, 64]:
+      add_builder(mode, arch, bitness, ndebug=True)
+      add_builder(mode, arch, bitness)
+      if mode == "host" and bitness == 64:
+        add_builder(mode, arch, bitness, ngen=True)
+      add_builder(mode, arch, bitness, ngen=True, cmc=True)
+      if mode == "target":
+        add_builder(mode, arch, bitness, poison=True, ndebug=True)
+      add_builder(mode, arch, bitness, poison=True)
+      if mode == "target":
+        add_builder(mode, arch, bitness, gcstress=True, ndebug=True)
+      add_builder(mode, arch, bitness, gcstress=True)
+  add_builder('qemu', 'arm', bitness=64, ndebug=True)
+  add_builder('qemu', 'riscv', bitness=64, ndebug=True)
 
 add_builders()

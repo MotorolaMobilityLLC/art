@@ -4276,7 +4276,7 @@ void MethodVerifier<kVerifierDebug>::VerifyAGet(const Instruction* inst,
             << " source for category 1 aget";
       } else if (is_primitive && !insn_type.Equals(component_type) &&
                  !((insn_type.IsInteger() && component_type.IsFloat()) ||
-                 (insn_type.IsLong() && component_type.IsDouble()))) {
+                 (insn_type.IsLongLo() && component_type.IsDoubleLo()))) {
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "array type " << array_type
             << " incompatible with aget of type " << insn_type;
       } else {
@@ -4308,8 +4308,8 @@ void MethodVerifier<kVerifierDebug>::VerifyPrimitivePut(const RegType& target_ty
   } else if (target_type.IsFloat()) {
     instruction_compatible = insn_type.IsInteger();  // no put-float, so expect put-int
     value_compatible = value_type.IsFloatTypes();
-  } else if (target_type.IsLong()) {
-    instruction_compatible = insn_type.IsLong();
+  } else if (target_type.IsLongLo()) {
+    instruction_compatible = insn_type.IsLongLo();
     // Additional register check: this is not checked statically (as part of VerifyInstructions),
     // as target_type depends on the resolved type of the field.
     if (instruction_compatible && work_line_->NumRegs() > vregA + 1) {
@@ -4318,8 +4318,8 @@ void MethodVerifier<kVerifierDebug>::VerifyPrimitivePut(const RegType& target_ty
     } else {
       value_compatible = false;
     }
-  } else if (target_type.IsDouble()) {
-    instruction_compatible = insn_type.IsLong();  // no put-double, so expect put-long
+  } else if (target_type.IsDoubleLo()) {
+    instruction_compatible = insn_type.IsLongLo();  // no put-double, so expect put-long
     // Additional register check: this is not checked statically (as part of VerifyInstructions),
     // as target_type depends on the resolved type of the field.
     if (instruction_compatible && work_line_->NumRegs() > vregA + 1) {
@@ -4552,7 +4552,7 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
     // checks at the same time that we're verifying a constructor).
     bool should_adjust = (kAccType == FieldAccessType::kAccPut) &&
                          (object_type.IsUninitializedThisReference() ||
-                          object_type.IsUnresolvedAndUninitializedThisReference());
+                          object_type.IsUnresolvedUninitializedThisReference());
     const RegType& adjusted_type = should_adjust
                                        ? GetRegTypeCache()->FromUninitialized(object_type)
                                        : object_type;
@@ -4646,7 +4646,7 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
     if (is_primitive) {
       if (field_type.Equals(insn_type) ||
           (field_type.IsFloat() && insn_type.IsInteger()) ||
-          (field_type.IsDouble() && insn_type.IsLong())) {
+          (field_type.IsDoubleLo() && insn_type.IsLongLo())) {
         // expected that read is of the correct primitive type or that int reads are reading
         // floats or long reads are reading doubles
       } else {

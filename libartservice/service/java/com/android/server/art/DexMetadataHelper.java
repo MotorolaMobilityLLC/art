@@ -86,10 +86,7 @@ public class DexMetadataHelper {
 
     @NonNull
     public static String getDmPath(@NonNull DexMetadataPath dmPath) {
-        String dexPath = dmPath.dexPath;
-        int pos = dexPath.lastIndexOf(".");
-        return (pos != -1 ? dexPath.substring(0, pos) : dexPath)
-                + ArtConstants.DEX_METADATA_FILE_EXT;
+        return Utils.replaceFileExtension(dmPath.dexPath, ArtConstants.DEX_METADATA_FILE_EXT);
     }
 
     private static @DexMetadata.Type int getType(@NonNull ZipFile zipFile) {

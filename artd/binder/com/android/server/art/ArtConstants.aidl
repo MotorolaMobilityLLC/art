@@ -49,6 +49,13 @@ parcelable ArtConstants {
     const @utf8InCpp String PROFILE_FILE_EXT = ".prof";
 
     /**
+     * The file extension of the secure dex metadata file.
+     *
+     * Keep in sync with {@code kSdmExtension} in art/libartbase/base/file_utils.h.
+     */
+    const @utf8InCpp String SECURE_DEX_METADATA_FILE_EXT = ".sdm";
+
+    /**
      * The name of the profile entry in the dex metadata file.
      *
      * Keep in sync with {@code ProfileCompilationInfo::kDexMetadataProfileEntry} in

@@ -5291,11 +5291,11 @@ void InstructionCodeGeneratorARMVIXL::HandleIntegerRotate(HBinaryOperation* rota
     // Arm32 and Thumb2 assemblers require a rotation on the interval [1,31],
     // so map all rotations to a +ve. equivalent in that range.
     // (e.g. left *or* right by -2 bits == 30 bits in the same direction.)
-    uint32_t rot = CodeGenerator::GetInt32ValueOf(rhs.GetConstant()) & 0x1F;
-
+    uint32_t rot = CodeGenerator::GetInt32ValueOf(rhs.GetConstant());
     if (rotate->IsRol()) {
       rot = -rot;
     }
+    rot &= 0x1f;
 
     if (rot) {
       // Rotate, mapping left rotations to right equivalents if necessary.

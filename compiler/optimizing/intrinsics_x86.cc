@@ -310,7 +310,7 @@ static void CreateFPToFPLocations(ArenaAllocator* allocator, HInvoke* invoke) {
   LocationSummary* locations =
       new (allocator) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
   locations->SetInAt(0, Location::RequiresFpuRegister());
-  locations->SetOut(Location::RequiresFpuRegister());
+  locations->SetOut(Location::RequiresFpuRegister(), Location::kNoOutputOverlap);
 }
 
 void IntrinsicLocationsBuilderX86::VisitMathSqrt(HInvoke* invoke) {

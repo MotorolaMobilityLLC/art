@@ -19,6 +19,7 @@
 #include "code_generator_riscv64.h"
 #include "intrinsic_objects.h"
 #include "intrinsics_utils.h"
+#include "optimizing/locations.h"
 #include "well_known_classes.h"
 
 namespace art HIDDEN {
@@ -160,11 +161,13 @@ static void CreateFpFpFpToFpNoOverlapLocations(ArenaAllocator* allocator, HInvok
   locations->SetOut(Location::RequiresFpuRegister(), Location::kNoOutputOverlap);
 }
 
-static void CreateFPToFPLocations(ArenaAllocator* allocator, HInvoke* invoke) {
+static void CreateFPToFPLocations(ArenaAllocator* allocator,
+                                  HInvoke* invoke,
+                                  Location::OutputOverlap overlaps = Location::kOutputOverlap) {
   LocationSummary* locations =
       new (allocator) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
   locations->SetInAt(0, Location::RequiresFpuRegister());
-  locations->SetOut(Location::RequiresFpuRegister());
+  locations->SetOut(Location::RequiresFpuRegister(), overlaps);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitDoubleDoubleToRawLongBits(HInvoke* invoke) {
@@ -5329,7 +5332,7 @@ void IntrinsicCodeGeneratorRISCV64::VisitMathTanh(HInvoke* invoke) {
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathSqrt(HInvoke* invoke) {
-  CreateFPToFPLocations(allocator_, invoke);
+  CreateFPToFPLocations(allocator_, invoke, Location::kNoOutputOverlap);
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathSqrt(HInvoke* invoke) {
@@ -5452,7 +5455,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathMultiplyHigh(HInvoke* invoke) {
       new (allocator_) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
   locations->SetInAt(0, Location::RequiresRegister());
   locations->SetInAt(1, Location::RequiresRegister());
-  locations->SetOut(Location::RequiresRegister());
+  locations->SetOut(Location::RequiresRegister(), Location::kNoOutputOverlap);
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathMultiplyHigh(HInvoke* invoke) {

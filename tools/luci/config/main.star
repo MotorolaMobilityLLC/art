@@ -224,10 +224,10 @@ def add_builder(name,
                 arch,
                 bitness,
                 debug=False,
-                cc=True,
-                gen_cc=True,
+                ngen=False,
+                cmc=False,
                 gcstress=False,
-                heap_poisoning=False,
+                poisoning=False,
                 hidden=False):
     def check_arg(value, valid_values):
       if value not in valid_values:
@@ -239,9 +239,9 @@ def add_builder(name,
     # Automatically create name based on the configuaration.
     default_name = mode + '.' + arch
     default_name += '.gsctress' if gcstress else ''
-    default_name += '.poison' if heap_poisoning else ''
-    default_name += '' if cc else '.ncc'
-    default_name += '' if gen_cc else '.ngen'
+    default_name += '.poison' if poisoning else ''
+    default_name += '.ngen' if ngen else ''
+    default_name += '.cmc' if cmc else ''
     default_name += '.debug' if debug else '.ndebug'
     default_name += '.' + str(bitness)
 
@@ -270,7 +270,7 @@ def add_builder(name,
 
     dimensions = {"os": "Android" if mode == "target" else "Ubuntu"}
     if mode == "target":
-      if not cc:
+      if cmc:
         # Request devices running Android 24Q3 (`AP1A` builds) for
         # (`userfaultfd`-based) Concurrent Mark-Compact GC configurations.
         # Currently (as of 2024-08-22), the only devices within the device pool
@@ -302,10 +302,10 @@ def add_builder(name,
         "device": None if mode == "host" else "-".join(name.split("-")[:2]),
         "on_virtual_machine": mode == "qemu",
         "product": product,
-        "concurrent_collector": cc,
-        "generational_cc": gen_cc,
+        "concurrent_collector": not cmc,
+        "generational_cc": not ngen,
         "gcstress": gcstress,
-        "heap_poisoning": heap_poisoning,
+        "heap_poisoning": poisoning,
         "testrunner_args": testrunner_args,
     }
 
@@ -318,23 +318,23 @@ def add_builder(name,
 
 def add_builders():
   add_builder("angler-armv7-debug", 'target', 'arm', 32, debug=True)
-  add_builder("angler-armv7-non-gen-cc", 'target', 'arm', 32, debug=True, cc=False, gen_cc=False)
+  add_builder("angler-armv7-non-gen-cc", 'target', 'arm', 32, debug=True, cmc=True, ngen=True)
   add_builder("angler-armv7-ndebug", 'target', 'arm', 32)
   add_builder("angler-armv8-debug", 'target', 'arm', 64, debug=True)
-  add_builder("angler-armv8-non-gen-cc", 'target', 'arm', 64, debug=True, cc=False, gen_cc=False)
+  add_builder("angler-armv8-non-gen-cc", 'target', 'arm', 64, debug=True, cmc=True, ngen=True)
   add_builder("angler-armv8-ndebug", 'target', 'arm', 64)
   for bitness in [32, 64]:
     for debug in [True, False]:
       add_builder('', 'target', 'arm', bitness, debug, gcstress=True)
-      add_builder('', 'target', 'arm', bitness, debug, heap_poisoning=True)
-  add_builder("host-x86-cms", 'host', 'x86', 32, debug=True, cc=False, gen_cc=False)
+      add_builder('', 'target', 'arm', bitness, debug, poisoning=True)
+  add_builder("host-x86-cms", 'host', 'x86', 32, debug=True, cmc=True, ngen=True)
   for bitness in [32, 64]:
     add_builder('', 'host', 'x86', bitness, debug=True)
-    add_builder('', 'host', 'x86', bitness, debug=False)
+    add_builder('', 'host', 'x86', bitness)
     add_builder('', 'host', 'x86', bitness, debug=True, gcstress=True)
-    add_builder('', 'host', 'x86', bitness, debug=True, heap_poisoning=True)
-  add_builder("host-x86_64-cms", 'host', 'x86', 64, cc=False, debug=True, gen_cc=False)
-  add_builder("host-x86_64-non-gen-cc", 'host', 'x86', 64, debug=True, gen_cc=False)
+    add_builder('', 'host', 'x86', bitness, debug=True, poisoning=True)
+  add_builder("host-x86_64-cms", 'host', 'x86', 64, cmc=True, debug=True, ngen=True)
+  add_builder("host-x86_64-non-gen-cc", 'host', 'x86', 64, debug=True, ngen=True)
   add_builder("qemu-armv8-ndebug", 'qemu', 'arm', 64)
   add_builder("qemu-riscv64-ndebug", 'qemu', 'riscv', 64)
 

@@ -5125,13 +5125,14 @@ void InstructionCodeGeneratorX86::HandleRotate(HBinaryOperation* rotate) {
     Register second_reg = second.AsRegister<Register>();
     DCHECK_EQ(second_reg, ECX);
 
-    if (rotate->IsRol()) {
-      __ negl(second_reg);
-    }
-
     __ movl(temp_reg, first_reg_hi);
-    __ shrd(first_reg_hi, first_reg_lo, second_reg);
-    __ shrd(first_reg_lo, temp_reg, second_reg);
+    if (rotate->IsRol()) {
+      __ shld(first_reg_hi, first_reg_lo, second_reg);
+      __ shld(first_reg_lo, temp_reg, second_reg);
+    } else {
+      __ shrd(first_reg_hi, first_reg_lo, second_reg);
+      __ shrd(first_reg_lo, temp_reg, second_reg);
+    }
     __ movl(temp_reg, first_reg_hi);
     __ testl(second_reg, Immediate(32));
     __ cmovl(kNotEqual, first_reg_hi, first_reg_lo);

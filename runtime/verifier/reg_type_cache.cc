@@ -39,7 +39,7 @@ void RegTypeCache::FillPrimitiveAndSmallConstantTypes() {
   entries_.resize(kNumPrimitivesAndSmallConstants);
   for (int32_t value = kMinSmallConstant; value <= kMaxSmallConstant; ++value) {
     int32_t i = value - kMinSmallConstant;
-    entries_[i] = new (&allocator_) PreciseConstType(null_handle_, value, i);
+    entries_[i] = new (&allocator_) PreciseConstantType(null_handle_, value, i);
   }
 
 #define CREATE_PRIMITIVE_TYPE(type, class_root, descriptor, id) \
@@ -297,7 +297,8 @@ const RegType& RegTypeCache::FromUnresolvedMerge(const RegType& left,
   const RegType* left_resolved;
   bool left_unresolved_is_array;
   if (left.IsUnresolvedMergedReference()) {
-    const UnresolvedMergedType& left_merge = *down_cast<const UnresolvedMergedType*>(&left);
+    const UnresolvedMergedReferenceType& left_merge =
+        *down_cast<const UnresolvedMergedReferenceType*>(&left);
 
     types.Copy(&left_merge.GetUnresolvedTypes());
     left_resolved = &left_merge.GetResolvedPart();
@@ -314,7 +315,8 @@ const RegType& RegTypeCache::FromUnresolvedMerge(const RegType& left,
   const RegType* right_resolved;
   bool right_unresolved_is_array;
   if (right.IsUnresolvedMergedReference()) {
-    const UnresolvedMergedType& right_merge = *down_cast<const UnresolvedMergedType*>(&right);
+    const UnresolvedMergedReferenceType& right_merge =
+        *down_cast<const UnresolvedMergedReferenceType*>(&right);
 
     types.Union(&right_merge.GetUnresolvedTypes());
     right_resolved = &right_merge.GetResolvedPart();
@@ -359,7 +361,8 @@ const RegType& RegTypeCache::FromUnresolvedMerge(const RegType& left,
   for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
     const RegType* cur_entry = entries_[i];
     if (cur_entry->IsUnresolvedMergedReference()) {
-      const UnresolvedMergedType* cmp_type = down_cast<const UnresolvedMergedType*>(cur_entry);
+      const UnresolvedMergedReferenceType* cmp_type =
+          down_cast<const UnresolvedMergedReferenceType*>(cur_entry);
       const RegType& resolved_part = cmp_type->GetResolvedPart();
       const BitVector& unresolved_part = cmp_type->GetUnresolvedTypes();
       // Use SameBitsSet. "types" is expandable to allow merging in the components, but the
@@ -369,10 +372,10 @@ const RegType& RegTypeCache::FromUnresolvedMerge(const RegType& left,
       }
     }
   }
-  return AddEntry(new (&allocator_) UnresolvedMergedType(resolved_parts_merged,
-                                                         types,
-                                                         this,
-                                                         entries_.size()));
+  return AddEntry(new (&allocator_) UnresolvedMergedReferenceType(resolved_parts_merged,
+                                                                  types,
+                                                                  this,
+                                                                  entries_.size()));
 }
 
 const RegType& RegTypeCache::FromUnresolvedSuperClass(const RegType& child) {
@@ -380,8 +383,8 @@ const RegType& RegTypeCache::FromUnresolvedSuperClass(const RegType& child) {
   for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
     const RegType* cur_entry = entries_[i];
     if (cur_entry->IsUnresolvedSuperClass()) {
-      const UnresolvedSuperClass* tmp_entry =
-          down_cast<const UnresolvedSuperClass*>(cur_entry);
+      const UnresolvedSuperClassType* tmp_entry =
+          down_cast<const UnresolvedSuperClassType*>(cur_entry);
       uint16_t unresolved_super_child_id =
           tmp_entry->GetUnresolvedSuperClassChildId();
       if (unresolved_super_child_id == child.GetId()) {
@@ -389,7 +392,7 @@ const RegType& RegTypeCache::FromUnresolvedSuperClass(const RegType& child) {
       }
     }
   }
-  return AddEntry(new (&allocator_) UnresolvedSuperClass(
+  return AddEntry(new (&allocator_) UnresolvedSuperClassType(
       null_handle_, child.GetId(), this, entries_.size()));
 }
 
@@ -403,7 +406,7 @@ const UninitializedType& RegTypeCache::Uninitialized(const RegType& type) {
           std::remove_const_t<std::remove_pointer_t<decltype(ref_type.GetUninitializedType())>>;
       static_assert(std::is_same_v<RefType, ReferenceType>
           ? std::is_same_v<UninitRefType, UninitializedReferenceType>
-          : std::is_same_v<UninitRefType, UnresolvedUninitializedRefType>);
+          : std::is_same_v<UninitRefType, UnresolvedUninitializedReferenceType>);
       const UninitRefType* uninit_ref_type = ref_type.GetUninitializedType();
       if (uninit_ref_type == nullptr) {
         Handle<mirror::Class> klass =
@@ -429,13 +432,15 @@ const UninitializedType& RegTypeCache::Uninitialized(const RegType& type) {
 const RegType& RegTypeCache::FromUninitialized(const RegType& uninit_type) {
   if (uninit_type.IsUninitializedReference()) {
     return *down_cast<const UninitializedReferenceType&>(uninit_type).GetInitializedType();
-  } else if (uninit_type.IsUnresolvedAndUninitializedReference()) {
-    return *down_cast<const UnresolvedUninitializedRefType&>(uninit_type).GetInitializedType();
+  } else if (uninit_type.IsUnresolvedUninitializedReference()) {
+    return *down_cast<const UnresolvedUninitializedReferenceType&>(
+        uninit_type).GetInitializedType();
   } else if (uninit_type.IsUninitializedThisReference()) {
     return *down_cast<const UninitializedThisReferenceType&>(uninit_type).GetInitializedType();
   } else {
-    DCHECK(uninit_type.IsUnresolvedAndUninitializedThisReference()) << uninit_type;
-    return *down_cast<const UnresolvedUninitializedThisRefType&>(uninit_type).GetInitializedType();
+    DCHECK(uninit_type.IsUnresolvedUninitializedThisReference()) << uninit_type;
+    return *down_cast<const UnresolvedUninitializedThisReferenceType&>(
+        uninit_type).GetInitializedType();
   }
 }
 
@@ -449,12 +454,12 @@ const UninitializedType& RegTypeCache::UninitializedThisArgument(const RegType& 
   if (type.IsUnresolvedReference()) {
     for (size_t i = kNumPrimitivesAndSmallConstants; i < entries_.size(); i++) {
       const RegType* cur_entry = entries_[i];
-      if (cur_entry->IsUnresolvedAndUninitializedThisReference() &&
+      if (cur_entry->IsUnresolvedUninitializedThisReference() &&
           cur_entry->GetDescriptor() == descriptor) {
         return *down_cast<const UninitializedType*>(cur_entry);
       }
     }
-    entry = new (&allocator_) UnresolvedUninitializedThisRefType(
+    entry = new (&allocator_) UnresolvedUninitializedThisReferenceType(
         null_handle_,
         descriptor,
         entries_.size(),
@@ -489,9 +494,9 @@ const ConstantType& RegTypeCache::FromCat1NonSmallConstant(int32_t value, bool p
   }
   ConstantType* entry;
   if (precise) {
-    entry = new (&allocator_) PreciseConstType(null_handle_, value, entries_.size());
+    entry = new (&allocator_) PreciseConstantType(null_handle_, value, entries_.size());
   } else {
-    entry = new (&allocator_) ImpreciseConstType(null_handle_, value, entries_.size());
+    entry = new (&allocator_) ImpreciseConstantType(null_handle_, value, entries_.size());
   }
   return AddEntry(entry);
 }
@@ -506,9 +511,9 @@ const ConstantType& RegTypeCache::FromCat2ConstLo(int32_t value, bool precise) {
   }
   ConstantType* entry;
   if (precise) {
-    entry = new (&allocator_) PreciseConstLoType(null_handle_, value, entries_.size());
+    entry = new (&allocator_) PreciseConstantLoType(null_handle_, value, entries_.size());
   } else {
-    entry = new (&allocator_) ImpreciseConstLoType(null_handle_, value, entries_.size());
+    entry = new (&allocator_) ImpreciseConstantLoType(null_handle_, value, entries_.size());
   }
   return AddEntry(entry);
 }
@@ -523,9 +528,9 @@ const ConstantType& RegTypeCache::FromCat2ConstHi(int32_t value, bool precise) {
   }
   ConstantType* entry;
   if (precise) {
-    entry = new (&allocator_) PreciseConstHiType(null_handle_, value, entries_.size());
+    entry = new (&allocator_) PreciseConstantHiType(null_handle_, value, entries_.size());
   } else {
-    entry = new (&allocator_) ImpreciseConstHiType(null_handle_, value, entries_.size());
+    entry = new (&allocator_) ImpreciseConstantHiType(null_handle_, value, entries_.size());
   }
   return AddEntry(entry);
 }

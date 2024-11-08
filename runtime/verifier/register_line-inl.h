@@ -136,7 +136,7 @@ inline void RegisterLine::CopyRegister2(MethodVerifier* verifier, uint32_t vdst,
 }
 
 inline bool RegisterLine::NeedsAllocationDexPc(const RegType& reg_type) {
-  return reg_type.IsUninitializedReference() || reg_type.IsUnresolvedAndUninitializedReference();
+  return reg_type.IsUninitializedReference() || reg_type.IsUnresolvedUninitializedReference();
 }
 
 inline bool RegisterLine::VerifyRegisterType(MethodVerifier* verifier, uint32_t vsrc,

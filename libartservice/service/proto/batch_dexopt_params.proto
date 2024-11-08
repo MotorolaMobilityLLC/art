@@ -19,6 +19,17 @@ syntax = "proto2";
 package com.android.server.art.proto;
 option java_multiple_files = true;
 
+// These protobufs are currently used as an ART-internal API for pre-reboot
+// dexopt to pass parameters from a version of the ART module to a potentially
+// more recent version in an OTA package. It's a 1:1 mapping to the
+// BatchDexoptParams API used for (normal) batch dexopt. That approach does not
+// add any extra compatibility constraints, because: a) We need to keep the
+// BatchDexoptParams API for all SDK levels the ART module gets pushed to, and
+// b) we only allow pre-reboot dexopt from SDK level N to N+1. Since (a) always
+// has a longer support window than (b), we cannot end up in a situation where
+// these protobufs forces us to keep support for a feature we wouldn't need to
+// keep anyway for batch dexopt.
+
 // The protobuf representation of `BatchDexoptParams`. See classes in
 // java/com/android/server/art/model/BatchDexoptParams.java and
 // java/com/android/server/art/model/DexoptParams.java for details.

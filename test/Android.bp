@@ -85,12 +85,6 @@ cc_defaults {
         android_x86_64: {
             relative_install_path: "art/x86_64",
         },
-        android: {
-            test_for: [
-                "com.android.art",
-                "com.android.art.debug",
-            ],
-        },
     },
     // Tests aren't generally included in any APEX, but this is necessary to
     // avoid duplicate install rules for them by making them unavailable to platform.
@@ -110,12 +104,6 @@ art_cc_defaults {
     name: "art_test_internal_library_defaults",
     defaults: ["art_test_defaults"],
     target: {
-        android: {
-            test_for: [
-                "com.android.art",
-                "com.android.art.debug",
-            ],
-        },
         android_arm: {
             relative_install_path: "com.android.art/lib",
         },
@@ -555,7 +543,7 @@ art_cc_test_library {
     defaults: ["libarttest-defaults"],
     shared_libs: [
         "libart",
-        "libdexfile",
+        "libdexfile#impl",
         "libprofile",
         "libartbase",
     ],
@@ -569,7 +557,7 @@ art_cc_test_library {
     ],
     shared_libs: [
         "libartd",
-        "libdexfiled",
+        "libdexfiled#impl",
         "libprofiled",
         "libartbased",
     ],
@@ -783,7 +771,7 @@ art_cc_test_library {
     defaults: ["libtiagent-defaults"],
     shared_libs: [
         "libart",
-        "libdexfile",
+        "libdexfile#impl",
         "libprofile",
         "libartbase",
     ],
@@ -797,7 +785,7 @@ art_cc_test_library {
     ],
     shared_libs: [
         "libartd",
-        "libdexfiled",
+        "libdexfiled#impl",
         "libprofiled",
         "libartbased",
     ],
@@ -1352,10 +1340,6 @@ art_cc_test {
             suffix: "64",
         },
     },
-    test_for: [
-        "com.android.art",
-        "com.android.art.debug",
-    ],
 }
 
 art_cc_test {
@@ -1368,10 +1352,6 @@ art_cc_test {
     ],
     test_suites: ["general-tests"],
     test_config: "art-gtests-target-chroot.xml",
-    test_for: [
-        "com.android.art",
-        "com.android.art.debug",
-    ],
 }
 
 csuite_test {

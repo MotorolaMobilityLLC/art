@@ -307,16 +307,14 @@ def add_builder(mode,
 def add_builders():
   for mode, arch in [("target", "arm"), ("host", "x86")]:
     for bitness in [32, 64]:
-      add_builder(mode, arch, bitness, ndebug=True)
+      # Add first to keep these builders together and left-aligned in the console.
       add_builder(mode, arch, bitness)
+    for bitness in [32, 64]:
+      add_builder(mode, arch, bitness, ndebug=True)
       if mode == "host":
         add_builder(mode, arch, bitness, ngen=True, cmc=True)
       add_builder(mode, arch, bitness, cmc=True)
-      if mode == "target":
-        add_builder(mode, arch, bitness, poison=True, ndebug=True)
       add_builder(mode, arch, bitness, poison=True)
-      if mode == "target":
-        add_builder(mode, arch, bitness, gcstress=True, ndebug=True)
       add_builder(mode, arch, bitness, gcstress=True)
   add_builder('qemu', 'arm', bitness=64)
   add_builder('qemu', 'riscv', bitness=64)

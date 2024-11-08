@@ -5122,11 +5122,11 @@ void InstructionCodeGeneratorX86_64::HandleRotate(HBinaryOperation* rotate) {
   }
 }
 
-void InstructionCodeGeneratorX86_64::VisitRor(HRor* ror) {
-  HandleRotate(ror);
+void LocationsBuilderX86_64::VisitRol(HRol* rol) {
+  HandleRotate(rol);
 }
 
-void LocationsBuilderX86_64::VisitRol(HRol* rol) {
+void InstructionCodeGeneratorX86_64::VisitRol(HRol* rol) {
   HandleRotate(rol);
 }
 
@@ -5134,8 +5134,8 @@ void LocationsBuilderX86_64::VisitRor(HRor* ror) {
   HandleRotate(ror);
 }
 
-void InstructionCodeGeneratorX86_64::VisitRol(HRol* rol) {
-  HandleRotate(rol);
+void InstructionCodeGeneratorX86_64::VisitRor(HRor* ror) {
+  HandleRotate(ror);
 }
 
 void LocationsBuilderX86_64::VisitShl(HShl* shl) {

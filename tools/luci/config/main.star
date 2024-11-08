@@ -243,6 +243,7 @@ def add_builder(mode,
     name += '.cmc' if cmc else ''
     name += '.ndebug' if ndebug else '.debug'
     name += '.' + str(bitness)
+    name = name.replace("ngen.cmc", "ngen-cmc")
 
     # Define the LUCI console category (the tree layout).
     # The "|" splits the tree node into sub-categories.
@@ -250,7 +251,6 @@ def add_builder(mode,
     category = name.replace(".", "|")
     category = category.replace("host|", "host.")
     category = category.replace("target|", "target.")
-    category = category.replace("ngen|cmc|", "ngen-cmc|")
 
     product = None
     if arch == "arm":
@@ -309,9 +309,9 @@ def add_builders():
     for bitness in [32, 64]:
       add_builder(mode, arch, bitness, ndebug=True)
       add_builder(mode, arch, bitness)
-      if mode == "host" and bitness == 64:
-        add_builder(mode, arch, bitness, ngen=True)
-      add_builder(mode, arch, bitness, ngen=True, cmc=True)
+      if mode == "host":
+        add_builder(mode, arch, bitness, ngen=True, cmc=True)
+      add_builder(mode, arch, bitness, cmc=True)
       if mode == "target":
         add_builder(mode, arch, bitness, poison=True, ndebug=True)
       add_builder(mode, arch, bitness, poison=True)

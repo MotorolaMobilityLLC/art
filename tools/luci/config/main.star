@@ -241,7 +241,7 @@ def add_builder(mode,
     name += '.poison' if poison else ''
     name += '.ngen' if ngen else ''
     name += '.cmc' if cmc else ''
-    name += '.ndebug' if ndebug else '.debug'
+    name += '.ndebug' if ndebug else ''
     name += '.' + str(bitness)
     name = name.replace("ngen.cmc", "ngen-cmc")
 

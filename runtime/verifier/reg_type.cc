@@ -40,27 +40,45 @@ namespace verifier {
 
 using android::base::StringPrintf;
 
+std::ostream& operator<<(std::ostream& os, RegType::Kind kind) {
+  const char* kind_name;
+  switch (kind) {
+#define DEFINE_REG_TYPE_CASE(name) \
+    case RegType::Kind::k##name:   \
+      kind_name = #name;           \
+      break;
+    FOR_EACH_CONCRETE_REG_TYPE(DEFINE_REG_TYPE_CASE)
+#undef DEFINE_REG_TYPE_CASE
+    default:
+      return os << "Corrupted RegType::Kind: " << static_cast<uint32_t>(kind);
+  }
+  return os << kind_name;
+}
+
 PrimitiveType::PrimitiveType(Handle<mirror::Class> klass,
                              const std::string_view& descriptor,
-                             uint16_t cache_id)
-    : RegType(klass, descriptor, cache_id) {
+                             uint16_t cache_id,
+                             Kind kind)
+    : RegType(klass, descriptor, cache_id, kind) {
   CHECK(klass != nullptr);
   CHECK(!descriptor.empty());
 }
 
 Cat1Type::Cat1Type(Handle<mirror::Class> klass,
                    const std::string_view& descriptor,
-                   uint16_t cache_id)
-    : PrimitiveType(klass, descriptor, cache_id) {
+                   uint16_t cache_id,
+                   Kind kind)
+    : PrimitiveType(klass, descriptor, cache_id, kind) {
 }
 
 Cat2Type::Cat2Type(Handle<mirror::Class> klass,
                    const std::string_view& descriptor,
-                   uint16_t cache_id)
-    : PrimitiveType(klass, descriptor, cache_id) {
+                   uint16_t cache_id,
+                   Kind kind)
+    : PrimitiveType(klass, descriptor, cache_id, kind) {
 }
 
-std::string PreciseConstType::Dump() const {
+std::string PreciseConstantType::Dump() const {
   std::stringstream result;
   uint32_t val = ConstantValue();
   if (val == 0) {
@@ -125,7 +143,7 @@ std::string UndefinedType::Dump() const REQUIRES_SHARED(Locks::mutator_lock_) {
   return "Undefined";
 }
 
-std::string UnresolvedMergedType::Dump() const {
+std::string UnresolvedMergedReferenceType::Dump() const {
   std::stringstream result;
   result << "UnresolvedMergedReferences(" << GetResolvedPart().Dump() << " | ";
   const BitVector& types = GetUnresolvedTypes();
@@ -143,7 +161,7 @@ std::string UnresolvedMergedType::Dump() const {
   return result.str();
 }
 
-std::string UnresolvedSuperClass::Dump() const {
+std::string UnresolvedSuperClassType::Dump() const {
   std::stringstream result;
   uint16_t super_type_id = GetUnresolvedSuperClassChildId();
   result << "UnresolvedSuperClass(" << reg_type_cache_->GetFromId(super_type_id).Dump() << ")";
@@ -156,14 +174,14 @@ std::string UnresolvedReferenceType::Dump() const {
   return result.str();
 }
 
-std::string UnresolvedUninitializedRefType::Dump() const {
+std::string UnresolvedUninitializedReferenceType::Dump() const {
   std::stringstream result;
   result << "Unresolved And Uninitialized Reference: "
       << PrettyDescriptor(std::string(GetDescriptor()).c_str());
   return result.str();
 }
 
-std::string UnresolvedUninitializedThisRefType::Dump() const {
+std::string UnresolvedUninitializedThisReferenceType::Dump() const {
   std::stringstream result;
   result << "Unresolved And Uninitialized This Reference: "
       << PrettyDescriptor(std::string(GetDescriptor()).c_str());
@@ -188,7 +206,7 @@ std::string UninitializedThisReferenceType::Dump() const {
   return result.str();
 }
 
-std::string ImpreciseConstType::Dump() const {
+std::string ImpreciseConstantType::Dump() const {
   std::stringstream result;
   uint32_t val = ConstantValue();
   if (val == 0) {
@@ -203,7 +221,7 @@ std::string ImpreciseConstType::Dump() const {
   }
   return result.str();
 }
-std::string PreciseConstLoType::Dump() const {
+std::string PreciseConstantLoType::Dump() const {
   std::stringstream result;
 
   int32_t val = ConstantValueLo();
@@ -217,7 +235,7 @@ std::string PreciseConstLoType::Dump() const {
   return result.str();
 }
 
-std::string ImpreciseConstLoType::Dump() const {
+std::string ImpreciseConstantLoType::Dump() const {
   std::stringstream result;
 
   int32_t val = ConstantValueLo();
@@ -231,7 +249,7 @@ std::string ImpreciseConstLoType::Dump() const {
   return result.str();
 }
 
-std::string PreciseConstHiType::Dump() const {
+std::string PreciseConstantHiType::Dump() const {
   std::stringstream result;
   int32_t val = ConstantValueHi();
   result << "Precise ";
@@ -244,7 +262,7 @@ std::string PreciseConstHiType::Dump() const {
   return result.str();
 }
 
-std::string ImpreciseConstHiType::Dump() const {
+std::string ImpreciseConstantHiType::Dump() const {
   std::stringstream result;
   int32_t val = ConstantValueHi();
   result << "Imprecise ";
@@ -724,27 +742,28 @@ void RegType::CheckInvariants() const {
 void UninitializedThisReferenceType::CheckInvariants() const {
 }
 
-void UnresolvedUninitializedThisRefType::CheckInvariants() const {
+void UnresolvedUninitializedThisReferenceType::CheckInvariants() const {
   CHECK(!descriptor_.empty()) << *this;
   CHECK(!HasClass()) << *this;
 }
 
-void UnresolvedUninitializedRefType::CheckInvariants() const {
+void UnresolvedUninitializedReferenceType::CheckInvariants() const {
   CHECK(!descriptor_.empty()) << *this;
   CHECK(!HasClass()) << *this;
 }
 
-UnresolvedMergedType::UnresolvedMergedType(const RegType& resolved,
-                                           const BitVector& unresolved,
-                                           const RegTypeCache* reg_type_cache,
-                                           uint16_t cache_id)
-    : UnresolvedType(reg_type_cache->GetNullHandle(), "", cache_id),
+UnresolvedMergedReferenceType::UnresolvedMergedReferenceType(const RegType& resolved,
+                                                             const BitVector& unresolved,
+                                                             const RegTypeCache* reg_type_cache,
+                                                             uint16_t cache_id)
+    : UnresolvedType(
+          reg_type_cache->GetNullHandle(), "", cache_id, Kind::kUnresolvedMergedReference),
       reg_type_cache_(reg_type_cache),
       resolved_part_(resolved),
       unresolved_types_(unresolved, false, unresolved.GetAllocator()) {
   CheckConstructorInvariants(this);
 }
-void UnresolvedMergedType::CheckInvariants() const {
+void UnresolvedMergedReferenceType::CheckInvariants() const {
   CHECK(reg_type_cache_ != nullptr);
 
   // Unresolved merged types: merged types should be defined.
@@ -771,7 +790,7 @@ void UnresolvedMergedType::CheckInvariants() const {
   }
 }
 
-bool UnresolvedMergedType::IsArrayTypes() const {
+bool UnresolvedMergedReferenceType::IsArrayTypes() const {
   // For a merge to be an array, both the resolved and the unresolved part need to be object
   // arrays.
   // (Note: we encode a missing resolved part [which doesn't need to be an array] as zero.)
@@ -786,7 +805,7 @@ bool UnresolvedMergedType::IsArrayTypes() const {
   const RegType& unresolved = reg_type_cache_->GetFromId(idx);
   return unresolved.IsArrayTypes();
 }
-bool UnresolvedMergedType::IsObjectArrayTypes() const {
+bool UnresolvedMergedReferenceType::IsObjectArrayTypes() const {
   // Same as IsArrayTypes, as primitive arrays are always resolved.
   return IsArrayTypes();
 }
@@ -796,7 +815,7 @@ void UnresolvedReferenceType::CheckInvariants() const {
   CHECK(!HasClass()) << *this;
 }
 
-void UnresolvedSuperClass::CheckInvariants() const {
+void UnresolvedSuperClassType::CheckInvariants() const {
   // Unresolved merged types: merged types should be defined.
   CHECK(descriptor_.empty()) << *this;
   CHECK(!HasClass()) << *this;

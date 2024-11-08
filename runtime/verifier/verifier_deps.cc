@@ -264,7 +264,8 @@ void VerifierDeps::AddAssignability(const DexFile& dex_file,
     // Nothing to record, null is always assignable.
   } else {
     CHECK(source.IsUnresolvedMergedReference()) << source.Dump();
-    const UnresolvedMergedType& merge = *down_cast<const UnresolvedMergedType*>(&source);
+    const UnresolvedMergedReferenceType& merge =
+        *down_cast<const UnresolvedMergedReferenceType*>(&source);
     AddAssignability(dex_file, class_def, destination, merge.GetResolvedPart());
     for (uint32_t idx : merge.GetUnresolvedTypes().Indexes()) {
       AddAssignability(dex_file, class_def, destination, merge.GetRegTypeCache()->GetFromId(idx));

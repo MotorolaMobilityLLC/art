@@ -1508,7 +1508,7 @@ class OatDumper {
       Handle<mirror::DexCache> dex_cache = hs->NewHandle(
           runtime->GetClassLinker()->RegisterDexFile(*dex_file, options_.class_loader_->Get()));
       CHECK(dex_cache != nullptr);
-      ArtMethod* method = runtime->GetClassLinker()->ResolveMethodWithoutInvokeType(
+      ArtMethod* method = runtime->GetClassLinker()->ResolveMethodId(
           dex_method_idx, dex_cache, *options_.class_loader_);
       if (method == nullptr) {
         soa.Self()->ClearException();

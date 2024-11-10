@@ -34,7 +34,7 @@ bool RegisterLine::CheckConstructorReturn(MethodVerifier* verifier) const {
     for (size_t i = 0; i < num_regs_; i++) {
       const RegType& type = GetRegisterType(verifier, i);
       CHECK(!type.IsUninitializedThisReference() &&
-            !type.IsUnresolvedAndUninitializedThisReference())
+            !type.IsUnresolvedUninitializedThisReference())
           << i << ": " << type.IsUninitializedThisReference() << " in "
           << verifier->GetMethodReference().PrettyMethod();
     }
@@ -93,7 +93,7 @@ void RegisterLine::MarkRefsAsInitialized(MethodVerifier* verifier, uint32_t vsrc
   size_t changed = 0;
   // Is this initializing "this"?
   if (uninit_type.IsUninitializedThisReference() ||
-      uninit_type.IsUnresolvedAndUninitializedThisReference()) {
+      uninit_type.IsUnresolvedUninitializedThisReference()) {
     this_initialized_ = true;
     for (uint32_t i = 0; i < num_regs_; i++) {
       if (GetRegisterType(verifier, i).Equals(uninit_type)) {

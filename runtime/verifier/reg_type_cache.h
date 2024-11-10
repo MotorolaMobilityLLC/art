@@ -48,13 +48,13 @@ class ConstantType;
 class DoubleHiType;
 class DoubleLoType;
 class FloatType;
-class ImpreciseConstType;
+class ImpreciseConstantType;
 class IntegerType;
 class LongHiType;
 class LongLoType;
 class MethodVerifier;
 class NullType;
-class PreciseConstType;
+class PreciseConstantType;
 class ReferenceType;
 class RegType;
 class ShortType;
@@ -151,12 +151,12 @@ class RegTypeCache {
       REQUIRES_SHARED(Locks::mutator_lock_);
   const RegType& FromUninitialized(const RegType& uninit_type)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstType& ByteConstant() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstType& CharConstant() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstType& ShortConstant() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstType& IntConstant() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstType& PosByteConstant() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstType& PosShortConstant() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ImpreciseConstantType& ByteConstant() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ImpreciseConstantType& CharConstant() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ImpreciseConstantType& ShortConstant() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ImpreciseConstantType& IntConstant() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ImpreciseConstantType& PosByteConstant() REQUIRES_SHARED(Locks::mutator_lock_);
+  const ImpreciseConstantType& PosShortConstant() REQUIRES_SHARED(Locks::mutator_lock_);
   const RegType& GetComponentType(const RegType& array) REQUIRES_SHARED(Locks::mutator_lock_);
   void Dump(std::ostream& os) REQUIRES_SHARED(Locks::mutator_lock_);
   const RegType& RegTypeFromPrimitiveType(Primitive::Type) const;
@@ -229,6 +229,9 @@ class RegTypeCache {
 
   // Fast lookup by type index.
   const RegType** const entries_for_type_index_;
+
+  // Cache last uninitialized "this" type used for constructors.
+  const UninitializedType* last_uninitialized_this_type_;
 
   // Whether or not we're allowed to load classes.
   const bool can_load_classes_;

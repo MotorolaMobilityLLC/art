@@ -76,6 +76,7 @@ class HParameterValue;
 class HPhi;
 class HSuspendCheck;
 class HTryBoundary;
+class HVecCondition;
 class FieldInfo;
 class LiveInterval;
 class LocationSummary;
@@ -1423,8 +1424,17 @@ class HLoopInformationOutwardIterator : public ValueObject {
   M(VecPredSetAll, VecPredSetOperation)                                 \
   M(VecPredWhile, VecPredSetOperation)                                  \
   M(VecPredToBoolean, VecOperation)                                     \
-  M(VecCondition, VecPredSetOperation)                                  \
-  M(VecPredNot, VecPredSetOperation)                                    \
+  M(VecEqual, VecCondition)                                             \
+  M(VecNotEqual, VecCondition)                                          \
+  M(VecLessThan, VecCondition)                                          \
+  M(VecLessThanOrEqual, VecCondition)                                   \
+  M(VecGreaterThan, VecCondition)                                       \
+  M(VecGreaterThanOrEqual, VecCondition)                                \
+  M(VecBelow, VecCondition)                                             \
+  M(VecBelowOrEqual, VecCondition)                                      \
+  M(VecAbove, VecCondition)                                             \
+  M(VecAboveOrEqual, VecCondition)                                      \
+  M(VecPredNot, VecPredSetOperation)
 
 #define FOR_EACH_CONCRETE_INSTRUCTION_COMMON(M)                         \
   FOR_EACH_CONCRETE_INSTRUCTION_SCALAR_COMMON(M)                        \
@@ -1492,7 +1502,8 @@ class HLoopInformationOutwardIterator : public ValueObject {
   M(VecUnaryOperation, VecOperation)                                    \
   M(VecBinaryOperation, VecOperation)                                   \
   M(VecMemoryOperation, VecOperation)                                   \
-  M(VecPredSetOperation, VecOperation)
+  M(VecPredSetOperation, VecOperation)                                  \
+  M(VecCondition, VecPredSetOperation)
 
 #define FOR_EACH_INSTRUCTION(M)                                         \
   FOR_EACH_CONCRETE_INSTRUCTION(M)                                      \
@@ -4537,6 +4548,10 @@ enum class MethodLoadKind {
   // Used for app->boot calls with relocatable image.
   kBootImageRelRo,
 
+  // Load from an app image entry in the .data.img.rel.ro using a PC-relative load.
+  // Used for app image methods referenced by apps in AOT-compiled code.
+  kAppImageRelRo,
+
   // Load from an entry in the .bss section using a PC-relative load.
   // Used for methods outside boot image referenced by AOT-compiled app and boot image code.
   kBssEntry,
@@ -4569,6 +4584,7 @@ enum class CodePtrLocation {
 static inline bool IsPcRelativeMethodLoadKind(MethodLoadKind load_kind) {
   return load_kind == MethodLoadKind::kBootImageLinkTimePcRelative ||
          load_kind == MethodLoadKind::kBootImageRelRo ||
+         load_kind == MethodLoadKind::kAppImageRelRo ||
          load_kind == MethodLoadKind::kBssEntry;
 }
 

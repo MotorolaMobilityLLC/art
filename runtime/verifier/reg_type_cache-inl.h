@@ -95,41 +95,41 @@ inline const NullType& RegTypeCache::Null() {
   return *down_cast<const NullType*>(entries_[kNullCacheId]);
 }
 
-inline const ImpreciseConstType& RegTypeCache::ByteConstant() {
+inline const ImpreciseConstantType& RegTypeCache::ByteConstant() {
   const ConstantType& result = FromCat1Const(std::numeric_limits<jbyte>::min(), false);
   DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+  return *down_cast<const ImpreciseConstantType*>(&result);
 }
 
-inline const ImpreciseConstType& RegTypeCache::CharConstant() {
+inline const ImpreciseConstantType& RegTypeCache::CharConstant() {
   int32_t jchar_max = static_cast<int32_t>(std::numeric_limits<jchar>::max());
   const ConstantType& result =  FromCat1Const(jchar_max, false);
   DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+  return *down_cast<const ImpreciseConstantType*>(&result);
 }
 
-inline const ImpreciseConstType& RegTypeCache::ShortConstant() {
+inline const ImpreciseConstantType& RegTypeCache::ShortConstant() {
   const ConstantType& result =  FromCat1Const(std::numeric_limits<jshort>::min(), false);
   DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+  return *down_cast<const ImpreciseConstantType*>(&result);
 }
 
-inline const ImpreciseConstType& RegTypeCache::IntConstant() {
+inline const ImpreciseConstantType& RegTypeCache::IntConstant() {
   const ConstantType& result = FromCat1Const(std::numeric_limits<jint>::max(), false);
   DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+  return *down_cast<const ImpreciseConstantType*>(&result);
 }
 
-inline const ImpreciseConstType& RegTypeCache::PosByteConstant() {
+inline const ImpreciseConstantType& RegTypeCache::PosByteConstant() {
   const ConstantType& result = FromCat1Const(std::numeric_limits<jbyte>::max(), false);
   DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+  return *down_cast<const ImpreciseConstantType*>(&result);
 }
 
-inline const ImpreciseConstType& RegTypeCache::PosShortConstant() {
+inline const ImpreciseConstantType& RegTypeCache::PosShortConstant() {
   const ConstantType& result =  FromCat1Const(std::numeric_limits<jshort>::max(), false);
   DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstType*>(&result);
+  return *down_cast<const ImpreciseConstantType*>(&result);
 }
 
 inline const ReferenceType& RegTypeCache::JavaLangClass() {

@@ -2154,7 +2154,10 @@ class Dex2Oat final {
         // We need to mirror the layout of the ELF file in the compressed debug-info.
         // Therefore PrepareDebugInfo() relies on the SetLoadedSectionSizes() call further above.
         debug::DebugInfo debug_info = oat_writer->GetDebugInfo();  // Keep the variable alive.
-        elf_writer->PrepareDebugInfo(debug_info);  // Processes the data on background thread.
+        // This will perform the compression on background thread while we do other I/O below.
+        // If we hit any ERROR path below, the destructor of this variable will wait for the
+        // task to finish (since it accesses the 'debug_info' above and other 'Dex2Oat' data).
+        std::unique_ptr<ThreadPool> compression_job = elf_writer->PrepareDebugInfo(debug_info);
 
         OutputStream* rodata = rodata_[i];
         DCHECK(rodata != nullptr);

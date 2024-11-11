@@ -525,6 +525,7 @@ def create_ci_runner_scripts(mode, test_names):
       #       The only dependency is setting of "-Djava.library.path".
       "TARGET_ARCH": "arm64",
       "TARGET_2ND_ARCH": "arm",
+      "TMPDIR": Path(getcwd()) / "tmp",
     }
     args = [
       f"--run-test-option=--create-runner={tmpdir}",

@@ -1848,7 +1848,7 @@ std::string RuntimeImage::GetRuntimeImagePath(const std::string& app_data_dir,
                                               const std::string& dex_location,
                                               const std::string& isa) {
   std::string basename = android::base::Basename(dex_location);
-  std::string filename = ReplaceFileExtension(basename, "art");
+  std::string filename = ReplaceFileExtension(basename, kArtExtension);
 
   return GetRuntimeImageDir(app_data_dir) + isa + "/" + filename;
 }

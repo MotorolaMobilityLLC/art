@@ -165,10 +165,6 @@ class RegTypeCache {
     return class_linker_;
   }
 
-  Handle<mirror::Class> GetNullHandle() const {
-    return null_handle_;
-  }
-
   static constexpr int32_t kMinSmallConstant = -1;
   static constexpr int32_t kMaxSmallConstant = 4;
   static constexpr int32_t kNumSmallConstants = kMaxSmallConstant - kMinSmallConstant + 1;
@@ -221,7 +217,6 @@ class RegTypeCache {
 
   // Handle scope containing classes.
   VariableSizedHandleScope handles_;
-  ScopedNullHandle<mirror::Class> null_handle_;
 
   ClassLinker* class_linker_;
   Handle<mirror::ClassLoader> class_loader_;

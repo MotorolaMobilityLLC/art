@@ -460,9 +460,7 @@ TEST_F(OatTest, WriteRead) {
     size_t num_virtual_methods = accessor.NumVirtualMethods();
 
     const char* descriptor = accessor.GetDescriptor();
-    ObjPtr<mirror::Class> klass = class_linker->FindClass(soa.Self(),
-                                                          descriptor,
-                                                          ScopedNullHandle<mirror::ClassLoader>());
+    ObjPtr<mirror::Class> klass = FindClass(descriptor, ScopedNullHandle<mirror::ClassLoader>());
 
     const OatFile::OatClass oat_class = oat_dex_file->GetOatClass(accessor.GetClassDefIndex());
     CHECK_EQ(ClassStatus::kNotReady, oat_class.GetStatus()) << descriptor;

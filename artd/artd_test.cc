@@ -61,10 +61,12 @@
 #include "gtest/gtest.h"
 #include "oat/oat_file.h"
 #include "path_utils.h"
+#include "profile/profile_compilation_info.cc"
 #include "profman/profman_result.h"
 #include "testing.h"
 #include "tools/binder_utils.h"
 #include "tools/system_properties.h"
+#include "vdex_file.h"
 #include "ziparchive/zip_writer.h"
 
 extern char** environ;
@@ -582,7 +584,13 @@ class ArtdTest : public CommonArtTest {
   }
 };
 
-TEST_F(ArtdTest, ConstantsAreInSync) { EXPECT_STREQ(ArtConstants::REASON_VDEX, kReasonVdex); }
+TEST_F(ArtdTest, ConstantsAreInSync) {
+  EXPECT_STREQ(ArtConstants::REASON_VDEX, kReasonVdex);
+  EXPECT_STREQ(ArtConstants::DEX_METADATA_FILE_EXT, kDmExtension);
+  EXPECT_STREQ(ArtConstants::DEX_METADATA_PROFILE_ENTRY,
+               ProfileCompilationInfo::kDexMetadataProfileEntry);
+  EXPECT_STREQ(ArtConstants::DEX_METADATA_VDEX_ENTRY, VdexFile::kVdexNameInDmFile);
+}
 
 TEST_F(ArtdTest, isAlive) {
   bool result = false;

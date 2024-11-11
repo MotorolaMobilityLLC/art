@@ -129,21 +129,18 @@ void ArmWatchdogOrDie() {
   }
 }
 
-bool StartsWith(const std::string& str, const std::string& prefix) {
-  return str.compare(0, prefix.length(), prefix) == 0;
-}
-
 // Sample entries that match one of the following
 // start with /system/
 // start with /vendor/
 // start with /data/app/
 // contains "extracted in memory from Y", where Y matches any of the above
 bool ShouldSampleSmapsEntry(const perfetto::profiling::SmapsEntry& e) {
-  if (StartsWith(e.pathname, "/system/") || StartsWith(e.pathname, "/vendor/") ||
-      StartsWith(e.pathname, "/data/app/")) {
+  if (e.pathname.starts_with("/system/") ||
+      e.pathname.starts_with("/vendor/") ||
+      e.pathname.starts_with("/data/app/")) {
     return true;
   }
-  if (StartsWith(e.pathname, "[anon:")) {
+  if (e.pathname.starts_with("[anon:")) {
     if (e.pathname.find("extracted in memory from /system/") != std::string::npos) {
       return true;
     }

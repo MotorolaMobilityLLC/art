@@ -93,7 +93,7 @@ class RegType {
 #undef DEFINE_REG_TYPE_ENUMERATOR
   };
 
-  Kind GetKind() const { return kind_; }
+  constexpr Kind GetKind() const { return kind_; }
 
 #define DEFINE_IS_CONCRETE_REG_TYPE(name) \
   bool Is##name() const { return GetKind() == Kind::k##name; }
@@ -267,7 +267,7 @@ class RegType {
     return Merge(incoming_type, reg_types, verifier);
   }
 
-  virtual ~RegType() {}
+  constexpr virtual ~RegType() {}
 
   static void* operator new(size_t size) noexcept {
     return ::operator new(size);
@@ -323,17 +323,17 @@ class RegType {
   }
 
  protected:
-  RegType(Handle<mirror::Class> klass,
-          const std::string_view& descriptor,
-          uint16_t cache_id,
-          Kind kind) REQUIRES_SHARED(Locks::mutator_lock_)
+  constexpr RegType(Handle<mirror::Class> klass,
+                    const std::string_view& descriptor,
+                    uint16_t cache_id,
+                    Kind kind) REQUIRES_SHARED(Locks::mutator_lock_)
       : descriptor_(descriptor),
         klass_(klass),
         cache_id_(cache_id),
         kind_(kind) {}
 
   template <typename Class>
-  void CheckConstructorInvariants([[maybe_unused]] Class* this_) const
+  constexpr void CheckConstructorInvariants([[maybe_unused]] Class* this_) const
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   virtual AssignmentType GetAssignmentTypeImpl() const = 0;
@@ -346,7 +346,7 @@ class RegType {
   friend class RegTypeCache;
 
  private:
-  virtual void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_);
+  void CheckClassDescriptor() const REQUIRES_SHARED(Locks::mutator_lock_);
 
 
   static bool AssignableFrom(const RegType& lhs,
@@ -374,15 +374,6 @@ FOR_EACH_CONCRETE_REG_TYPE(DEFINE_REG_TYPE_TO_KIND);
 
 }  // namespace detail
 
-template <typename Class>
-inline void RegType::CheckConstructorInvariants([[maybe_unused]] Class* this_) const {
-  static_assert(std::is_final<Class>::value, "Class must be final.");
-  if (kIsDebugBuild) {
-    CHECK_EQ(GetKind(), detail::RegTypeToKind<Class>::kind);
-    CheckInvariants();
-  }
-}
-
 // Bottom type.
 class ConflictType final : public RegType {
  public:
@@ -392,11 +383,8 @@ class ConflictType final : public RegType {
     return AssignmentType::kConflict;
   }
 
-  ConflictType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kConflict) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr ConflictType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 // A variant of the bottom type used to specify an undefined value in the
@@ -410,23 +398,24 @@ class UndefinedType final : public RegType {
     return AssignmentType::kNotAssignable;
   }
 
-  UndefinedType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kUndefined) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr UndefinedType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class PrimitiveType : public RegType {
  public:
-  PrimitiveType(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  constexpr PrimitiveType(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : RegType(Handle<mirror::Class>(), descriptor, cache_id, kind) {
+    DCHECK_EQ(descriptor.length(), 1u);
+  }
 };
 
 class Cat1Type : public PrimitiveType {
  public:
-  Cat1Type(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  constexpr Cat1Type(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : PrimitiveType(descriptor, cache_id, kind) {}
 };
 
 class IntegerType final : public Cat1Type {
@@ -437,11 +426,8 @@ class IntegerType final : public Cat1Type {
     return AssignmentType::kInteger;
   }
 
-  IntegerType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(descriptor, cache_id, Kind::kInteger) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr IntegerType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class BooleanType final : public Cat1Type {
@@ -452,11 +438,8 @@ class BooleanType final : public Cat1Type {
     return AssignmentType::kBoolean;
   }
 
-  BooleanType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(descriptor, cache_id, Kind::kBoolean) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr BooleanType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class ByteType final : public Cat1Type {
@@ -467,11 +450,8 @@ class ByteType final : public Cat1Type {
     return AssignmentType::kByte;
   }
 
-  ByteType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(descriptor, cache_id, Kind::kByte) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr ByteType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class ShortType final : public Cat1Type {
@@ -482,11 +462,8 @@ class ShortType final : public Cat1Type {
     return AssignmentType::kShort;
   }
 
-  ShortType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(descriptor, cache_id, Kind::kShort) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr ShortType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class CharType final : public Cat1Type {
@@ -497,11 +474,8 @@ class CharType final : public Cat1Type {
     return AssignmentType::kChar;
   }
 
-  CharType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(descriptor, cache_id, Kind::kChar) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr CharType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class FloatType final : public Cat1Type {
@@ -512,17 +486,15 @@ class FloatType final : public Cat1Type {
     return AssignmentType::kFloat;
   }
 
-  FloatType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(descriptor, cache_id, Kind::kFloat) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr FloatType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class Cat2Type : public PrimitiveType {
  public:
-  Cat2Type(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  constexpr Cat2Type(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : PrimitiveType(descriptor, cache_id, kind) {}
 };
 
 class LongLoType final : public Cat2Type {
@@ -533,11 +505,8 @@ class LongLoType final : public Cat2Type {
     return AssignmentType::kLongLo;
   }
 
-  LongLoType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat2Type(descriptor, cache_id, Kind::kLongLo) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr LongLoType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class LongHiType final : public Cat2Type {
@@ -548,11 +517,8 @@ class LongHiType final : public Cat2Type {
     return AssignmentType::kNotAssignable;
   }
 
-  LongHiType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat2Type(descriptor, cache_id, Kind::kLongHi) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr LongHiType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class DoubleLoType final : public Cat2Type {
@@ -563,11 +529,8 @@ class DoubleLoType final : public Cat2Type {
     return AssignmentType::kDoubleLo;
   }
 
-  DoubleLoType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat2Type(descriptor, cache_id, Kind::kDoubleLo) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr DoubleLoType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class DoubleHiType final : public Cat2Type {
@@ -578,11 +541,8 @@ class DoubleHiType final : public Cat2Type {
     return AssignmentType::kNotAssignable;
   }
 
-  DoubleHiType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat2Type(descriptor, cache_id, Kind::kDoubleHi) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr DoubleHiType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class ConstantType : public RegType {
@@ -747,11 +707,8 @@ class NullType final : public RegType {
     return true;
   }
 
-  NullType(const std::string_view& descriptor, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kNull) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr NullType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 // Common parent of all uninitialized types. Uninitialized types are created by
@@ -858,8 +815,6 @@ class UninitializedThisReferenceType final : public UninitializedType {
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
-  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
-
   // The corresponding initialized type to transition to after a constructor call.
   const ReferenceType* initialized_type_;
 };
@@ -903,8 +858,6 @@ class UnresolvedReferenceType final : public UnresolvedType {
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
-  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
-
   // The corresponding uninitialized type created from this type for a `new-instance` instruction.
   // This member is mutable because it's a part of the type cache, not part of the type itself.
   mutable const UnresolvedUninitializedReferenceType* uninitialized_type_;
@@ -934,8 +887,6 @@ class UnresolvedUninitializedReferenceType final : public UninitializedType {
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
-  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
-
   // The corresponding initialized type to transition to after a constructor call.
   const UnresolvedReferenceType* const initialized_type_;
 };
@@ -962,8 +913,6 @@ class UnresolvedUninitializedThisReferenceType final : public UninitializedType 
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
-  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
-
   // The corresponding initialized type to transition to after a constructor call.
   const UnresolvedReferenceType* initialized_type_;
 };
@@ -974,12 +923,7 @@ class UnresolvedSuperClassType final : public UnresolvedType {
   UnresolvedSuperClassType(uint16_t child_id,
                            RegTypeCache* reg_type_cache,
                            uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : UnresolvedType("", cache_id, Kind::kUnresolvedSuperClass),
-        unresolved_child_id_(child_id),
-        reg_type_cache_(reg_type_cache) {
-    CheckConstructorInvariants(this);
-  }
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   bool IsUnresolvedTypes() const override { return true; }
 
@@ -991,8 +935,6 @@ class UnresolvedSuperClassType final : public UnresolvedType {
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
 
  private:
-  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
-
   const uint16_t unresolved_child_id_;
   const RegTypeCache* const reg_type_cache_;
 };
@@ -1027,7 +969,7 @@ class UnresolvedMergedReferenceType final : public UnresolvedType {
   const RegTypeCache* GetRegTypeCache() const { return reg_type_cache_; }
 
  private:
-  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
+  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_);
 
   const RegTypeCache* const reg_type_cache_;
 
@@ -1044,6 +986,108 @@ class UnresolvedMergedReferenceType final : public UnresolvedType {
 
 std::ostream& operator<<(std::ostream& os, const RegType& rhs)
     REQUIRES_SHARED(Locks::mutator_lock_);
+
+template <typename Class>
+inline constexpr void RegType::CheckConstructorInvariants([[maybe_unused]] Class* this_) const {
+  static_assert(std::is_final<Class>::value, "Class must be final.");
+  DCHECK_EQ(GetKind(), detail::RegTypeToKind<Class>::kind);
+  // Note: `HasClass()` cannot be `constexpr` as long as we compare the result with the
+  // `HasClassVirtual()`. Therefore we need to use the `klass_` directly for those paths
+  // that require compile-time evaluation.
+  // Note: cpplint seems to be confused by the `} else if constexpr (<multi-line-condition>) {`
+  // and says: "If an else has a brace on one side, it should have it on both". This is a bogus
+  // error as this is a variation of the common `} else if (...) {` pattern.
+  if constexpr (std::is_same_v<Class, UndefinedType> ||
+                std::is_same_v<Class, ConflictType> ||
+                std::is_same_v<Class, NullType> ||
+                std::is_base_of_v<ConstantType, Class>) {
+    DCHECK(klass_.GetReference() == nullptr) << *this;
+    DCHECK(descriptor_.empty()) << *this;
+  } else if constexpr (std::is_base_of_v<PrimitiveType, Class>) {
+    // We use an invalid handle for primitive types because we do not actually need the class.
+    DCHECK(klass_.GetReference() == nullptr) << *this;
+    DCHECK_EQ(descriptor_.length(), 1u) << *this;
+  } else if constexpr (std::is_same_v<Class, UnresolvedSuperClassType> ||  // NOLINT
+                       std::is_same_v<Class, UnresolvedMergedReferenceType>) {
+    // `UnresolvedSuperClassType` and `UnresolvedMergedReferenceType` are subclasses
+    // of `UnresolvedType` but they have an empty descriptor.
+    DCHECK(klass_.GetReference() == nullptr) << *this;
+    DCHECK(descriptor_.empty()) << *this;
+  } else if constexpr (std::is_base_of_v<UnresolvedType, Class> ||  // NOLINT
+                       // Unresolved uninitialized types do not inherit `UnresolvedType`.
+                       std::is_same_v<Class, UnresolvedUninitializedReferenceType> ||
+                       std::is_same_v<Class, UnresolvedUninitializedThisReferenceType>) {
+    DCHECK(!HasClass()) << *this;
+    DCHECK(!descriptor_.empty()) << *this;
+  } else if (kIsDebugBuild) {
+    CheckClassDescriptor();
+  }
+}
+
+constexpr UndefinedType::UndefinedType(const std::string_view& descriptor, uint16_t cache_id)
+    : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kUndefined) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr ConflictType::ConflictType(const std::string_view& descriptor, uint16_t cache_id)
+    : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kConflict) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr IntegerType::IntegerType(const std::string_view& descriptor, uint16_t cache_id)
+    : Cat1Type(descriptor, cache_id, Kind::kInteger) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr BooleanType::BooleanType(const std::string_view& descriptor, uint16_t cache_id)
+    : Cat1Type(descriptor, cache_id, Kind::kBoolean) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr ByteType::ByteType(const std::string_view& descriptor, uint16_t cache_id)
+    : Cat1Type(descriptor, cache_id, Kind::kByte) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr ShortType::ShortType(const std::string_view& descriptor, uint16_t cache_id)
+    : Cat1Type(descriptor, cache_id, Kind::kShort) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr CharType::CharType(const std::string_view& descriptor, uint16_t cache_id)
+    : Cat1Type(descriptor, cache_id, Kind::kChar) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr FloatType::FloatType(const std::string_view& descriptor, uint16_t cache_id)
+    : Cat1Type(descriptor, cache_id, Kind::kFloat) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr LongLoType::LongLoType(const std::string_view& descriptor, uint16_t cache_id)
+    : Cat2Type(descriptor, cache_id, Kind::kLongLo) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr LongHiType::LongHiType(const std::string_view& descriptor, uint16_t cache_id)
+    : Cat2Type(descriptor, cache_id, Kind::kLongHi) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr DoubleLoType::DoubleLoType(const std::string_view& descriptor, uint16_t cache_id)
+    : Cat2Type(descriptor, cache_id, Kind::kDoubleLo) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr DoubleHiType::DoubleHiType(const std::string_view& descriptor, uint16_t cache_id)
+    : Cat2Type(descriptor, cache_id, Kind::kDoubleHi) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr NullType::NullType(const std::string_view& descriptor, uint16_t cache_id)
+    : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kNull) {
+  CheckConstructorInvariants(this);
+}
 
 }  // namespace verifier
 }  // namespace art

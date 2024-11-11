@@ -26,6 +26,7 @@
 #include "base/arena_object.h"
 #include "base/bit_vector.h"
 #include "base/locks.h"
+#include "base/logging.h"
 #include "base/macros.h"
 #include "dex/primitive.h"
 #include "gc_root.h"
@@ -189,7 +190,8 @@ class RegType {
     return (IsDoubleHi() || IsPreciseConstantHi() || IsImpreciseConstantHi());
   }
   bool HasClass() const {
-    bool result = !klass_.IsNull();
+    bool result = klass_.GetReference() != nullptr;
+    DCHECK_IMPLIES(result, !klass_.IsNull());
     DCHECK_EQ(result, HasClassVirtual());
     return result;
   }
@@ -209,13 +211,11 @@ class RegType {
   }
   ObjPtr<mirror::Class> GetClass() const REQUIRES_SHARED(Locks::mutator_lock_) {
     DCHECK(!IsUnresolvedReference());
-    DCHECK(!klass_.IsNull());
     DCHECK(HasClass());
     return klass_.Get();
   }
   Handle<mirror::Class> GetClassHandle() const REQUIRES_SHARED(Locks::mutator_lock_) {
     DCHECK(!IsUnresolvedReference());
-    DCHECK(!klass_.IsNull()) << Dump();
     DCHECK(HasClass()) << Dump();
     return klass_;
   }
@@ -392,10 +392,9 @@ class ConflictType final : public RegType {
     return AssignmentType::kConflict;
   }
 
-  ConflictType(Handle<mirror::Class> klass,
-               const std::string_view& descriptor,
-               uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : RegType(klass, descriptor, cache_id, Kind::kConflict) {
+  ConflictType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kConflict) {
     CheckConstructorInvariants(this);
   }
 };
@@ -411,30 +410,23 @@ class UndefinedType final : public RegType {
     return AssignmentType::kNotAssignable;
   }
 
-  UndefinedType(Handle<mirror::Class> klass,
-                const std::string_view& descriptor,
-                uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : RegType(klass, descriptor, cache_id, Kind::kUndefined) {
+  UndefinedType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kUndefined) {
     CheckConstructorInvariants(this);
   }
 };
 
 class PrimitiveType : public RegType {
  public:
-  PrimitiveType(Handle<mirror::Class> klass,
-                const std::string_view& descriptor,
-                uint16_t cache_id,
-                Kind kind) REQUIRES_SHARED(Locks::mutator_lock_);
-
-  bool HasClassVirtual() const override { return true; }
+  PrimitiveType(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class Cat1Type : public PrimitiveType {
  public:
-  Cat1Type(Handle<mirror::Class> klass,
-           const std::string_view& descriptor,
-           uint16_t cache_id,
-           Kind kind) REQUIRES_SHARED(Locks::mutator_lock_);
+  Cat1Type(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class IntegerType final : public Cat1Type {
@@ -445,10 +437,9 @@ class IntegerType final : public Cat1Type {
     return AssignmentType::kInteger;
   }
 
-  IntegerType(Handle<mirror::Class> klass,
-              const std::string_view& descriptor,
-              uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(klass, descriptor, cache_id, Kind::kInteger) {
+  IntegerType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : Cat1Type(descriptor, cache_id, Kind::kInteger) {
     CheckConstructorInvariants(this);
   }
 };
@@ -461,10 +452,9 @@ class BooleanType final : public Cat1Type {
     return AssignmentType::kBoolean;
   }
 
-  BooleanType(Handle<mirror::Class> klass,
-              const std::string_view& descriptor,
-              uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(klass, descriptor, cache_id, Kind::kBoolean) {
+  BooleanType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : Cat1Type(descriptor, cache_id, Kind::kBoolean) {
     CheckConstructorInvariants(this);
   }
 };
@@ -477,10 +467,9 @@ class ByteType final : public Cat1Type {
     return AssignmentType::kByte;
   }
 
-  ByteType(Handle<mirror::Class> klass,
-           const std::string_view& descriptor,
-           uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(klass, descriptor, cache_id, Kind::kByte) {
+  ByteType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : Cat1Type(descriptor, cache_id, Kind::kByte) {
     CheckConstructorInvariants(this);
   }
 };
@@ -493,10 +482,9 @@ class ShortType final : public Cat1Type {
     return AssignmentType::kShort;
   }
 
-  ShortType(Handle<mirror::Class> klass,
-            const std::string_view& descriptor,
-            uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(klass, descriptor, cache_id, Kind::kShort) {
+  ShortType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : Cat1Type(descriptor, cache_id, Kind::kShort) {
     CheckConstructorInvariants(this);
   }
 };
@@ -509,10 +497,9 @@ class CharType final : public Cat1Type {
     return AssignmentType::kChar;
   }
 
-  CharType(Handle<mirror::Class> klass,
-           const std::string_view& descriptor,
-           uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(klass, descriptor, cache_id, Kind::kChar) {
+  CharType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : Cat1Type(descriptor, cache_id, Kind::kChar) {
     CheckConstructorInvariants(this);
   }
 };
@@ -525,20 +512,17 @@ class FloatType final : public Cat1Type {
     return AssignmentType::kFloat;
   }
 
-  FloatType(Handle<mirror::Class> klass,
-            const std::string_view& descriptor,
-            uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat1Type(klass, descriptor, cache_id, Kind::kFloat) {
+  FloatType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : Cat1Type(descriptor, cache_id, Kind::kFloat) {
     CheckConstructorInvariants(this);
   }
 };
 
 class Cat2Type : public PrimitiveType {
  public:
-  Cat2Type(Handle<mirror::Class> klass,
-           const std::string_view& descriptor,
-           uint16_t cache_id,
-           Kind kind) REQUIRES_SHARED(Locks::mutator_lock_);
+  Cat2Type(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 class LongLoType final : public Cat2Type {
@@ -549,10 +533,9 @@ class LongLoType final : public Cat2Type {
     return AssignmentType::kLongLo;
   }
 
-  LongLoType(Handle<mirror::Class> klass,
-             const std::string_view& descriptor,
-             uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat2Type(klass, descriptor, cache_id, Kind::kLongLo) {
+  LongLoType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : Cat2Type(descriptor, cache_id, Kind::kLongLo) {
     CheckConstructorInvariants(this);
   }
 };
@@ -565,10 +548,9 @@ class LongHiType final : public Cat2Type {
     return AssignmentType::kNotAssignable;
   }
 
-  LongHiType(Handle<mirror::Class> klass,
-             const std::string_view& descriptor,
-             uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat2Type(klass, descriptor, cache_id, Kind::kLongHi) {
+  LongHiType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : Cat2Type(descriptor, cache_id, Kind::kLongHi) {
     CheckConstructorInvariants(this);
   }
 };
@@ -581,10 +563,9 @@ class DoubleLoType final : public Cat2Type {
     return AssignmentType::kDoubleLo;
   }
 
-  DoubleLoType(Handle<mirror::Class> klass,
-               const std::string_view& descriptor,
-               uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat2Type(klass, descriptor, cache_id, Kind::kDoubleLo) {
+  DoubleLoType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : Cat2Type(descriptor, cache_id, Kind::kDoubleLo) {
     CheckConstructorInvariants(this);
   }
 };
@@ -597,21 +578,18 @@ class DoubleHiType final : public Cat2Type {
     return AssignmentType::kNotAssignable;
   }
 
-  DoubleHiType(Handle<mirror::Class> klass,
-               const std::string_view& descriptor,
-               uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_)
-      : Cat2Type(klass, descriptor, cache_id, Kind::kDoubleHi) {
+  DoubleHiType(const std::string_view& descriptor, uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : Cat2Type(descriptor, cache_id, Kind::kDoubleHi) {
     CheckConstructorInvariants(this);
   }
 };
 
 class ConstantType : public RegType {
  public:
-  ConstantType(Handle<mirror::Class> klass,
-               uint32_t constant,
-               uint16_t cache_id,
-               Kind kind) REQUIRES_SHARED(Locks::mutator_lock_)
-      : RegType(klass, "", cache_id, kind), constant_(constant) {
+  ConstantType(uint32_t constant, uint16_t cache_id, Kind kind)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : RegType(Handle<mirror::Class>(), "", cache_id, kind), constant_(constant) {
   }
 
 
@@ -671,9 +649,9 @@ class ConstantType : public RegType {
 
 class PreciseConstantType final : public ConstantType {
  public:
-  PreciseConstantType(Handle<mirror::Class> cls, uint32_t constant, uint16_t cache_id)
+  PreciseConstantType(uint32_t constant, uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : ConstantType(cls, constant, cache_id, Kind::kPreciseConstant) {
+      : ConstantType(constant, cache_id, Kind::kPreciseConstant) {
     CheckConstructorInvariants(this);
   }
 
@@ -686,9 +664,9 @@ class PreciseConstantType final : public ConstantType {
 
 class PreciseConstantLoType final : public ConstantType {
  public:
-  PreciseConstantLoType(Handle<mirror::Class> cls, uint32_t constant, uint16_t cache_id)
+  PreciseConstantLoType(uint32_t constant, uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : ConstantType(cls, constant, cache_id, Kind::kPreciseConstantLo) {
+      : ConstantType(constant, cache_id, Kind::kPreciseConstantLo) {
     CheckConstructorInvariants(this);
   }
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
@@ -700,9 +678,9 @@ class PreciseConstantLoType final : public ConstantType {
 
 class PreciseConstantHiType final : public ConstantType {
  public:
-  PreciseConstantHiType(Handle<mirror::Class> cls, uint32_t constant, uint16_t cache_id)
+  PreciseConstantHiType(uint32_t constant, uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : ConstantType(cls, constant, cache_id, Kind::kPreciseConstantHi) {
+      : ConstantType(constant, cache_id, Kind::kPreciseConstantHi) {
     CheckConstructorInvariants(this);
   }
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
@@ -714,9 +692,9 @@ class PreciseConstantHiType final : public ConstantType {
 
 class ImpreciseConstantType final : public ConstantType {
  public:
-  ImpreciseConstantType(Handle<mirror::Class> cls, uint32_t constat, uint16_t cache_id)
+  ImpreciseConstantType(uint32_t constant, uint16_t cache_id)
        REQUIRES_SHARED(Locks::mutator_lock_)
-       : ConstantType(cls, constat, cache_id, Kind::kImpreciseConstant) {
+       : ConstantType(constant, cache_id, Kind::kImpreciseConstant) {
     CheckConstructorInvariants(this);
   }
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
@@ -728,9 +706,9 @@ class ImpreciseConstantType final : public ConstantType {
 
 class ImpreciseConstantLoType final : public ConstantType {
  public:
-  ImpreciseConstantLoType(Handle<mirror::Class> cls, uint32_t constant, uint16_t cache_id)
+  ImpreciseConstantLoType(uint32_t constant, uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : ConstantType(cls, constant, cache_id, Kind::kImpreciseConstantLo) {
+      : ConstantType(constant, cache_id, Kind::kImpreciseConstantLo) {
     CheckConstructorInvariants(this);
   }
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
@@ -742,9 +720,9 @@ class ImpreciseConstantLoType final : public ConstantType {
 
 class ImpreciseConstantHiType final : public ConstantType {
  public:
-  ImpreciseConstantHiType(Handle<mirror::Class> cls, uint32_t constant, uint16_t cache_id)
+  ImpreciseConstantHiType(uint32_t constant, uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : ConstantType(cls, constant, cache_id, Kind::kImpreciseConstantHi) {
+      : ConstantType(constant, cache_id, Kind::kImpreciseConstantHi) {
     CheckConstructorInvariants(this);
   }
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
@@ -769,9 +747,9 @@ class NullType final : public RegType {
     return true;
   }
 
-  NullType(Handle<mirror::Class> klass, const std::string_view& descriptor, uint16_t cache_id)
+  NullType(const std::string_view& descriptor, uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : RegType(klass, descriptor, cache_id, Kind::kNull) {
+      : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kNull) {
     CheckConstructorInvariants(this);
   }
 };
@@ -793,117 +771,6 @@ class UninitializedType : public RegType {
   AssignmentType GetAssignmentTypeImpl() const override {
     return AssignmentType::kReference;
   }
-};
-
-// Similar to ReferenceType but not yet having been passed to a constructor.
-class UninitializedReferenceType final : public UninitializedType {
- public:
-  UninitializedReferenceType(Handle<mirror::Class> klass,
-                             const std::string_view& descriptor,
-                             uint16_t cache_id,
-                             const ReferenceType* initialized_type)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, cache_id, Kind::kUninitializedReference),
-        initialized_type_(initialized_type) {
-    CheckConstructorInvariants(this);
-  }
-
-  bool HasClassVirtual() const override { return true; }
-
-  const ReferenceType* GetInitializedType() const {
-    return initialized_type_;
-  }
-
-  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
- private:
-  // The corresponding initialized type to transition to after a constructor call.
-  const ReferenceType* const initialized_type_;
-};
-
-// Similar to UnresolvedReferenceType but not yet having been passed to a
-// constructor.
-class UnresolvedUninitializedReferenceType final : public UninitializedType {
- public:
-  UnresolvedUninitializedReferenceType(Handle<mirror::Class> klass,
-                                       const std::string_view& descriptor,
-                                       uint16_t cache_id,
-                                       const UnresolvedReferenceType* initialized_type)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, cache_id, Kind::kUnresolvedUninitializedReference),
-        initialized_type_(initialized_type) {
-    CheckConstructorInvariants(this);
-  }
-
-  bool IsUnresolvedTypes() const override { return true; }
-
-  const UnresolvedReferenceType* GetInitializedType() const {
-    return initialized_type_;
-  }
-
-  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
- private:
-  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
-
-  // The corresponding initialized type to transition to after a constructor call.
-  const UnresolvedReferenceType* const initialized_type_;
-};
-
-// Similar to UninitializedReferenceType but special case for the this argument
-// of a constructor.
-class UninitializedThisReferenceType final : public UninitializedType {
- public:
-  UninitializedThisReferenceType(Handle<mirror::Class> klass,
-                                 const std::string_view& descriptor,
-                                 uint16_t cache_id,
-                                 const ReferenceType* initialized_type)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, cache_id, Kind::kUninitializedThisReference),
-        initialized_type_(initialized_type) {
-    CheckConstructorInvariants(this);
-  }
-
-  bool HasClassVirtual() const override { return true; }
-
-  const ReferenceType* GetInitializedType() const {
-    return initialized_type_;
-  }
-
-  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
- private:
-  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
-
-  // The corresponding initialized type to transition to after a constructor call.
-  const ReferenceType* initialized_type_;
-};
-
-class UnresolvedUninitializedThisReferenceType final : public UninitializedType {
- public:
-  UnresolvedUninitializedThisReferenceType(Handle<mirror::Class> klass,
-                                           const std::string_view& descriptor,
-                                           uint16_t cache_id,
-                                           const UnresolvedReferenceType* initialized_type)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(klass, descriptor, cache_id, Kind::kUnresolvedUninitializedThisReference),
-        initialized_type_(initialized_type) {
-    CheckConstructorInvariants(this);
-  }
-
-  bool IsUnresolvedTypes() const override { return true; }
-
-  const UnresolvedReferenceType* GetInitializedType() const {
-    return initialized_type_;
-  }
-
-  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
- private:
-  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
-
-  // The corresponding initialized type to transition to after a constructor call.
-  const UnresolvedReferenceType* initialized_type_;
 };
 
 // A type of register holding a reference to an Object of type GetClass or a
@@ -942,15 +809,67 @@ class ReferenceType final : public RegType {
   mutable const UninitializedReferenceType* uninitialized_type_;
 };
 
+// Similar to ReferenceType but not yet having been passed to a constructor.
+class UninitializedReferenceType final : public UninitializedType {
+ public:
+  UninitializedReferenceType(uint16_t cache_id, const ReferenceType* initialized_type)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : UninitializedType(initialized_type->GetClassHandle(),
+                          initialized_type->GetDescriptor(),
+                          cache_id,
+                          Kind::kUninitializedReference),
+        initialized_type_(initialized_type) {
+    CheckConstructorInvariants(this);
+  }
+
+  bool HasClassVirtual() const override { return true; }
+
+  const ReferenceType* GetInitializedType() const {
+    return initialized_type_;
+  }
+
+  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+
+ private:
+  // The corresponding initialized type to transition to after a constructor call.
+  const ReferenceType* const initialized_type_;
+};
+
+// Similar to UninitializedReferenceType but special case for the this argument
+// of a constructor.
+class UninitializedThisReferenceType final : public UninitializedType {
+ public:
+  UninitializedThisReferenceType(uint16_t cache_id, const ReferenceType* initialized_type)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : UninitializedType(initialized_type->GetClassHandle(),
+                          initialized_type->GetDescriptor(),
+                          cache_id,
+                          Kind::kUninitializedThisReference),
+        initialized_type_(initialized_type) {
+    CheckConstructorInvariants(this);
+  }
+
+  bool HasClassVirtual() const override { return true; }
+
+  const ReferenceType* GetInitializedType() const {
+    return initialized_type_;
+  }
+
+  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+
+ private:
+  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
+
+  // The corresponding initialized type to transition to after a constructor call.
+  const ReferenceType* initialized_type_;
+};
+
 // Common parent of unresolved types.
 class UnresolvedType : public RegType {
  public:
-  UnresolvedType(Handle<mirror::Class> klass,
-                 const std::string_view& descriptor,
-                 uint16_t cache_id,
-                 Kind kind)
+  UnresolvedType(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : RegType(klass, descriptor, cache_id, kind) {}
+      : RegType(Handle<mirror::Class>(), descriptor, cache_id, kind) {}
 
   bool IsNonZeroReferenceTypes() const override;
 
@@ -964,11 +883,9 @@ class UnresolvedType : public RegType {
 // of this type must be conservative.
 class UnresolvedReferenceType final : public UnresolvedType {
  public:
-  UnresolvedReferenceType(Handle<mirror::Class> cls,
-                          const std::string_view& descriptor,
-                          uint16_t cache_id)
+  UnresolvedReferenceType(const std::string_view& descriptor, uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UnresolvedType(cls, descriptor, cache_id, Kind::kUnresolvedReference),
+      : UnresolvedType(descriptor, cache_id, Kind::kUnresolvedReference),
         uninitialized_type_(nullptr) {
     CheckConstructorInvariants(this);
   }
@@ -993,15 +910,72 @@ class UnresolvedReferenceType final : public UnresolvedType {
   mutable const UnresolvedUninitializedReferenceType* uninitialized_type_;
 };
 
+// Similar to UnresolvedReferenceType but not yet having been passed to a
+// constructor.
+class UnresolvedUninitializedReferenceType final : public UninitializedType {
+ public:
+  UnresolvedUninitializedReferenceType(uint16_t cache_id,
+                                       const UnresolvedReferenceType* initialized_type)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : UninitializedType(Handle<mirror::Class>(),
+                          initialized_type->GetDescriptor(),
+                          cache_id,
+                          Kind::kUnresolvedUninitializedReference),
+        initialized_type_(initialized_type) {
+    CheckConstructorInvariants(this);
+  }
+
+  bool IsUnresolvedTypes() const override { return true; }
+
+  const UnresolvedReferenceType* GetInitializedType() const {
+    return initialized_type_;
+  }
+
+  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+
+ private:
+  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
+
+  // The corresponding initialized type to transition to after a constructor call.
+  const UnresolvedReferenceType* const initialized_type_;
+};
+
+class UnresolvedUninitializedThisReferenceType final : public UninitializedType {
+ public:
+  UnresolvedUninitializedThisReferenceType(uint16_t cache_id,
+                                           const UnresolvedReferenceType* initialized_type)
+      REQUIRES_SHARED(Locks::mutator_lock_)
+      : UninitializedType(Handle<mirror::Class>(),
+                          initialized_type->GetDescriptor(),
+                          cache_id,
+                          Kind::kUnresolvedUninitializedThisReference),
+        initialized_type_(initialized_type) {
+    CheckConstructorInvariants(this);
+  }
+
+  bool IsUnresolvedTypes() const override { return true; }
+
+  const UnresolvedReferenceType* GetInitializedType() const {
+    return initialized_type_;
+  }
+
+  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+
+ private:
+  void CheckInvariants() const REQUIRES_SHARED(Locks::mutator_lock_) override;
+
+  // The corresponding initialized type to transition to after a constructor call.
+  const UnresolvedReferenceType* initialized_type_;
+};
+
 // Type representing the super-class of an unresolved type.
 class UnresolvedSuperClassType final : public UnresolvedType {
  public:
-  UnresolvedSuperClassType(Handle<mirror::Class> cls,
-                           uint16_t child_id,
+  UnresolvedSuperClassType(uint16_t child_id,
                            RegTypeCache* reg_type_cache,
                            uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UnresolvedType(cls, "", cache_id, Kind::kUnresolvedSuperClass),
+      : UnresolvedType("", cache_id, Kind::kUnresolvedSuperClass),
         unresolved_child_id_(child_id),
         reg_type_cache_(reg_type_cache) {
     CheckConstructorInvariants(this);

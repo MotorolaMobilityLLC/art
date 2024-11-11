@@ -140,15 +140,16 @@ bool RegTypeCache::MatchDescriptor(size_t idx, const std::string_view& descripto
   return true;
 }
 
-ObjPtr<mirror::Class> RegTypeCache::ResolveClass(const char* descriptor) {
+ObjPtr<mirror::Class> RegTypeCache::ResolveClass(const char* descriptor, size_t descriptor_length) {
   // Class was not found, must create new type.
   // Try resolving class
   Thread* self = Thread::Current();
   ObjPtr<mirror::Class> klass = nullptr;
   if (can_load_classes_) {
-    klass = class_linker_->FindClass(self, descriptor, class_loader_);
+    klass = class_linker_->FindClass(self, descriptor, descriptor_length, class_loader_);
   } else {
-    klass = class_linker_->LookupClass(self, descriptor, class_loader_.Get());
+    std::string_view sv_descriptor(descriptor, descriptor_length);
+    klass = class_linker_->LookupClass(self, sv_descriptor, class_loader_.Get());
     if (klass != nullptr && !klass->IsResolved()) {
       // We found the class but without it being loaded its not safe for use.
       klass = nullptr;
@@ -164,6 +165,7 @@ std::string_view RegTypeCache::AddString(const std::string_view& str) {
 }
 
 const RegType& RegTypeCache::From(const char* descriptor) {
+  // TODO: Avoid the implicit `strlen()` call for ASCII descriptors from the dex file.
   std::string_view sv_descriptor(descriptor);
   // Try looking up the class in the cache first. We use a std::string_view to avoid
   // repeated strlen operations on the descriptor.
@@ -174,7 +176,7 @@ const RegType& RegTypeCache::From(const char* descriptor) {
   }
   // Class not found in the cache, will create a new type for that.
   // Try resolving class.
-  ObjPtr<mirror::Class> klass = ResolveClass(descriptor);
+  ObjPtr<mirror::Class> klass = ResolveClass(descriptor, sv_descriptor.length());
   // TODO: Avoid copying the `descriptor` with `AddString()` below if the `descriptor`
   // comes from the dex file, for example through `FromTypeIndex()`.
   if (klass != nullptr) {

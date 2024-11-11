@@ -25,7 +25,7 @@
 #include "base/mutex.h"
 #include "class_linker.h"
 #include "class_table-inl.h"
-#include "dex/dex_file.h"
+#include "dex/dex_file-inl.h"
 #include "dex/dex_file_structs.h"
 #include "gc_root-inl.h"
 #include "handle_scope-inl.h"
@@ -54,7 +54,8 @@ inline ObjPtr<mirror::Class> ClassLinker::FindArrayClass(Thread* self,
   descriptor += element_class->GetDescriptor(&temp);
   StackHandleScope<1> hs(Thread::Current());
   Handle<mirror::ClassLoader> class_loader(hs.NewHandle(element_class->GetClassLoader()));
-  ObjPtr<mirror::Class> array_class = FindClass(self, descriptor.c_str(), class_loader);
+  ObjPtr<mirror::Class> array_class =
+      FindClass(self, descriptor.c_str(), descriptor.length(), class_loader);
   if (array_class != nullptr) {
     // Benign races in storing array class and incrementing index.
     size_t victim_index = find_array_class_cache_next_victim_;

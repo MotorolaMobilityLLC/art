@@ -3642,7 +3642,8 @@ void Thread::ThrowNewWrappedException(const char* exception_class_descriptor,
   Runtime* runtime = Runtime::Current();
   auto* cl = runtime->GetClassLinker();
   Handle<mirror::Class> exception_class(
-      hs.NewHandle(cl->FindClass(this, exception_class_descriptor, class_loader)));
+      hs.NewHandle(cl->FindClass(
+          this, exception_class_descriptor, strlen(exception_class_descriptor), class_loader)));
   if (UNLIKELY(exception_class == nullptr)) {
     CHECK(IsExceptionPending());
     LOG(ERROR) << "No exception class " << PrettyDescriptor(exception_class_descriptor);

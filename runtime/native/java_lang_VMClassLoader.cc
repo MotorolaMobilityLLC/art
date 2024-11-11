@@ -45,7 +45,7 @@ class VMClassLoader {
  public:
   static ObjPtr<mirror::Class> LookupClass(ClassLinker* cl,
                                            Thread* self,
-                                           const char* descriptor,
+                                           std::string_view descriptor,
                                            size_t hash,
                                            ObjPtr<mirror::ClassLoader> class_loader)
       REQUIRES(!Locks::classlinker_classes_lock_)
@@ -89,7 +89,7 @@ static jclass VMClassLoader_findLoadedClass(JNIEnv* env, jclass, jobject javaLoa
 
   ObjPtr<mirror::Class> c = VMClassLoader::LookupClass(cl,
                                                        soa.Self(),
-                                                       descriptor.c_str(),
+                                                       descriptor,
                                                        descriptor_hash,
                                                        loader);
   if (c != nullptr && c->IsResolved()) {

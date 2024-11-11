@@ -59,9 +59,9 @@ extern "C" JNIEXPORT jboolean JNICALL Java_Main_areClassesVerified(JNIEnv*,
   bool all_verified = false;
   for (const DexFile* dex_file : dex_files) {
     for (uint16_t cdef_idx = 0; cdef_idx < dex_file->NumClassDefs(); ++cdef_idx) {
-      const char* desc = dex_file->GetClassDescriptor(dex_file->GetClassDef(cdef_idx));
-      h_class.Assign(class_linker->FindClass(soa.Self(), desc, h_loader));
-      CHECK(h_class != nullptr) << "Could not find class " << desc;
+      dex::TypeIndex type_idx = dex_file->GetClassDef(cdef_idx).class_idx_;
+      h_class.Assign(class_linker->FindClass(soa.Self(), *dex_file, type_idx, h_loader));
+      CHECK(h_class != nullptr) << "Could not find class " << dex_file->GetTypeDescriptor(type_idx);
       bool is_verified = h_class->IsVerified();
       if (is_first) {
         all_verified = is_verified;
@@ -155,9 +155,9 @@ extern "C" JNIEXPORT jboolean JNICALL Java_Main_areClassesPreverified(JNIEnv*,
   bool all_preverified = false;
   for (const DexFile* dex_file : dex_files) {
     for (uint16_t cdef_idx = 0; cdef_idx < dex_file->NumClassDefs(); ++cdef_idx) {
-      const char* desc = dex_file->GetClassDescriptor(dex_file->GetClassDef(cdef_idx));
-      h_class.Assign(class_linker->FindClass(soa.Self(), desc, h_loader));
-      CHECK(h_class != nullptr) << "Could not find class " << desc;
+      dex::TypeIndex type_idx = dex_file->GetClassDef(cdef_idx).class_idx_;
+      h_class.Assign(class_linker->FindClass(soa.Self(), *dex_file, type_idx, h_loader));
+      CHECK(h_class != nullptr) << "Could not find class " << dex_file->GetTypeDescriptor(type_idx);
 
       ClassStatus oat_file_class_status(ClassStatus::kNotReady);
       bool is_preverified = class_linker->VerifyClassUsingOatFile(

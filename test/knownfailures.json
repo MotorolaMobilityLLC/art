@@ -1,5 +1,11 @@
 [
     {
+        "tests": "597-deopt-new-string",
+        "description": ["Disable 597-deopt-new-string temporarily until a fix",
+                        "arrives."],
+        "bug": "http://b/378026679"
+    },
+    {
         "tests": "153-reference-stress",
         "description": ["Disable 153-reference-stress temporarily until a fix",
                         "arrives."],

@@ -34,8 +34,8 @@
 namespace art HIDDEN {
 
 const uint8_t ImageHeader::kImageMagic[] = { 'a', 'r', 't', '\n' };
-// Use arrays for resolved methods and resolved fields in DexCache.
-const uint8_t ImageHeader::kImageVersion[] = { '1', '1', '6', '\0' };
+// Last change: Add kAccDefault as an intrinsic bit.
+const uint8_t ImageHeader::kImageVersion[] = { '1', '1', '7', '\0' };
 
 ImageHeader::ImageHeader(uint32_t image_reservation_size,
                          uint32_t component_count,

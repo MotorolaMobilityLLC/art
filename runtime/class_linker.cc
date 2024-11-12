@@ -77,6 +77,7 @@
 #include "dex/dex_file_annotations.h"
 #include "dex/dex_file_exception_helpers.h"
 #include "dex/dex_file_loader.h"
+#include "dex/modifiers.h"
 #include "dex/signature-inl.h"
 #include "dex/utf.h"
 #include "entrypoints/entrypoint_utils-inl.h"
@@ -5530,6 +5531,9 @@ void ClassLinker::CreateProxyMethod(Handle<mirror::Class> klass, ArtMethod* prot
   // Clear the abstract and default flags to ensure that defaults aren't picked in
   // preference to the invocation handler.
   const uint32_t kRemoveFlags = kAccAbstract | kAccDefault;
+  static_assert((kAccDefault & kAccIntrinsicBits) != 0);
+  DCHECK(!out->IsIntrinsic()) << "Removing kAccDefault from an intrinsic would be a mistake as it "
+                              << "overlaps with kAccIntrinsicBits.";
   // Make the method final.
   // Mark kAccCompileDontBother so that we don't take JIT samples for the method. b/62349349
   const uint32_t kAddFlags = kAccFinal | kAccCompileDontBother;
@@ -8200,6 +8204,9 @@ void ClassLinker::LinkMethodsHelper<kPointerSize>::ReallocMethods(ObjPtr<mirror:
         // TODO This is rather arbitrary. We should maybe support classes where only some of its
         // methods are skip_access_checks.
         DCHECK_EQ(new_method.GetAccessFlags() & kAccNative, 0u);
+        static_assert((kAccDefault & kAccIntrinsicBits) != 0);
+        DCHECK(!new_method.IsIntrinsic()) << "Adding kAccDefault to an intrinsic would be a "
+                                          << "mistake as it overlaps with kAccIntrinsicBits.";
         constexpr uint32_t kSetFlags = kAccDefault | kAccCopied;
         constexpr uint32_t kMaskFlags = ~kAccSkipAccessChecks;
         new_method.SetAccessFlags((new_method.GetAccessFlags() | kSetFlags) & kMaskFlags);
@@ -8216,6 +8223,9 @@ void ClassLinker::LinkMethodsHelper<kPointerSize>::ReallocMethods(ObjPtr<mirror:
         uint32_t access_flags = new_method.GetAccessFlags();
         DCHECK_EQ(access_flags & (kAccNative | kAccIntrinsic), 0u);
         constexpr uint32_t kSetFlags = kAccDefault | kAccAbstract | kAccCopied;
+        static_assert((kAccDefault & kAccIntrinsicBits) != 0);
+        DCHECK(!new_method.IsIntrinsic()) << "Adding kAccDefault to an intrinsic would be a "
+                                          << "mistake as it overlaps with kAccIntrinsicBits.";
         constexpr uint32_t kMaskFlags = ~(kAccSkipAccessChecks | kAccSingleImplementation);
         new_method.SetAccessFlags((access_flags | kSetFlags) & kMaskFlags);
         new_method.SetDataPtrSize(nullptr, kPointerSize);
@@ -8843,6 +8853,9 @@ bool ClassLinker::LinkMethodsHelper<kPointerSize>::LinkMethods(
                        << "This will be a fatal error in subsequent versions of android. "
                        << "Continuing anyway.";
         }
+        static_assert((kAccDefault & kAccIntrinsicBits) != 0);
+        DCHECK(!m->IsIntrinsic()) << "Adding kAccDefault to an intrinsic would be a mistake as it "
+                                  << "overlaps with kAccIntrinsicBits.";
         m->SetAccessFlags(access_flags | kAccDefault);
         has_defaults = true;
       }

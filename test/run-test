@@ -21,14 +21,16 @@ import default_run as default_run_module
 
 from argparse import ArgumentParser, BooleanOptionalAction
 from default_run import get_target_arch
+from fcntl import lockf, LOCK_EX, LOCK_NB
+from hashlib import sha1
 from importlib.machinery import SourceFileLoader
 from inspect import currentframe, getframeinfo, FrameInfo
 from pathlib import Path
+from pprint import pprint
 from shutil import copyfile, copytree
 from testrunner import env
 from typing import Optional, Dict, List
 from zipfile import ZipFile
-from hashlib import sha1
 
 COLOR = (os.environ.get("LUCI_CONTEXT") == None)  # Disable colors on LUCI.
 COLOR_BLUE = '\033[94m' if COLOR else ''
@@ -100,19 +102,32 @@ class RunTestContext:
   def default_run(self, args, **kwargs):
     default_run_module.default_run(self, args, **kwargs)
 
+# Make unique temporary directory guarded by lock file.
+# The name is deterministic (appending suffix as needed).
+def make_tmp_dir():
+  parent = Path(os.environ.get("TMPDIR", "/tmp/art/rtest"))
+  parent.mkdir(parents=True, exist_ok=True)
+  args_hash = sha1((" ".join(sys.argv[1:])).encode()).digest().hex()
+  for i in range(100):
+    tmp_dir = parent / (f"{args_hash[:8]}" + (f"-{i}" if i > 0 else ""))
+    lock = tmp_dir.with_suffix(".lock")  # NB: Next to the directory, not inside.
+    lock_handle = open(lock, "w")
+    try:
+      lockf(lock_handle, LOCK_EX | LOCK_NB)
+      tmp_dir.mkdir(exist_ok=True)
+      return str(tmp_dir), lock, lock_handle
+    except BlockingIOError:
+      continue
+  assert False, "Failed to create test directory"
 
 # TODO: Replace with 'def main():' (which might change variables from globals to locals)
 if True:
   progdir = os.path.dirname(__file__)
   oldwd = os.getcwd()
   os.chdir(progdir)
-  test_dir = "test-{}".format(os.getpid())
-  TMPDIR = os.environ.get("TMPDIR")
   PYTHON3 = os.environ.get("PYTHON3")
-  if not TMPDIR:
-    tmp_dir = f"/tmp/art/{test_dir}"
-  else:
-    tmp_dir = f"{TMPDIR}/{test_dir}"
+  tmp_dir, tmp_dir_lock, tmp_dir_lock_handle = make_tmp_dir()
+  test_dir = Path(tmp_dir).name
   checker = f"{progdir}/../tools/checker/checker.py"
 
   ON_VM = env.ART_TEST_ON_VM
@@ -794,6 +809,7 @@ if True:
     if always_clean or (passed and not never_clean):
       os.chdir(oldwd)
       shutil.rmtree(tmp_dir)
+      os.remove(tmp_dir_lock)
       if target_mode:
         if ON_VM:
           run(f"{SSH_CMD} \"rm -rf {chroot_dex_location}\"")

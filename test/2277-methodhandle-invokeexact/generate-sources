@@ -1,5 +1,6 @@
+#!/bin/bash
 #
-# Copyright (C) 2024 The Android Open Source Project
+# Copyright 2024 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-def build(ctx):
-  ctx.bash("./generate-sources")
-  # To allow private interface methods.
-  ctx.default_build(api_level="const-method-type",
-                    javac_source_arg="17",
-                    javac_target_arg="17")
+# make us exit on a failure
+set -e
+
+export ASM_JAR="${ANDROID_BUILD_TOP}/prebuilts/misc/common/asm/asm-9.6.jar"
+
+# Build the transformer to apply to compiled classes.
+mkdir classes
+${JAVAC:-javac} ${JAVAC_ARGS} -cp "${ASM_JAR}" -d classes $(find src-util -name '*.java')
+${SOONG_ZIP} --jar -o transformer.jar -C classes -D classes
+rm -rf classes
+
+# Add annotation src files to our compiler inputs.
+cp -r src-util/annotations src/

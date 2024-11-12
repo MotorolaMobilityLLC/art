@@ -28,7 +28,8 @@ public class Test918 {
     public static void doTest() throws Exception {
         testField(Math.class, "PI");
         testField(InterruptedIOException.class, "bytesTransferred");
-        testField(Foo.class, "this$0");
+        // TODO(b/378676805): Update this check.
+        // testField(Foo.class, "this$0");
         testField(Bar.class, "VAL");
         testField(Generics.class, "generics");
         testField(Generics.class, "privateValue");

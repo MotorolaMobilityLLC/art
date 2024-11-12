@@ -421,9 +421,13 @@ class EXPORT ArtMethod final {
   }
 
   static bool IsDefault(uint32_t access_flags) {
-    static_assert((kAccDefault & (kAccIntrinsic | kAccIntrinsicBits)) == 0,
-                  "kAccDefault conflicts with intrinsic modifier");
-    return (access_flags & kAccDefault) != 0;
+    // The intrinsic bits use `kAccDefault`. However, we don't generate intrinsics for default
+    // methods. Therefore, we check that both `kAccDefault` is set and `kAccIntrinsic` unset.
+    static_assert((kAccDefault & kAccIntrinsicBits) != 0,
+                  "kAccDefault deliberately overlaps intrinsic bits");
+    static constexpr uint32_t kMask = kAccIntrinsic | kAccDefault;
+    static constexpr uint32_t kValue = kAccDefault;
+    return (access_flags & kMask) == kValue;
   }
 
   // Returns true if the method is obsolete.

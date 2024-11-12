@@ -43,7 +43,8 @@ void RegTypeCache::FillPrimitiveAndSmallConstantTypes() {
   }
 
 #define CREATE_PRIMITIVE_TYPE(type, descriptor, id) \
-  entries_[id] = new (&allocator_) type(descriptor, id);
+  static constexpr type const##type(descriptor, id); \
+  entries_[id] = &const##type;
 
   CREATE_PRIMITIVE_TYPE(BooleanType, "Z", kBooleanCacheId);
   CREATE_PRIMITIVE_TYPE(ByteType, "B", kByteCacheId);
@@ -58,9 +59,12 @@ void RegTypeCache::FillPrimitiveAndSmallConstantTypes() {
 
 #undef CREATE_PRIMITIVE_TYPE
 
-  entries_[kUndefinedCacheId] = new (&allocator_) UndefinedType("", kUndefinedCacheId);
-  entries_[kConflictCacheId] = new (&allocator_) ConflictType("", kConflictCacheId);
-  entries_[kNullCacheId] = new (&allocator_) NullType("", kNullCacheId);
+  static constexpr UndefinedType constUndefinedType("", kUndefinedCacheId);
+  entries_[kUndefinedCacheId] = &constUndefinedType;
+  static constexpr ConflictType constConflictType("", kConflictCacheId);
+  entries_[kConflictCacheId] = &constConflictType;
+  static constexpr NullType constNullType("", kNullCacheId);
+  entries_[kNullCacheId] = &constNullType;
 }
 
 const RegType& RegTypeCache::FromDescriptor(const char* descriptor) {

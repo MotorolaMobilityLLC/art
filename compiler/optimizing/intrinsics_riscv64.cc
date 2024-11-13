@@ -1439,7 +1439,6 @@ class ReadBarrierCasSlowPathRISCV64 : public SlowPathCodeRISCV64 {
       DCHECK(update_old_value_slow_path_ != nullptr);
       __ Bind(&mark_old_value);
       if (kUseBakerReadBarrier) {
-        DCHECK(update_old_value_slow_path_ == nullptr);
         __ Mv(old_value_, old_value_temp_);
         riscv64_codegen->EmitBakerReadBarierMarkingCheck(update_old_value_slow_path_,
                                                          Location::RegisterLocation(old_value_),

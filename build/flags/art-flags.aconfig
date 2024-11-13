@@ -36,7 +36,7 @@ flag {
 }
 
 flag {
-  namespace: "art_performance"
+  namespace: "system_performance"
   name: "executable_method_file_offsets"
   is_exported: true
   description: "This flag includes the API for getting the compiled native executable offset info for a java method"

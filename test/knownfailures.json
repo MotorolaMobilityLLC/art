@@ -1294,6 +1294,11 @@
         "description": ["Timing margins are too tight for gcstress"]
     },
     {
+        "tests": ["153-reference-stress"],
+        "variant": "gcstress",
+        "description": ["Timing out for gcstress"]
+    },
+    {
         "tests": ["021-string2"],
         "variant": "jit & debuggable",
         "bug": "b/109791792",

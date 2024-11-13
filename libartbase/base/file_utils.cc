@@ -375,7 +375,7 @@ static bool MaybeAppendBootImageMainlineExtension(const std::string& android_roo
                                                   bool deny_art_apex_data_files,
                                                   /*inout*/ std::string* location,
                                                   /*out*/ std::string* error_msg) {
-  if (!kIsTargetAndroid) {
+  if (!kIsTargetAndroid || RunningOnVM()) {
     return true;
   }
   // Due to how the runtime determines the mapping between boot images and bootclasspath jars, the
@@ -383,9 +383,6 @@ static bool MaybeAppendBootImageMainlineExtension(const std::string& android_roo
   // `<primary-boot-image-stem>-<first-library-name>.art`.
   std::string library_name = GetFirstMainlineFrameworkLibraryName(error_msg);
   if (library_name.empty()) {
-    if (kRuntimeISA == InstructionSet::kRiscv64) {
-      return true;
-    }
     return false;
   }
 

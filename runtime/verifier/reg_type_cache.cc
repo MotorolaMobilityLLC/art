@@ -39,9 +39,9 @@ void RegTypeCache::FillPrimitiveAndConstantTypes() {
   entries_.resize(kNumberOfFixedCacheIds);
   ArrayRef<const RegType*> entries(entries_);
 
-  static constexpr UndefinedType constUndefinedType("", kUndefinedCacheId);
+  static constexpr UndefinedType constUndefinedType(kUndefinedCacheId);
   entries[kUndefinedCacheId] = &constUndefinedType;
-  static constexpr ConflictType constConflictType("", kConflictCacheId);
+  static constexpr ConflictType constConflictType(kConflictCacheId);
   entries[kConflictCacheId] = &constConflictType;
 
 #define CREATE_PRIMITIVE_TYPE(name, descriptor) \

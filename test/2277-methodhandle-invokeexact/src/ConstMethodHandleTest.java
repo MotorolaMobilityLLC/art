@@ -529,4 +529,115 @@ public class ConstMethodHandleTest extends AbstractInvokeExactTest {
     return constFooBarNonDefault();
   }
 
+  @ConstantMethodHandle(
+    kind = ConstantMethodHandle.INVOKE_INTERFACE,
+    owner = "ToStringable",
+    fieldOrMethodName = "toString",
+    descriptor = "()Ljava/lang/String;",
+    ownerIsInterface = true)
+  private static MethodHandle constToStringDefinedInAnInterface() {
+    unreachable("should be replaced by const-method-handle");
+    return null;
+  }
+
+  @Override
+  public MethodHandle toStringDefinedInAnInterface() {
+    return constToStringDefinedInAnInterface();
+  }
+
+  @ConstantMethodHandle(
+    kind = ConstantMethodHandle.INVOKE_INTERFACE,
+    owner = "Interface1",
+    fieldOrMethodName = "methodOne",
+    descriptor = "()Ljava/lang/String;",
+    ownerIsInterface = true)
+  private static MethodHandle constInterfaceOneMethod() {
+    unreachable("should be replaced by const-method-handle");
+    return null;
+  }
+
+  @Override
+  public MethodHandle interfaceOneMethod() {
+    return constInterfaceOneMethod();
+  }
+
+  @ConstantMethodHandle(
+    kind = ConstantMethodHandle.INVOKE_INTERFACE,
+    owner = "Interface2",
+    fieldOrMethodName = "methodTwo",
+    descriptor = "()Ljava/lang/String;",
+    ownerIsInterface = true)
+  private static MethodHandle constInterfaceTwoMethod() {
+    unreachable("should be replaced by const-method-handle");
+    return null;
+  }
+
+  @Override
+  public MethodHandle interfaceTwoMethod() {
+    return constInterfaceTwoMethod();
+  }
+
+  @ConstantMethodHandle(
+    kind = ConstantMethodHandle.INVOKE_INTERFACE,
+    owner = "Interface3",
+    fieldOrMethodName = "methodThree",
+    descriptor = "()Ljava/lang/String;",
+    ownerIsInterface = true)
+  private static MethodHandle constInterfaceThreeMethod() {
+    unreachable("should be replaced by const-method-handle");
+    return null;
+  }
+
+  @Override
+  public MethodHandle interfaceThreeMethod() {
+    return constInterfaceThreeMethod();
+  }
+
+  @ConstantMethodHandle(
+    kind = ConstantMethodHandle.INVOKE_INTERFACE,
+    owner = "Interface4",
+    fieldOrMethodName = "methodFour",
+    descriptor = "()Ljava/lang/String;",
+    ownerIsInterface = true)
+  private static MethodHandle constInterfaceFourMethod() {
+    unreachable("should be replaced by const-method-handle");
+    return null;
+  }
+
+  @Override
+  public MethodHandle interfaceFourMethod() {
+    return constInterfaceFourMethod();
+  }
+
+  @ConstantMethodHandle(
+    kind = ConstantMethodHandle.INVOKE_INTERFACE,
+    owner = "FooAndFooConflict",
+    fieldOrMethodName = "defaultToOverride",
+    descriptor = "()Ljava/lang/String;",
+    ownerIsInterface = true)
+  private static MethodHandle constFooAndFooConflictDefault() {
+    unreachable("should be replaced by const-method-handle");
+    return null;
+  }
+
+  @Override
+  public MethodHandle fooAndFooConflictDefault() {
+    return constFooAndFooConflictDefault();
+  }
+
+  @ConstantMethodHandle(
+    kind = ConstantMethodHandle.INVOKE_INTERFACE,
+    owner = "BaseInterface",
+    fieldOrMethodName = "method",
+    descriptor = "()Ljava/lang/String;",
+    ownerIsInterface = true)
+  private static MethodHandle constBaseInterface() {
+    unreachable("should be replaced by const-method-handle");
+    return null;
+  }
+
+  @Override
+  public MethodHandle baseInterface() {
+    return constBaseInterface();
+  }
 }

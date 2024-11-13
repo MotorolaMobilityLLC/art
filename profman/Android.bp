@@ -97,7 +97,7 @@ art_cc_binary {
         android: {
             shared_libs: [
                 "libartbase",
-                "libdexfile",
+                "libdexfile#impl",
                 "libprofile",
             ],
         },
@@ -126,7 +126,7 @@ art_cc_binary {
         android: {
             shared_libs: [
                 "libartbased",
-                "libdexfiled",
+                "libdexfiled#impl",
                 "libprofiled",
             ],
         },

@@ -121,8 +121,9 @@ class RegType {
            IsIntegerConstant();
   }
 
-  virtual bool IsUninitializedTypes() const { return false; }
-  virtual bool IsUnresolvedTypes() const { return false; }
+  constexpr bool IsNonZeroReferenceTypes() const;
+  constexpr bool IsUninitializedTypes() const;
+  constexpr bool IsUnresolvedTypes() const;
 
   bool IsLowHalf() const { return (IsLongLo() || IsDoubleLo() || IsConstantLo()); }
   bool IsHighHalf() const { return (IsLongHi() || IsDoubleHi() || IsConstantHi()); }
@@ -146,7 +147,6 @@ class RegType {
   bool IsZeroOrNull() const {
     return IsZero() || IsNull();
   }
-  virtual bool IsNonZeroReferenceTypes() const { return false; }
   bool IsCategory1Types() const {
     return IsIntegralTypes() || IsFloat();
   }
@@ -349,20 +349,6 @@ class RegType {
 };
 
 std::ostream& operator<<(std::ostream& os, RegType::Kind kind);
-
-namespace detail {
-
-template <class ConcreteRegType>
-struct RegTypeToKind { /* No `kind` defined in unspecialized template. */ };
-
-#define DEFINE_REG_TYPE_TO_KIND(name) \
-  template<> struct RegTypeToKind<name##Type> { \
-    static constexpr RegType::Kind kind = RegType::Kind::k##name; \
-  };
-FOR_EACH_CONCRETE_REG_TYPE(DEFINE_REG_TYPE_TO_KIND);
-#undef DEFINE_REG_TYPE_TO_KIND
-
-}  // namespace detail
 
 // Bottom type.
 class ConflictType final : public RegType {
@@ -638,9 +624,6 @@ class UninitializedType : public RegType {
                     Kind kind)
       : RegType(klass, descriptor, cache_id, kind) {}
 
-  bool IsUninitializedTypes() const override;
-  bool IsNonZeroReferenceTypes() const override;
-
   AssignmentType GetAssignmentTypeImpl() const override {
     return AssignmentType::kReference;
   }
@@ -657,8 +640,6 @@ class ReferenceType final : public RegType {
         uninitialized_type_(nullptr) {
     CheckConstructorInvariants(this);
   }
-
-  bool IsNonZeroReferenceTypes() const override { return true; }
 
   bool HasClassVirtual() const override { return true; }
 
@@ -742,8 +723,6 @@ class UnresolvedType : public RegType {
       REQUIRES_SHARED(Locks::mutator_lock_)
       : RegType(Handle<mirror::Class>(), descriptor, cache_id, kind) {}
 
-  bool IsNonZeroReferenceTypes() const override;
-
   AssignmentType GetAssignmentTypeImpl() const override {
     return AssignmentType::kReference;
   }
@@ -760,8 +739,6 @@ class UnresolvedReferenceType final : public UnresolvedType {
         uninitialized_type_(nullptr) {
     CheckConstructorInvariants(this);
   }
-
-  bool IsUnresolvedTypes() const override { return true; }
 
   const UnresolvedUninitializedReferenceType* GetUninitializedType() const {
     return uninitialized_type_;
@@ -794,8 +771,6 @@ class UnresolvedUninitializedReferenceType final : public UninitializedType {
     CheckConstructorInvariants(this);
   }
 
-  bool IsUnresolvedTypes() const override { return true; }
-
   const UnresolvedReferenceType* GetInitializedType() const {
     return initialized_type_;
   }
@@ -820,8 +795,6 @@ class UnresolvedUninitializedThisReferenceType final : public UninitializedType 
     CheckConstructorInvariants(this);
   }
 
-  bool IsUnresolvedTypes() const override { return true; }
-
   const UnresolvedReferenceType* GetInitializedType() const {
     return initialized_type_;
   }
@@ -840,8 +813,6 @@ class UnresolvedSuperClassType final : public UnresolvedType {
                            RegTypeCache* reg_type_cache,
                            uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_);
-
-  bool IsUnresolvedTypes() const override { return true; }
 
   uint16_t GetUnresolvedSuperClassChildId() const {
     DCHECK(IsUnresolvedSuperClass());
@@ -875,8 +846,6 @@ class UnresolvedMergedReferenceType final : public UnresolvedType {
     return unresolved_types_;
   }
 
-  bool IsUnresolvedTypes() const override { return true; }
-
   bool IsArrayTypes() const override REQUIRES_SHARED(Locks::mutator_lock_);
   bool IsObjectArrayTypes() const override REQUIRES_SHARED(Locks::mutator_lock_);
 
@@ -903,6 +872,49 @@ class UnresolvedMergedReferenceType final : public UnresolvedType {
 std::ostream& operator<<(std::ostream& os, const RegType& rhs)
     REQUIRES_SHARED(Locks::mutator_lock_);
 
+namespace detail {
+
+template <class ConcreteRegType>
+struct RegTypeToKind { /* No `kind` defined in unspecialized template. */ };
+
+#define DEFINE_REG_TYPE_TO_KIND(name) \
+  template<> struct RegTypeToKind<name##Type> { \
+    static constexpr RegType::Kind kind = RegType::Kind::k##name; \
+  };
+FOR_EACH_CONCRETE_REG_TYPE(DEFINE_REG_TYPE_TO_KIND);
+#undef DEFINE_REG_TYPE_TO_KIND
+
+template <template <class ConcreteRegType> class Traits>
+constexpr bool EvaluateTrait(RegType::Kind kind) {
+  switch (kind) {
+#define DEFINE_EVALUATE_TRAIT_CASE(name) \
+    case RegType::Kind::k##name:         \
+      return Traits<name##Type>::value;
+    FOR_EACH_CONCRETE_REG_TYPE(DEFINE_EVALUATE_TRAIT_CASE);
+#undef DEFINE_EVALUATE_TRAIT_CASE
+  }
+}
+
+template <class ConcreteRegType>
+struct IsUninitializedTypes
+    : std::bool_constant<std::is_base_of_v<UninitializedType, ConcreteRegType>> {};
+
+template <class ConcreteRegType>
+struct IsUnresolvedTypes : std::bool_constant<
+    std::is_base_of_v<UnresolvedType, ConcreteRegType> ||
+    // Unresolved uninitialized types do not inherit `UnresolvedType`.
+    // (We're using single-inheritance and they inherit `UninitializedType`.)
+    std::is_same_v<UnresolvedUninitializedReferenceType, ConcreteRegType> ||
+    std::is_same_v<UnresolvedUninitializedThisReferenceType, ConcreteRegType>> {};
+
+template <class ConcreteRegType>
+struct IsNonZeroReferenceTypes
+    : std::bool_constant<std::is_same_v<ReferenceType, ConcreteRegType> ||
+                         std::is_base_of_v<UnresolvedType, ConcreteRegType> ||
+                         std::is_base_of_v<UninitializedType, ConcreteRegType>> {};
+
+}  // namespace detail
+
 template <typename Class>
 inline constexpr void RegType::CheckConstructorInvariants([[maybe_unused]] Class* this_) const {
   static_assert(std::is_final<Class>::value, "Class must be final.");
@@ -925,14 +937,11 @@ inline constexpr void RegType::CheckConstructorInvariants([[maybe_unused]] Class
     DCHECK_EQ(descriptor_.length(), 1u) << *this;
   } else if constexpr (std::is_same_v<Class, UnresolvedSuperClassType> ||  // NOLINT
                        std::is_same_v<Class, UnresolvedMergedReferenceType>) {
-    // `UnresolvedSuperClassType` and `UnresolvedMergedReferenceType` are subclasses
-    // of `UnresolvedType` but they have an empty descriptor.
+    // `UnresolvedSuperClassType` and `UnresolvedMergedReferenceType` are
+    // unresolved types but they have an empty descriptor.
     DCHECK(klass_.GetReference() == nullptr) << *this;
     DCHECK(descriptor_.empty()) << *this;
-  } else if constexpr (std::is_base_of_v<UnresolvedType, Class> ||  // NOLINT
-                       // Unresolved uninitialized types do not inherit `UnresolvedType`.
-                       std::is_same_v<Class, UnresolvedUninitializedReferenceType> ||
-                       std::is_same_v<Class, UnresolvedUninitializedThisReferenceType>) {
+  } else if constexpr (detail::IsUnresolvedTypes<Class>::value) {
     DCHECK(!HasClass()) << *this;
     DCHECK(!descriptor_.empty()) << *this;
   } else if (kIsDebugBuild) {
@@ -1053,6 +1062,18 @@ constexpr ConstantHiType::ConstantHiType(uint16_t cache_id)
 constexpr NullType::NullType(uint16_t cache_id)
     : ConstantType(cache_id, Kind::kNull) {
   CheckConstructorInvariants(this);
+}
+
+constexpr bool RegType::IsNonZeroReferenceTypes() const {
+  return detail::EvaluateTrait<detail::IsNonZeroReferenceTypes>(GetKind());
+}
+
+constexpr bool RegType::IsUninitializedTypes() const {
+  return detail::EvaluateTrait<detail::IsUninitializedTypes>(GetKind());
+}
+
+constexpr bool RegType::IsUnresolvedTypes() const {
+  return detail::EvaluateTrait<detail::IsUnresolvedTypes>(GetKind());
 }
 
 }  // namespace verifier

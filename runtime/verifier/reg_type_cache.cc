@@ -107,10 +107,11 @@ const RegType& RegTypeCache::FromDescriptor(const char* descriptor) {
 }
 
 const RegType& RegTypeCache::FromTypeIndexUncached(dex::TypeIndex type_index) {
-  DCHECK(entries_for_type_index_[type_index.index_] == nullptr);
+  DCHECK_EQ(ids_for_type_index_[type_index.index_], kNoIdForTypeIndex);
   const char* descriptor = dex_file_->GetTypeDescriptor(type_index);
   const RegType& reg_type = FromDescriptor(descriptor);
-  entries_for_type_index_[type_index.index_] = &reg_type;
+  DCHECK_NE(reg_type.GetId(), kNoIdForTypeIndex);
+  ids_for_type_index_[type_index.index_] = reg_type.GetId();
   return reg_type;
 }
 
@@ -274,7 +275,7 @@ RegTypeCache::RegTypeCache(Thread* self,
       class_linker_(class_linker),
       class_loader_(class_loader),
       dex_file_(dex_file),
-      entries_for_type_index_(allocator_.AllocArray<const RegType*>(dex_file->NumTypeIds())),
+      ids_for_type_index_(allocator_.AllocArray<uint16_t>(dex_file->NumTypeIds())),
       last_uninitialized_this_type_(nullptr),
       can_load_classes_(can_load_classes),
       can_suspend_(can_suspend) {
@@ -283,9 +284,10 @@ RegTypeCache::RegTypeCache(Thread* self,
     Thread::Current()->AssertThreadSuspensionIsAllowable(gAborting == 0);
   }
   // `ArenaAllocator` guarantees zero-initialization.
-  DCHECK(std::all_of(entries_for_type_index_,
-                     entries_for_type_index_ + dex_file->NumTypeIds(),
-                     [](const RegType* reg_type) { return reg_type == nullptr; }));
+  static_assert(kNoIdForTypeIndex == 0u);
+  DCHECK(std::all_of(ids_for_type_index_,
+                     ids_for_type_index_ + dex_file->NumTypeIds(),
+                     [](uint16_t id) { return id == kNoIdForTypeIndex; }));
   // The klass_entries_ array does not have primitives or constants.
   static constexpr size_t kNumReserveEntries = 32;
   klass_entries_.reserve(kNumReserveEntries);

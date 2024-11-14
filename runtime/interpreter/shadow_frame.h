@@ -65,6 +65,10 @@ class ShadowFrame {
     // Used to specify if DexPCMoveEvents have to be reported. These events will
     // only be reported if the method has a breakpoint set.
     kNotifyDexPcMoveEvents = 1 << 5,
+    // Used to specify if ExceptionHandledEvent has to be reported. When enabled these events are
+    // reported when we reach the catch block after an exception was thrown. These events have to
+    // be reported after the DexPCMoveEvent if enabled.
+    kNotifyExceptionHandledEvent = 1 << 6,
   };
 
  public:
@@ -380,6 +384,14 @@ class ShadowFrame {
     UpdateFrameFlag(enable, FrameFlags::kNotifyDexPcMoveEvents);
   }
 
+  bool GetNotifyExceptionHandledEvent() const {
+    return GetFrameFlag(FrameFlags::kNotifyExceptionHandledEvent);
+  }
+
+  void SetNotifyExceptionHandledEvent(bool enable) {
+    UpdateFrameFlag(enable, FrameFlags::kNotifyExceptionHandledEvent);
+  }
+
   void CheckConsistentVRegs() const {
     if (kIsDebugBuild) {
       // A shadow frame visible to GC requires the following rule: for a given vreg,
@@ -440,7 +452,7 @@ class ShadowFrame {
   int16_t hotness_countdown_;
 
   // This is a set of ShadowFrame::FrameFlags which denote special states this frame is in.
-  // NB alignment requires that this field takes 4 bytes no matter its size. Only 3 bits are
+  // NB alignment requires that this field takes 4 bytes no matter its size. Only 7 bits are
   // currently used.
   uint32_t frame_flags_;
 

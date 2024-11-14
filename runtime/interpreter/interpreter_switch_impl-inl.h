@@ -379,6 +379,26 @@ class InstructionHandler {
         return false;
       }
     }
+
+    // Call any exception handled event handlers after the dex pc move event.
+    // The order is important to see a consistent behaviour in the debuggers.
+    // See b/333446719 for more discussion.
+    if (UNLIKELY(shadow_frame_.GetNotifyExceptionHandledEvent())) {
+      shadow_frame_.SetNotifyExceptionHandledEvent(/*enable=*/ false);
+      bool is_move_exception = (inst_->Opcode(inst_data_) == Instruction::MOVE_EXCEPTION);
+
+      if (!InstrumentationHandler::ExceptionHandledEvent(
+              Self(), is_move_exception, Instrumentation())) {
+        DCHECK(Self()->IsExceptionPending());
+        // TODO(375373721): We need to set SetSkipNextExceptionEvent here since the exception was
+        // thrown by an instrumentation handler.
+        return false;  // Pending exception.
+      }
+
+      if (!CheckForceReturn()) {
+        return false;
+      }
+    }
     return true;
   }
 

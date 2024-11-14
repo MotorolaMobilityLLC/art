@@ -189,14 +189,7 @@ bool MoveToExceptionHandler(Thread* self,
   } else {
     shadow_frame.SetDexPC(found_dex_pc);
     if (!skip_listeners && instrumentation->HasExceptionHandledListeners()) {
-      self->ClearException();
-      instrumentation->ExceptionHandledEvent(self, exception.Get());
-      if (UNLIKELY(self->IsExceptionPending())) {
-        // Exception handled event threw an exception. Try to find the handler for this one.
-        return MoveToExceptionHandler(self, shadow_frame, skip_listeners, skip_throw_listener);
-      } else if (!clear_exception) {
-        self->SetException(exception.Get());
-      }
+      shadow_frame.SetNotifyExceptionHandledEvent(/*enable=*/ true);
     } else if (clear_exception) {
       self->ClearException();
     }

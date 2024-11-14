@@ -4632,6 +4632,8 @@ class HInvoke : public HVariableInputSizeInstruction {
 
   bool CanBeMoved() const override { return IsIntrinsic() && !DoesAnyWrite(); }
 
+  bool CanBeNull() const override;
+
   bool InstructionDataEquals(const HInstruction* other) const override {
     return intrinsic_ != Intrinsics::kNone && intrinsic_ == other->AsInvoke()->intrinsic_;
   }
@@ -5109,28 +5111,6 @@ class HInvokeVirtual final : public HInvoke {
   }
 
   bool IsClonable() const override { return true; }
-
-  bool CanBeNull() const override {
-    switch (GetIntrinsic()) {
-      case Intrinsics::kThreadCurrentThread:
-      case Intrinsics::kStringBufferAppend:
-      case Intrinsics::kStringBufferToString:
-      case Intrinsics::kStringBuilderAppendObject:
-      case Intrinsics::kStringBuilderAppendString:
-      case Intrinsics::kStringBuilderAppendCharSequence:
-      case Intrinsics::kStringBuilderAppendCharArray:
-      case Intrinsics::kStringBuilderAppendBoolean:
-      case Intrinsics::kStringBuilderAppendChar:
-      case Intrinsics::kStringBuilderAppendInt:
-      case Intrinsics::kStringBuilderAppendLong:
-      case Intrinsics::kStringBuilderAppendFloat:
-      case Intrinsics::kStringBuilderAppendDouble:
-      case Intrinsics::kStringBuilderToString:
-        return false;
-      default:
-        return HInvoke::CanBeNull();
-    }
-  }
 
   bool CanDoImplicitNullCheckOn(HInstruction* obj) const override;
 

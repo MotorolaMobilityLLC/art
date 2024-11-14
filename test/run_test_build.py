@@ -612,7 +612,7 @@ def main() -> None:
   # Create the final zip file which contains the content of the temporary directory.
   soong_zip = android_build_top / args.soong_zip
   zip_file = android_build_top / args.out
-  run([soong_zip, "-o", zip_file, "-C", ziproot, "-D", ziproot], check=True)
+  run([soong_zip, "-L", "0", "-o", zip_file, "-C", ziproot, "-D", ziproot], check=True)
 
 if __name__ == "__main__":
   main()

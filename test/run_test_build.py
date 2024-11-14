@@ -42,6 +42,8 @@ from tempfile import TemporaryDirectory, NamedTemporaryFile
 from typing import Dict, List, Union, Set, Optional
 from multiprocessing import cpu_count
 
+from globals import BOOTCLASSPATH
+
 USE_RBE = 100  # Percentage of tests that can use RBE (between 0 and 100)
 
 lock_file = None  # Keep alive as long as this process is alive.
@@ -510,31 +512,83 @@ class BuildTestContext:
       else:
         zip(Path(self.test_name + ".jar"), Path("classes.dex"))
 
+# Create bash script that compiles the boot image on device.
+# This is currently only used for eng-prod testing (which is different
+# to the local and LUCI code paths that use buildbot-sync.sh script).
+def create_setup_script(is64: bool):
+  out = "/data/local/tmp/art/apex/art_boot_images"
+  isa = 'arm64' if is64 else 'arm'
+  jar = BOOTCLASSPATH
+  cmd = [
+    f"/apex/com.android.art/bin/{'dex2oat64' if is64 else 'dex2oat32'}",
+    "--runtime-arg", f"-Xbootclasspath:{':'.join(jar)}",
+    "--runtime-arg", f"-Xbootclasspath-locations:{':'.join(jar)}",
+  ] + [f"--dex-file={j}" for j in jar] + [f"--dex-location={j}" for j in jar] + [
+    f"--instruction-set={isa}",
+    "--base=0x70000000",
+    "--compiler-filter=speed-profile",
+    "--profile-file=/apex/com.android.art/etc/boot-image.prof",
+    "--avoid-storing-invocation",
+    "--generate-debug-info",
+    "--generate-build-id",
+    "--image-format=lz4hc",
+    "--strip",
+    "--android-root=out/empty",
+    f"--image={out}/{isa}/boot.art",
+    f"--oat-file={out}/{isa}/boot.oat",
+  ]
+  return [
+    f"rm -rf {out}/{isa}",
+    f"mkdir -p {out}/{isa}",
+    " ".join(cmd),
+  ]
+
 # Create bash scripts that can fully execute the run tests.
 # This can be used in CI to execute the tests without running `testrunner.py`.
 # This takes into account any custom behaviour defined in per-test `run.py`.
 # We generate distinct scripts for all of the pre-defined variants.
-def create_ci_runner_scripts(mode, test_names):
-  with TemporaryDirectory() as tmpdir:
-    python = sys.executable
-    script = 'art/test/testrunner/testrunner.py'
-    envs = {
-      "ANDROID_BUILD_TOP": str(Path(getcwd()).absolute()),
-      "ART_TEST_RUN_FROM_SOONG": "true",
-      # TODO: Make the runner scripts target agnostic.
-      #       The only dependency is setting of "-Djava.library.path".
-      "TARGET_ARCH": "arm64",
-      "TARGET_2ND_ARCH": "arm",
-      "TMPDIR": Path(getcwd()) / "tmp",
+def create_ci_runner_scripts(out, mode, test_names):
+  out.mkdir(parents=True)
+  setup = out / "setup.sh"
+  setup_script = create_setup_script(False) + create_setup_script(True)
+  setup.write_text("\n".join(setup_script))
+
+  python = sys.executable
+  script = 'art/test/testrunner/testrunner.py'
+  envs = {
+    "ANDROID_BUILD_TOP": str(Path(getcwd()).absolute()),
+    "ART_TEST_RUN_FROM_SOONG": "true",
+    # TODO: Make the runner scripts target agnostic.
+    #       The only dependency is setting of "-Djava.library.path".
+    "TARGET_ARCH": "arm64",
+    "TARGET_2ND_ARCH": "arm",
+    "TMPDIR": Path(getcwd()) / "tmp",
+  }
+  args = [
+    f"--run-test-option=--create-runner={out}",
+    f"-j={cpu_count()}",
+    f"--{mode}",
+  ]
+  run([python, script] + args + test_names, env=envs, check=True)
+  tests = {
+    "setup": {
+      "adb push": [[str(setup.relative_to(out)), "/data/local/tmp/art/setup.sh"]],
+      "adb shell": [["sh", "/data/local/tmp/art/setup.sh"]],
+    },
+  }
+  for runner in Path(out).glob("*/*.sh"):
+    test_name = runner.parent.name
+    test_hash = runner.stem
+    target_dir = f"/data/local/tmp/art/test/{test_hash}"
+    tests[f"{test_name}-{test_hash}"] = {
+      "dependencies": ["setup"],
+      "adb push": [
+        [f"../{mode}/{test_name}/", f"{target_dir}/"],
+        [str(runner.relative_to(out)), f"{target_dir}/run.sh"]
+      ],
+      "adb shell": [["sh", f"{target_dir}/run.sh"]],
     }
-    args = [
-      f"--run-test-option=--create-runner={tmpdir}",
-      f"-j={cpu_count()}",
-      f"--{mode}",
-    ]
-    run([python, script] + args + test_names, env=envs, check=True)
-    runners = {r.name: r.read_text().split("\n") for r in Path(tmpdir).glob("*")}
-    return [{"name": name, "runner": bash} for name, bash in runners.items()]
+  return tests
 
 # If we build just individual shard, we want to split the work among all the cores,
 # but if the build system builds all shards, we don't want to overload the machine.
@@ -603,11 +657,9 @@ def main() -> None:
   if args.mode == "target":
     os.chdir(android_build_top)
     test_names = [ctx.test_name for ctx in tests]
-    data = create_ci_runner_scripts(args.mode, test_names)
-    dst = ziproot / "runner" / args.out.with_suffix(".json").name
-    dst.parent.mkdir(parents=True)
-    text = json.dumps(data, ensure_ascii=False, indent=2)
-    Path(dst).write_text(text)
+    dst = ziproot / "runner" / args.out.with_suffix(".tests.json").name
+    tests = create_ci_runner_scripts(dst.parent, args.mode, test_names)
+    dst.write_text(json.dumps(tests, indent=2, sort_keys=True))
 
   # Create the final zip file which contains the content of the temporary directory.
   soong_zip = android_build_top / args.soong_zip

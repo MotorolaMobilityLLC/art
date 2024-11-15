@@ -200,7 +200,8 @@ class RegType {
       REQUIRES_SHARED(Locks::mutator_lock_);
   bool IsInstantiableTypes() const REQUIRES_SHARED(Locks::mutator_lock_);
   const std::string_view& GetDescriptor() const {
-    DCHECK(HasClass() ||
+    DCHECK(IsReference() ||
+           IsUninitializedTypes() ||
            (IsUnresolvedTypes() && !IsUnresolvedMergedReference()));
     return descriptor_;
   }
@@ -529,11 +530,10 @@ class NullType final : public ConstantType {
 // instructions and must be passed to a constructor.
 class UninitializedType : public RegType {
  public:
-  UninitializedType(Handle<mirror::Class> klass,
-                    const std::string_view& descriptor,
+  UninitializedType(const std::string_view& descriptor,
                     uint16_t cache_id,
                     Kind kind)
-      : RegType(klass, descriptor, cache_id, kind) {}
+      : RegType(Handle<mirror::Class>(), descriptor, cache_id, kind) {}
 };
 
 // A type of register holding a reference to an Object of type GetClass or a
@@ -571,15 +571,12 @@ class UninitializedReferenceType final : public UninitializedType {
  public:
   UninitializedReferenceType(uint16_t cache_id, const ReferenceType* initialized_type)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(initialized_type->GetClassHandle(),
-                          initialized_type->GetDescriptor(),
+      : UninitializedType(initialized_type->GetDescriptor(),
                           cache_id,
                           Kind::kUninitializedReference),
         initialized_type_(initialized_type) {
     CheckConstructorInvariants(this);
   }
-
-  bool HasClassVirtual() const override { return true; }
 
   const ReferenceType* GetInitializedType() const {
     return initialized_type_;
@@ -598,15 +595,12 @@ class UninitializedThisReferenceType final : public UninitializedType {
  public:
   UninitializedThisReferenceType(uint16_t cache_id, const ReferenceType* initialized_type)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(initialized_type->GetClassHandle(),
-                          initialized_type->GetDescriptor(),
+      : UninitializedType(initialized_type->GetDescriptor(),
                           cache_id,
                           Kind::kUninitializedThisReference),
         initialized_type_(initialized_type) {
     CheckConstructorInvariants(this);
   }
-
-  bool HasClassVirtual() const override { return true; }
 
   const ReferenceType* GetInitializedType() const {
     return initialized_type_;
@@ -662,8 +656,7 @@ class UnresolvedUninitializedReferenceType final : public UninitializedType {
   UnresolvedUninitializedReferenceType(uint16_t cache_id,
                                        const UnresolvedReferenceType* initialized_type)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(Handle<mirror::Class>(),
-                          initialized_type->GetDescriptor(),
+      : UninitializedType(initialized_type->GetDescriptor(),
                           cache_id,
                           Kind::kUnresolvedUninitializedReference),
         initialized_type_(initialized_type) {
@@ -686,8 +679,7 @@ class UnresolvedUninitializedThisReferenceType final : public UninitializedType 
   UnresolvedUninitializedThisReferenceType(uint16_t cache_id,
                                            const UnresolvedReferenceType* initialized_type)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(Handle<mirror::Class>(),
-                          initialized_type->GetDescriptor(),
+      : UninitializedType(initialized_type->GetDescriptor(),
                           cache_id,
                           Kind::kUnresolvedUninitializedThisReference),
         initialized_type_(initialized_type) {
@@ -815,7 +807,8 @@ inline constexpr void RegType::CheckConstructorInvariants([[maybe_unused]] Class
     // `UnresolvedMergedReferenceType` is an unresolved type but it has an empty descriptor.
     DCHECK(klass_.GetReference() == nullptr) << *this;
     DCHECK(descriptor_.empty()) << *this;
-  } else if constexpr (detail::IsUnresolvedTypes<Class>::value) {
+  } else if constexpr (detail::IsUnresolvedTypes<Class>::value ||  // NOLINT
+                       std::is_base_of_v<UninitializedType, Class>) {
     DCHECK(!HasClass()) << *this;
     DCHECK(!descriptor_.empty()) << *this;
   } else if (kIsDebugBuild) {

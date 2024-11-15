@@ -971,7 +971,7 @@ bool MarkCompact::PrepareForCompaction() {
   GcCause gc_cause = GetCurrentIteration()->GetGcCause();
   if (gc_cause != kGcCauseExplicit && gc_cause != kGcCauseCollectorTransition &&
       !GetCurrentIteration()->GetClearSoftReferences()) {
-    size_t live_bytes = 0, total_bytes = 0;
+    uint64_t live_bytes = 0, total_bytes = 0;
     size_t aligned_vec_len = RoundUp(vector_len, chunk_info_per_page);
     size_t num_pages = aligned_vec_len / chunk_info_per_page;
     size_t threshold_passing_marker = 0;  // In number of pages

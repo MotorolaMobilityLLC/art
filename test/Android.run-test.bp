@@ -2639,16 +2639,13 @@ prebuilt_etc_host {
 
 genrule_defaults {
     name: "art-run-test-host-data-defaults",
-    tool_files: [
-        "run_test_build.py",
-        ":art-run-test-bootclasspath",
-    ],
     srcs: [
         // Since genrules are sandboxed, all the sources they use must be listed in
         // the Android.bp file. Some tests have symlinks to files from other tests, and
         // those must also be listed to avoid a dangling symlink in the sandbox.
         "jvmti-common/*.java",
         "utils/python/**/*.py",
+        ":art-run-test-bootclasspath",
         ":development_docs",
         ":asm-9.6-filegroup",
         ":ojluni-AbstractCollection",
@@ -2663,7 +2660,9 @@ genrule_defaults {
         "testrunner/*.py",
         "knownfailures.json",
         "default_run.py",
+        "globals.py",
         "run-test",
+        "run_test_build.py",
     ],
     tools: [
         "android-smali",
@@ -5760,16 +5759,13 @@ prebuilt_etc_host {
 
 genrule_defaults {
     name: "art-run-test-target-data-defaults",
-    tool_files: [
-        "run_test_build.py",
-        ":art-run-test-bootclasspath",
-    ],
     srcs: [
         // Since genrules are sandboxed, all the sources they use must be listed in
         // the Android.bp file. Some tests have symlinks to files from other tests, and
         // those must also be listed to avoid a dangling symlink in the sandbox.
         "jvmti-common/*.java",
         "utils/python/**/*.py",
+        ":art-run-test-bootclasspath",
         ":development_docs",
         ":asm-9.6-filegroup",
         ":ojluni-AbstractCollection",
@@ -5784,7 +5780,9 @@ genrule_defaults {
         "testrunner/*.py",
         "knownfailures.json",
         "default_run.py",
+        "globals.py",
         "run-test",
+        "run_test_build.py",
     ],
     tools: [
         "android-smali",
@@ -8881,16 +8879,13 @@ prebuilt_etc_host {
 
 genrule_defaults {
     name: "art-run-test-jvm-data-defaults",
-    tool_files: [
-        "run_test_build.py",
-        ":art-run-test-bootclasspath",
-    ],
     srcs: [
         // Since genrules are sandboxed, all the sources they use must be listed in
         // the Android.bp file. Some tests have symlinks to files from other tests, and
         // those must also be listed to avoid a dangling symlink in the sandbox.
         "jvmti-common/*.java",
         "utils/python/**/*.py",
+        ":art-run-test-bootclasspath",
         ":development_docs",
         ":asm-9.6-filegroup",
         ":ojluni-AbstractCollection",
@@ -8905,7 +8900,9 @@ genrule_defaults {
         "testrunner/*.py",
         "knownfailures.json",
         "default_run.py",
+        "globals.py",
         "run-test",
+        "run_test_build.py",
     ],
     tools: [
         "android-smali",

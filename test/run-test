@@ -105,11 +105,12 @@ class RunTestContext:
 # Make unique temporary directory guarded by lock file.
 # The name is deterministic (appending suffix as needed).
 def make_tmp_dir():
-  parent = Path(os.environ.get("TMPDIR", "/tmp/art/rtest"))
+  parent = Path(os.environ.get("TMPDIR", "/tmp")) / "art" / "test"
   parent.mkdir(parents=True, exist_ok=True)
-  args_hash = sha1((" ".join(sys.argv[1:])).encode()).digest().hex()
+  args = [a for a in sys.argv[1:] if not a.startswith("--create-runner")]
+  hash = sha1((" ".join(args)).encode()).hexdigest()
   for i in range(100):
-    tmp_dir = parent / (f"{args_hash[:8]}" + (f"-{i}" if i > 0 else ""))
+    tmp_dir = parent / (f"{hash[:8]}" + (f"-{i}" if i > 0 else ""))
     lock = tmp_dir.with_suffix(".lock")  # NB: Next to the directory, not inside.
     lock_handle = open(lock, "w")
     try:
@@ -177,7 +178,10 @@ if True:
   export("PYTHON3",
          f"{ANDROID_BUILD_TOP}/prebuilts/build-tools/path/linux-x86/python3")
   export("RUN", f"{PYTHON3} {progdir}/etc/run-test-jar")
-  export("DEX_LOCATION", f"/data/run-test/{test_dir}")
+  if env.ART_TEST_RUN_FROM_SOONG:
+    export("DEX_LOCATION", f"/data/local/tmp/art/test/{test_dir}")
+  else:
+    export("DEX_LOCATION", f"/data/run-test/{test_dir}")
 
   # OUT_DIR defaults to out, and may be relative to ANDROID_BUILD_TOP.
   # Convert it to an absolute path, since we cd into the tmp_dir to run the tests.
@@ -689,7 +693,10 @@ if True:
       run_args += [
           f'--runtime-option "-Djava.library.path=/data/nativetest{suffix64}/art/{target_arch_name}"'
       ]
-      run_args += ['--boot "/system/framework/art_boot_images/boot.art"']
+      if env.ART_TEST_RUN_FROM_SOONG:
+        run_args += ['--boot "/data/local/tmp/art/apex/art_boot_images/boot.art"']
+      else:
+        run_args += ['--boot "/system/framework/art_boot_images/boot.art"']
     if relocate:
       run_args += ["--relocate"]
     else:
@@ -773,15 +780,22 @@ if True:
 
   # Extract run-test data from the zip file.
   def unzip():
-    shutil.rmtree(tmp_dir)
     if env.ART_TEST_RUN_FROM_SOONG:
       # We already have the unzipped copy of the data.
       assert target_mode
       src = Path(ANDROID_BUILD_TOP) / "out" / "zip" / "target" / TEST_NAME
       assert src.exists(), src
+      shutil.rmtree(tmp_dir)
       copytree(src, tmp_dir)
       os.chdir(tmp_dir)
       return
+
+    # Clear the contents, but keep the directory just in case it is open in terminal.
+    for file in Path(tmp_dir).iterdir():
+      if file.is_file() or file.is_symlink():
+        file.unlink()
+      else:
+        shutil.rmtree(file)
     os.makedirs(f"{tmp_dir}/.unzipped")
     os.chdir(tmp_dir)
     m = re.match("[0-9]*([0-9][0-9])-.*", TEST_NAME)
@@ -809,12 +823,12 @@ if True:
     if always_clean or (passed and not never_clean):
       os.chdir(oldwd)
       shutil.rmtree(tmp_dir)
-      os.remove(tmp_dir_lock)
       if target_mode:
         if ON_VM:
           run(f"{SSH_CMD} \"rm -rf {chroot_dex_location}\"")
         else:
           run(f"adb shell rm -rf {chroot_dex_location}")
+      os.remove(tmp_dir_lock)
       print(f"{TEST_NAME} files deleted from host" +
             (" and from target" if target_mode else ""))
     else:
@@ -874,10 +888,9 @@ if True:
 
   if args.create_runner:
     # TODO: Generate better unique names.
-    name = [a for a in sys.argv[1:] if not a.startswith("--create-runner")]
-    hash = sha1((" ".join(name)).encode()).digest().hex()[:8]
-    dst = args.create_runner / f"{TEST_NAME}-{hash}"
+    dst = args.create_runner / TEST_NAME / f"{Path(tmp_dir).name}.sh"
     assert not dst.exists(), dst
+    dst.parent.mkdir(parents=True, exist_ok=True)
     copyfile(runner, dst)
 
   # Script debugging feature - just export the runner script into a directory,

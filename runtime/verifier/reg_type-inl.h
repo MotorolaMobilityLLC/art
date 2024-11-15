@@ -38,36 +38,6 @@ inline Handle<mirror::Class> RegType::GetClassHandle() const {
   return down_cast<const ReferenceType&>(*this).GetClassHandleImpl();
 }
 
-inline bool RegType::CanAccess(const RegType& other) const {
-  DCHECK(IsReferenceTypes());
-  DCHECK(!IsNull());
-  if (Equals(other)) {
-    return true;  // Trivial accessibility.
-  } else {
-    bool this_unresolved = IsUnresolvedTypes();
-    bool other_unresolved = other.IsUnresolvedTypes();
-    if (!this_unresolved && !other_unresolved) {
-      return GetClass()->CanAccess(other.GetClass());
-    } else if (!other_unresolved) {
-      return other.GetClass()->IsPublic();  // Be conservative, only allow if other is public.
-    } else {
-      return false;  // More complicated test not possible on unresolved types, be conservative.
-    }
-  }
-}
-
-inline bool RegType::CanAccessMember(ObjPtr<mirror::Class> klass, uint32_t access_flags) const {
-  DCHECK(IsReferenceTypes());
-  if (IsNull()) {
-    return true;
-  }
-  if (!IsUnresolvedTypes()) {
-    return GetClass()->CanAccessMember(klass, access_flags);
-  } else {
-    return false;  // More complicated test not possible on unresolved types, be conservative.
-  }
-}
-
 namespace detail {
 
 class RegTypeAssignableImpl final : RegType {
@@ -120,6 +90,8 @@ constexpr RegType::Assignability RegTypeAssignableImpl::AssignableFrom(RegType::
     } else if (rhs.IsUninitializedTypes()) {
       // References of uninitialized types can be copied but not assigned.
       return Assignability::kNotAssignable;
+    } else if (lhs.IsJavaLangObject()) {
+      return Assignability::kAssignable;  // All reference types can be assigned to Object.
     } else {
       // Use `Reference` to tell the caller to process a reference assignability check.
       // This check requires more information than the kinds available here.
@@ -175,13 +147,14 @@ inline bool RegType::AssignableFrom(const RegType& lhs,
     DCHECK(rhs.IsNonZeroReferenceTypes());
     DCHECK(!lhs.IsUninitializedTypes());
     DCHECK(!rhs.IsUninitializedTypes());
-    if (lhs.IsJavaLangObject()) {
-      return true;  // All reference types can be assigned to Object.
-    } else if (!strict && !lhs.IsUnresolvedTypes() && lhs.GetClass()->IsInterface()) {
+    DCHECK(!lhs.IsJavaLangObject());
+    if (!strict && !lhs.IsUnresolvedTypes() && lhs.GetClass()->IsInterface()) {
       // If we're not strict allow assignment to any interface, see comment in ClassJoin.
       return true;
     } else if (lhs.IsJavaLangObjectArray()) {
       return rhs.IsObjectArrayTypes();  // All reference arrays may be assigned to Object[]
+    } else if (lhs.HasClass() && rhs.IsJavaLangObject()) {
+      return false;  // Note: Non-strict check for interface `lhs` is handled above.
     } else if (lhs.HasClass() && rhs.HasClass()) {
       // Test assignability from the Class point-of-view.
       bool result = lhs.GetClass()->IsAssignableFrom(rhs.GetClass());

@@ -74,6 +74,18 @@ void RegTypeCache::FillPrimitiveAndConstantTypes() {
   CREATE_CONSTANT_TYPE(ConstantHi);
   CREATE_CONSTANT_TYPE(Null);
 #undef CREATE_CONSTANT_TYPE
+
+  // `JavaLangObjectType` must be initialized together with its uninitialized type.
+  struct JavaLangObjectPair {
+    constexpr JavaLangObjectPair()
+        : initialized("Ljava/lang/Object;", kJavaLangObjectCacheId, &uninitialized),
+          uninitialized(kUninitializedJavaLangObjectCacheId, &initialized) {}
+    JavaLangObjectType initialized;
+    UninitializedReferenceType uninitialized;
+  };
+  static constexpr JavaLangObjectPair constJavaLangObject;
+  entries[kJavaLangObjectCacheId] = &constJavaLangObject.initialized;
+  entries[kUninitializedJavaLangObjectCacheId] = &constJavaLangObject.uninitialized;
 }
 
 const RegType& RegTypeCache::FromDescriptor(const char* descriptor) {
@@ -144,7 +156,7 @@ bool RegTypeCache::MatchDescriptor(size_t idx, const std::string_view& descripto
   if (descriptor != entry->descriptor_) {
     return false;
   }
-  DCHECK(entry->IsReference() || entry->IsUnresolvedReference());
+  DCHECK(entry->IsJavaLangObject() || entry->IsReference() || entry->IsUnresolvedReference());
   return true;
 }
 
@@ -177,6 +189,9 @@ const RegType& RegTypeCache::From(const char* descriptor) {
   std::string_view sv_descriptor(descriptor);
   // Try looking up the class in the cache first. We use a std::string_view to avoid
   // repeated strlen operations on the descriptor.
+  if (MatchDescriptor(kJavaLangObjectCacheId, sv_descriptor)) {
+    return *(entries_[kJavaLangObjectCacheId]);
+  }
   for (size_t i = kNumberOfFixedCacheIds; i < entries_.size(); i++) {
     if (MatchDescriptor(i, sv_descriptor)) {
       return *(entries_[i]);
@@ -189,7 +204,10 @@ const RegType& RegTypeCache::From(const char* descriptor) {
   // comes from the dex file, for example through `FromTypeIndex()`.
   if (klass != nullptr) {
     DCHECK(!klass->IsPrimitive());
-    RegType* entry = new (&allocator_) ReferenceType(
+    if (klass->IsObjectClass()) {
+      return JavaLangObject();
+    }
+    const RegType* entry = new (&allocator_) ReferenceType(
         handles_.NewHandle(klass), AddString(sv_descriptor), entries_.size());
     return AddEntry(entry);
   } else {  // Class not resolved.
@@ -224,6 +242,9 @@ const RegType& RegTypeCache::FromClass(ObjPtr<mirror::Class> klass) {
   if (klass->IsPrimitive()) {
     return RegTypeFromPrimitiveType(klass->GetPrimitiveType());
   }
+  if (klass->IsObjectClass()) {
+    return JavaLangObject();
+  }
   if (!klass->IsArrayClass() && &klass->GetDexFile() == dex_file_) {
     // Go through the `TypeIndex`-based cache. If the entry is not there yet, we shall
     // fill it in now to make sure it's available for subsequent lookups.
@@ -234,7 +255,7 @@ const RegType& RegTypeCache::FromClass(ObjPtr<mirror::Class> klass) {
     Handle<mirror::Class> h_class =
         kIsDebugBuild ? hs->NewHandle(klass) : Handle<mirror::Class>();
     const RegType& reg_type = FromTypeIndex(klass->GetDexTypeIndex());
-    DCHECK(reg_type.HasClass());
+    DCHECK(reg_type.IsReference());
     DCHECK(reg_type.GetClass() == h_class.Get());
     return reg_type;
   }
@@ -408,9 +429,11 @@ const UninitializedType& RegTypeCache::Uninitialized(const RegType& type) {
 
   if (type.IsReference()) {
     return *get_or_create_uninitialized_type(down_cast<const ReferenceType&>(type));
-  } else {
-    DCHECK(type.IsUnresolvedReference());
+  } else if (type.IsUnresolvedReference()) {
     return *get_or_create_uninitialized_type(down_cast<const UnresolvedReferenceType&>(type));
+  } else {
+    DCHECK(type.IsJavaLangObject());
+    return *down_cast<const JavaLangObjectType&>(type).GetUninitializedType();
   }
 }
 
@@ -449,8 +472,7 @@ const UninitializedType& RegTypeCache::UninitializedThisArgument(const RegType& 
     entry = new (&allocator_) UnresolvedUninitializedThisReferenceType(
         entries_.size(), down_cast<const UnresolvedReferenceType*>(&type));
   } else {
-    DCHECK(type.IsReference());
-    ObjPtr<mirror::Class> klass = type.GetClass();
+    DCHECK(type.IsJavaLangObject() || type.IsReference());
     for (size_t i = kNumberOfFixedCacheIds; i < entries_.size(); i++) {
       const RegType* cur_entry = entries_[i];
       if (cur_entry->IsUninitializedThisReference() &&

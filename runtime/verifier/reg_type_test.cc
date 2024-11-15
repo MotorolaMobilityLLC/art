@@ -1104,14 +1104,18 @@ class RegTypeClassJoinTest : public RegTypeTest {
 
     RegTypeCache cache(soa.Self(), class_linker_, arena_pool, class_loader, dex_file);
     const RegType& c1_reg_type = cache.FromClass(c1.Get());
-    ASSERT_TRUE(c1_reg_type.HasClass());
-    ASSERT_TRUE(c1_reg_type.GetClass() == c1.Get());
+    if (!c1_reg_type.IsJavaLangObject()) {
+      ASSERT_TRUE(c1_reg_type.HasClass());
+      ASSERT_TRUE(c1_reg_type.GetClass() == c1.Get());
+    }
     const RegType& c2_reg_type = cache.FromClass(c2.Get());
-    ASSERT_TRUE(c2_reg_type.HasClass());
-    ASSERT_TRUE(c2_reg_type.GetClass() == c2.Get());
+    if (!c2_reg_type.IsJavaLangObject()) {
+      ASSERT_TRUE(c2_reg_type.HasClass());
+      ASSERT_TRUE(c2_reg_type.GetClass() == c2.Get());
+    }
 
     const RegType& join_type = c1_reg_type.Merge(c2_reg_type, &cache, nullptr);
-    EXPECT_TRUE(join_type.HasClass());
+    EXPECT_TRUE(join_type.IsJavaLangObject() || join_type.HasClass());
     EXPECT_EQ(join_type.GetDescriptor(), std::string_view(out));
   }
 };

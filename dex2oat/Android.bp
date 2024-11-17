@@ -261,7 +261,7 @@ art_cc_binary {
             shared_libs: [
                 "libart",
                 "libartbase",
-                "libdexfile",
+                "libdexfile#impl",
                 "libprofile",
             ],
             static_libs: [
@@ -327,7 +327,7 @@ art_cc_binary {
             shared_libs: [
                 "libartbased",
                 "libartd",
-                "libdexfiled",
+                "libdexfiled#impl",
                 "libprofiled",
             ],
             static_libs: [

@@ -2639,16 +2639,13 @@ prebuilt_etc_host {
 
 genrule_defaults {
     name: "art-run-test-host-data-defaults",
-    tool_files: [
-        "run_test_build.py",
-        ":art-run-test-bootclasspath",
-    ],
     srcs: [
         // Since genrules are sandboxed, all the sources they use must be listed in
         // the Android.bp file. Some tests have symlinks to files from other tests, and
         // those must also be listed to avoid a dangling symlink in the sandbox.
         "jvmti-common/*.java",
         "utils/python/**/*.py",
+        ":art-run-test-bootclasspath",
         ":development_docs",
         ":asm-9.6-filegroup",
         ":ojluni-AbstractCollection",
@@ -2663,7 +2660,9 @@ genrule_defaults {
         "testrunner/*.py",
         "knownfailures.json",
         "default_run.py",
+        "globals.py",
         "run-test",
+        "run_test_build.py",
     ],
     tools: [
         "android-smali",
@@ -2677,7 +2676,7 @@ genrule_defaults {
 
 java_genrule {
     name: "art-run-test-host-data-merged-tmp",
-    out: ["art-run-test-host-data-merged.zip"],
+    out: ["art-run-test-host-data-merged.tgz"],
     srcs: [
         ":art-run-test-host-data-shard00-tmp",
         ":art-run-test-host-data-shard01-tmp",
@@ -2781,8 +2780,8 @@ java_genrule {
         ":art-run-test-host-data-shard99-tmp",
         ":art-run-test-host-data-shardHiddenApi-tmp",
     ],
-    tools: ["merge_zips"],
-    cmd: "$(location merge_zips) $(out) $(in)",
+    tool_files: ["merge_zips_to_tgz.py"],
+    cmd: "$(location merge_zips_to_tgz.py) $(out) $(in)",
 }
 
 // This filegroup is so that the host prebuilt etc can depend on a device genrule,
@@ -2900,7 +2899,7 @@ prebuilt_etc_host {
         "art-run-test-host-data-shardHiddenApi",
     ],
     sub_dir: "art",
-    filename: "art-run-test-host-data-merged.zip",
+    filename: "art-run-test-host-data-merged.tgz",
 }
 
 // Phony target used to build all shards
@@ -5760,16 +5759,13 @@ prebuilt_etc_host {
 
 genrule_defaults {
     name: "art-run-test-target-data-defaults",
-    tool_files: [
-        "run_test_build.py",
-        ":art-run-test-bootclasspath",
-    ],
     srcs: [
         // Since genrules are sandboxed, all the sources they use must be listed in
         // the Android.bp file. Some tests have symlinks to files from other tests, and
         // those must also be listed to avoid a dangling symlink in the sandbox.
         "jvmti-common/*.java",
         "utils/python/**/*.py",
+        ":art-run-test-bootclasspath",
         ":development_docs",
         ":asm-9.6-filegroup",
         ":ojluni-AbstractCollection",
@@ -5784,7 +5780,9 @@ genrule_defaults {
         "testrunner/*.py",
         "knownfailures.json",
         "default_run.py",
+        "globals.py",
         "run-test",
+        "run_test_build.py",
     ],
     tools: [
         "android-smali",
@@ -5798,7 +5796,7 @@ genrule_defaults {
 
 java_genrule {
     name: "art-run-test-target-data-merged-tmp",
-    out: ["art-run-test-target-data-merged.zip"],
+    out: ["art-run-test-target-data-merged.tgz"],
     srcs: [
         ":art-run-test-target-data-shard00-tmp",
         ":art-run-test-target-data-shard01-tmp",
@@ -5902,8 +5900,8 @@ java_genrule {
         ":art-run-test-target-data-shard99-tmp",
         ":art-run-test-target-data-shardHiddenApi-tmp",
     ],
-    tools: ["merge_zips"],
-    cmd: "$(location merge_zips) $(out) $(in)",
+    tool_files: ["merge_zips_to_tgz.py"],
+    cmd: "$(location merge_zips_to_tgz.py) $(out) $(in)",
 }
 
 // This filegroup is so that the host prebuilt etc can depend on a device genrule,
@@ -6021,7 +6019,7 @@ prebuilt_etc_host {
         "art-run-test-target-data-shardHiddenApi",
     ],
     sub_dir: "art",
-    filename: "art-run-test-target-data-merged.zip",
+    filename: "art-run-test-target-data-merged.tgz",
 }
 
 // Phony target used to build all shards
@@ -8881,16 +8879,13 @@ prebuilt_etc_host {
 
 genrule_defaults {
     name: "art-run-test-jvm-data-defaults",
-    tool_files: [
-        "run_test_build.py",
-        ":art-run-test-bootclasspath",
-    ],
     srcs: [
         // Since genrules are sandboxed, all the sources they use must be listed in
         // the Android.bp file. Some tests have symlinks to files from other tests, and
         // those must also be listed to avoid a dangling symlink in the sandbox.
         "jvmti-common/*.java",
         "utils/python/**/*.py",
+        ":art-run-test-bootclasspath",
         ":development_docs",
         ":asm-9.6-filegroup",
         ":ojluni-AbstractCollection",
@@ -8905,7 +8900,9 @@ genrule_defaults {
         "testrunner/*.py",
         "knownfailures.json",
         "default_run.py",
+        "globals.py",
         "run-test",
+        "run_test_build.py",
     ],
     tools: [
         "android-smali",
@@ -8919,7 +8916,7 @@ genrule_defaults {
 
 java_genrule {
     name: "art-run-test-jvm-data-merged-tmp",
-    out: ["art-run-test-jvm-data-merged.zip"],
+    out: ["art-run-test-jvm-data-merged.tgz"],
     srcs: [
         ":art-run-test-jvm-data-shard00-tmp",
         ":art-run-test-jvm-data-shard01-tmp",
@@ -9023,8 +9020,8 @@ java_genrule {
         ":art-run-test-jvm-data-shard99-tmp",
         ":art-run-test-jvm-data-shardHiddenApi-tmp",
     ],
-    tools: ["merge_zips"],
-    cmd: "$(location merge_zips) $(out) $(in)",
+    tool_files: ["merge_zips_to_tgz.py"],
+    cmd: "$(location merge_zips_to_tgz.py) $(out) $(in)",
 }
 
 // This filegroup is so that the host prebuilt etc can depend on a device genrule,
@@ -9142,7 +9139,7 @@ prebuilt_etc_host {
         "art-run-test-jvm-data-shardHiddenApi",
     ],
     sub_dir: "art",
-    filename: "art-run-test-jvm-data-merged.zip",
+    filename: "art-run-test-jvm-data-merged.tgz",
 }
 
 // Phony target used to build all shards

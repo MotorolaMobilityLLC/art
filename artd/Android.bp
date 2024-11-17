@@ -64,7 +64,7 @@ art_cc_binary {
         "libartservice",
         "libarttools",
         "libbase",
-        "libdexfile",
+        "libdexfile#impl",
     ],
     apex_available: [
         "com.android.art",
@@ -107,6 +107,7 @@ art_cc_test {
         "libarttools",
         "libbase",
         "libdexfile",
+        "libprofile",
     ],
 }
 
@@ -123,6 +124,7 @@ art_cc_test {
         "libarttools",
         "libbase",
         "libdexfile",
+        "libprofile",
     ],
     test_config_template: "art_standalone_artd_tests.xml",
 }

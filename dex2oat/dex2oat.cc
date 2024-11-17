@@ -1276,9 +1276,9 @@ class Dex2Oat final {
         }
 
         DCHECK_EQ(output_vdex_fd_, -1);
-        std::string vdex_filename = output_vdex_.empty()
-            ? ReplaceFileExtension(oat_filename, "vdex")
-            : output_vdex_;
+        std::string vdex_filename = output_vdex_.empty() ?
+                                        ReplaceFileExtension(oat_filename, kVdexExtension) :
+                                        output_vdex_;
         if (vdex_filename == input_vdex_ && output_vdex_.empty()) {
           use_existing_vdex_ = true;
           std::unique_ptr<File> vdex_file(OS::OpenFileForReading(vdex_filename.c_str()));
@@ -1333,7 +1333,7 @@ class Dex2Oat final {
       }
 
       DCHECK_NE(output_vdex_fd_, -1);
-      std::string vdex_location = ReplaceFileExtension(oat_location_, "vdex");
+      std::string vdex_location = ReplaceFileExtension(oat_location_, kVdexExtension);
       if (input_vdex_file_ != nullptr && output_vdex_fd_ == input_vdex_fd_) {
         use_existing_vdex_ = true;
       }

@@ -142,7 +142,8 @@ static void UnstartedRuntimeFindClass(Thread* self,
   std::string descriptor(DotToDescriptor(className->ToModifiedUtf8().c_str()));
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
 
-  ObjPtr<mirror::Class> found = class_linker->FindClass(self, descriptor.c_str(), class_loader);
+  ObjPtr<mirror::Class> found =
+      class_linker->FindClass(self, descriptor.c_str(), descriptor.length(), class_loader);
   if (found != nullptr && !found->CheckIsVisibleWithTargetSdk(self)) {
     CHECK(self->IsExceptionPending());
     return;
@@ -626,9 +627,7 @@ static void GetResourceAsStream(Thread* self,
 
   // Create a ByteArrayInputStream.
   Handle<mirror::Class> h_class(hs.NewHandle(
-      runtime->GetClassLinker()->FindClass(self,
-                                           "Ljava/io/ByteArrayInputStream;",
-                                           ScopedNullHandle<mirror::ClassLoader>())));
+      runtime->GetClassLinker()->FindSystemClass(self, "Ljava/io/ByteArrayInputStream;")));
   if (h_class == nullptr) {
     AbortTransactionOrFail(self, "Could not find ByteArrayInputStream class");
     return;
@@ -1015,9 +1014,7 @@ static void GetSystemProperty(Thread* self,
   // Get the storage class.
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   Handle<mirror::Class> h_props_class(hs.NewHandle(
-      class_linker->FindClass(self,
-                              "Ljava/lang/AndroidHardcodedSystemProperties;",
-                              ScopedNullHandle<mirror::ClassLoader>())));
+      class_linker->FindSystemClass(self, "Ljava/lang/AndroidHardcodedSystemProperties;")));
   if (h_props_class == nullptr) {
     AbortTransactionOrFail(self, "Could not find AndroidHardcodedSystemProperties");
     return;
@@ -1124,8 +1121,7 @@ static ObjPtr<mirror::Object> CreateInstanceOf(Thread* self, const char* class_d
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // Find the requested class.
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
-  ObjPtr<mirror::Class> klass =
-      class_linker->FindClass(self, class_descriptor, ScopedNullHandle<mirror::ClassLoader>());
+  ObjPtr<mirror::Class> klass = class_linker->FindSystemClass(self, class_descriptor);
   if (klass == nullptr) {
     AbortTransactionOrFail(self, "Could not load class %s", class_descriptor);
     return nullptr;
@@ -1156,8 +1152,9 @@ void UnstartedRuntime::UnstartedThreadLocalGet(Thread* self,
                                                ShadowFrame* shadow_frame,
                                                JValue* result,
                                                [[maybe_unused]] size_t arg_offset) {
-  if (CheckCallers(shadow_frame, { "jdk.internal.math.FloatingDecimal$BinaryToASCIIBuffer "
-                                       "jdk.internal.math.FloatingDecimal.getBinaryToASCIIBuffer()" })) {
+  if (CheckCallers(shadow_frame,
+                   { "jdk.internal.math.FloatingDecimal$BinaryToASCIIBuffer "
+                         "jdk.internal.math.FloatingDecimal.getBinaryToASCIIBuffer()" })) {
     result->SetL(CreateInstanceOf(self, "Ljdk/internal/math/FloatingDecimal$BinaryToASCIIBuffer;"));
   } else {
     AbortTransactionOrFail(self,

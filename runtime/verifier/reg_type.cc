@@ -55,29 +55,6 @@ std::ostream& operator<<(std::ostream& os, RegType::Kind kind) {
   return os << kind_name;
 }
 
-PrimitiveType::PrimitiveType(Handle<mirror::Class> klass,
-                             const std::string_view& descriptor,
-                             uint16_t cache_id,
-                             Kind kind)
-    : RegType(klass, descriptor, cache_id, kind) {
-  CHECK(klass != nullptr);
-  CHECK(!descriptor.empty());
-}
-
-Cat1Type::Cat1Type(Handle<mirror::Class> klass,
-                   const std::string_view& descriptor,
-                   uint16_t cache_id,
-                   Kind kind)
-    : PrimitiveType(klass, descriptor, cache_id, kind) {
-}
-
-Cat2Type::Cat2Type(Handle<mirror::Class> klass,
-                   const std::string_view& descriptor,
-                   uint16_t cache_id,
-                   Kind kind)
-    : PrimitiveType(klass, descriptor, cache_id, kind) {
-}
-
 std::string PreciseConstantType::Dump() const {
   std::stringstream result;
   uint32_t val = ConstantValue();
@@ -727,42 +704,38 @@ const RegType& RegType::Merge(const RegType& incoming_type,
   }
 }
 
-void RegType::CheckInvariants() const {
-  if (IsConstant() || IsConstantLo() || IsConstantHi()) {
-    CHECK(descriptor_.empty()) << *this;
-    CHECK(klass_.IsNull()) << *this;
-  }
-  if (!klass_.IsNull()) {
-    CHECK(!descriptor_.empty()) << *this;
-    std::string temp;
-    CHECK_EQ(descriptor_, klass_->GetDescriptor(&temp)) << *this;
-  }
-}
-
-void UninitializedThisReferenceType::CheckInvariants() const {
-}
-
-void UnresolvedUninitializedThisReferenceType::CheckInvariants() const {
+void RegType::CheckClassDescriptor() const {
+  CHECK(HasClass());
   CHECK(!descriptor_.empty()) << *this;
-  CHECK(!HasClass()) << *this;
+  std::string temp;
+  CHECK_EQ(descriptor_, klass_->GetDescriptor(&temp)) << *this;
 }
 
-void UnresolvedUninitializedReferenceType::CheckInvariants() const {
-  CHECK(!descriptor_.empty()) << *this;
-  CHECK(!HasClass()) << *this;
+UnresolvedSuperClassType::UnresolvedSuperClassType(uint16_t child_id,
+                                                   RegTypeCache* reg_type_cache,
+                                                   uint16_t cache_id)
+    REQUIRES_SHARED(Locks::mutator_lock_)
+    : UnresolvedType("", cache_id, Kind::kUnresolvedSuperClass),
+      unresolved_child_id_(child_id),
+      reg_type_cache_(reg_type_cache) {
+  CheckConstructorInvariants(this);
+  DCHECK_NE(unresolved_child_id_, 0U) << *this;
 }
 
 UnresolvedMergedReferenceType::UnresolvedMergedReferenceType(const RegType& resolved,
                                                              const BitVector& unresolved,
                                                              const RegTypeCache* reg_type_cache,
                                                              uint16_t cache_id)
-    : UnresolvedType(
-          reg_type_cache->GetNullHandle(), "", cache_id, Kind::kUnresolvedMergedReference),
+    : UnresolvedType("", cache_id, Kind::kUnresolvedMergedReference),
       reg_type_cache_(reg_type_cache),
       resolved_part_(resolved),
       unresolved_types_(unresolved, false, unresolved.GetAllocator()) {
   CheckConstructorInvariants(this);
+  if (kIsDebugBuild) {
+    CheckInvariants();
+  }
 }
+
 void UnresolvedMergedReferenceType::CheckInvariants() const {
   CHECK(reg_type_cache_ != nullptr);
 
@@ -808,18 +781,6 @@ bool UnresolvedMergedReferenceType::IsArrayTypes() const {
 bool UnresolvedMergedReferenceType::IsObjectArrayTypes() const {
   // Same as IsArrayTypes, as primitive arrays are always resolved.
   return IsArrayTypes();
-}
-
-void UnresolvedReferenceType::CheckInvariants() const {
-  CHECK(!descriptor_.empty()) << *this;
-  CHECK(!HasClass()) << *this;
-}
-
-void UnresolvedSuperClassType::CheckInvariants() const {
-  // Unresolved merged types: merged types should be defined.
-  CHECK(descriptor_.empty()) << *this;
-  CHECK(!HasClass()) << *this;
-  CHECK_NE(unresolved_child_id_, 0U) << *this;
 }
 
 std::ostream& operator<<(std::ostream& os, const RegType& rhs) {

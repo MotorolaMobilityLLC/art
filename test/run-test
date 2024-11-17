@@ -21,14 +21,16 @@ import default_run as default_run_module
 
 from argparse import ArgumentParser, BooleanOptionalAction
 from default_run import get_target_arch
+from fcntl import lockf, LOCK_EX, LOCK_NB
+from hashlib import sha1
 from importlib.machinery import SourceFileLoader
 from inspect import currentframe, getframeinfo, FrameInfo
 from pathlib import Path
+from pprint import pprint
 from shutil import copyfile, copytree
 from testrunner import env
 from typing import Optional, Dict, List
 from zipfile import ZipFile
-from hashlib import sha1
 
 COLOR = (os.environ.get("LUCI_CONTEXT") == None)  # Disable colors on LUCI.
 COLOR_BLUE = '\033[94m' if COLOR else ''
@@ -100,19 +102,33 @@ class RunTestContext:
   def default_run(self, args, **kwargs):
     default_run_module.default_run(self, args, **kwargs)
 
+# Make unique temporary directory guarded by lock file.
+# The name is deterministic (appending suffix as needed).
+def make_tmp_dir():
+  parent = Path(os.environ.get("TMPDIR", "/tmp")) / "art" / "test"
+  parent.mkdir(parents=True, exist_ok=True)
+  args = [a for a in sys.argv[1:] if not a.startswith("--create-runner")]
+  hash = sha1((" ".join(args)).encode()).hexdigest()
+  for i in range(100):
+    tmp_dir = parent / (f"{hash[:8]}" + (f"-{i}" if i > 0 else ""))
+    lock = tmp_dir.with_suffix(".lock")  # NB: Next to the directory, not inside.
+    lock_handle = open(lock, "w")
+    try:
+      lockf(lock_handle, LOCK_EX | LOCK_NB)
+      tmp_dir.mkdir(exist_ok=True)
+      return str(tmp_dir), lock, lock_handle
+    except BlockingIOError:
+      continue
+  assert False, "Failed to create test directory"
 
 # TODO: Replace with 'def main():' (which might change variables from globals to locals)
 if True:
   progdir = os.path.dirname(__file__)
   oldwd = os.getcwd()
   os.chdir(progdir)
-  test_dir = "test-{}".format(os.getpid())
-  TMPDIR = os.environ.get("TMPDIR")
   PYTHON3 = os.environ.get("PYTHON3")
-  if not TMPDIR:
-    tmp_dir = f"/tmp/art/{test_dir}"
-  else:
-    tmp_dir = f"{TMPDIR}/{test_dir}"
+  tmp_dir, tmp_dir_lock, tmp_dir_lock_handle = make_tmp_dir()
+  test_dir = Path(tmp_dir).name
   checker = f"{progdir}/../tools/checker/checker.py"
 
   ON_VM = env.ART_TEST_ON_VM
@@ -162,7 +178,10 @@ if True:
   export("PYTHON3",
          f"{ANDROID_BUILD_TOP}/prebuilts/build-tools/path/linux-x86/python3")
   export("RUN", f"{PYTHON3} {progdir}/etc/run-test-jar")
-  export("DEX_LOCATION", f"/data/run-test/{test_dir}")
+  if env.ART_TEST_RUN_FROM_SOONG:
+    export("DEX_LOCATION", f"/data/local/tmp/art/test/{test_dir}")
+  else:
+    export("DEX_LOCATION", f"/data/run-test/{test_dir}")
 
   # OUT_DIR defaults to out, and may be relative to ANDROID_BUILD_TOP.
   # Convert it to an absolute path, since we cd into the tmp_dir to run the tests.
@@ -674,7 +693,10 @@ if True:
       run_args += [
           f'--runtime-option "-Djava.library.path=/data/nativetest{suffix64}/art/{target_arch_name}"'
       ]
-      run_args += ['--boot "/system/framework/art_boot_images/boot.art"']
+      if env.ART_TEST_RUN_FROM_SOONG:
+        run_args += ['--boot "/data/local/tmp/art/apex/art_boot_images/boot.art"']
+      else:
+        run_args += ['--boot "/system/framework/art_boot_images/boot.art"']
     if relocate:
       run_args += ["--relocate"]
     else:
@@ -758,15 +780,22 @@ if True:
 
   # Extract run-test data from the zip file.
   def unzip():
-    shutil.rmtree(tmp_dir)
     if env.ART_TEST_RUN_FROM_SOONG:
       # We already have the unzipped copy of the data.
       assert target_mode
       src = Path(ANDROID_BUILD_TOP) / "out" / "zip" / "target" / TEST_NAME
       assert src.exists(), src
+      shutil.rmtree(tmp_dir)
       copytree(src, tmp_dir)
       os.chdir(tmp_dir)
       return
+
+    # Clear the contents, but keep the directory just in case it is open in terminal.
+    for file in Path(tmp_dir).iterdir():
+      if file.is_file() or file.is_symlink():
+        file.unlink()
+      else:
+        shutil.rmtree(file)
     os.makedirs(f"{tmp_dir}/.unzipped")
     os.chdir(tmp_dir)
     m = re.match("[0-9]*([0-9][0-9])-.*", TEST_NAME)
@@ -799,6 +828,7 @@ if True:
           run(f"{SSH_CMD} \"rm -rf {chroot_dex_location}\"")
         else:
           run(f"adb shell rm -rf {chroot_dex_location}")
+      os.remove(tmp_dir_lock)
       print(f"{TEST_NAME} files deleted from host" +
             (" and from target" if target_mode else ""))
     else:
@@ -858,10 +888,9 @@ if True:
 
   if args.create_runner:
     # TODO: Generate better unique names.
-    name = [a for a in sys.argv[1:] if not a.startswith("--create-runner")]
-    hash = sha1((" ".join(name)).encode()).digest().hex()[:8]
-    dst = args.create_runner / f"{TEST_NAME}-{hash}"
+    dst = args.create_runner / TEST_NAME / f"{Path(tmp_dir).name}.sh"
     assert not dst.exists(), dst
+    dst.parent.mkdir(parents=True, exist_ok=True)
     copyfile(runner, dst)
 
   # Script debugging feature - just export the runner script into a directory,

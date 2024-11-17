@@ -129,7 +129,7 @@ static constexpr uint32_t kAccHiddenapiBits = kAccPublicApi | kAccCorePlatformAp
 // which overlap are not valid when kAccIntrinsic is set.
 static constexpr uint32_t kAccIntrinsicBits = kAccHiddenapiBits |
     kAccSingleImplementation | kAccMustCountLocks | kAccCompileDontBother | kAccCopied |
-    kAccPreviouslyWarm | kAccMemorySharedMethod;
+    kAccPreviouslyWarm | kAccMemorySharedMethod | kAccDefault;
 
 // Valid (meaningful) bits for a field.
 static constexpr uint32_t kAccValidFieldFlags = kAccPublic | kAccPrivate | kAccProtected |

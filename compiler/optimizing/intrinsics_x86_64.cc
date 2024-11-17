@@ -37,6 +37,7 @@
 #include "mirror/string.h"
 #include "optimizing/code_generator.h"
 #include "optimizing/data_type.h"
+#include "optimizing/locations.h"
 #include "scoped_thread_state_change-inl.h"
 #include "thread-current-inl.h"
 #include "utils/x86_64/assembler_x86_64.h"
@@ -329,7 +330,7 @@ static void CreateFPToFPLocations(ArenaAllocator* allocator, HInvoke* invoke) {
   LocationSummary* locations =
       new (allocator) LocationSummary(invoke, LocationSummary::kNoCall, kIntrinsified);
   locations->SetInAt(0, Location::RequiresFpuRegister());
-  locations->SetOut(Location::RequiresFpuRegister());
+  locations->SetOut(Location::RequiresFpuRegister(), Location::kNoOutputOverlap);
 }
 
 void IntrinsicLocationsBuilderX86_64::VisitMathSqrt(HInvoke* invoke) {
@@ -4286,17 +4287,6 @@ void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke)
     __ cmpl(temp, Address(receiver, mirror::Object::ClassOffset()));
     // If method is defined in the receiver's class, execute it as it is.
     __ j(kEqual, &execute_target_method);
-
-    __ testl(Address(temp, mirror::Class::AccessFlagsOffset()), Immediate(kAccInterface));
-    // If `method`'s declaring class is not an interface, do virtual dispatch.
-    __ j(kZero, &do_virtual_dispatch);
-
-    __ movl(temp, Address(method, ArtMethod::AccessFlagsOffset()));
-    // These flags are uint32_t and their signed value doesn't fit into int32_t (see b/377275405).
-    __ andl(temp, Immediate(bit_cast<int32_t, uint32_t>(kAccIntrinsic | kAccCopied)));
-    __ cmpl(temp, Immediate(kAccCopied));
-    // If method is defined in an interface and is not copied it should be interface dispatched.
-    __ j(kNotEqual, slow_path->GetEntryLabel());
 
     __ Bind(&do_virtual_dispatch);
     // MethodIndex is uint16_t.

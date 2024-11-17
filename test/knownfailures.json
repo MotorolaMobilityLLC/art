@@ -1,19 +1,13 @@
 [
     {
-        "tests": "153-reference-stress",
-        "description": ["Disable 153-reference-stress temporarily until a fix",
+        "tests": "597-deopt-new-string",
+        "description": ["Disable 597-deopt-new-string temporarily until a fix",
                         "arrives."],
-        "bug": "http://b/33389022"
+        "bug": "http://b/378026679"
     },
     {
         "tests": "626-checker-arm64-scratch-register",
         "description": ["Disable 626-checker until we assses whether to keep it"]
-    },
-    {
-        "tests": "304-method-tracing",
-        "description": ["Disable 304-method-tracing temporarily until a fix",
-                        "arrives."],
-        "bug": "http://b/203253172"
     },
     {
         "tests": "132-daemon-locks-shutdown",
@@ -1298,6 +1292,11 @@
         "variant": "gcstress",
         "bug": "b/68792448",
         "description": ["Timing margins are too tight for gcstress"]
+    },
+    {
+        "tests": ["153-reference-stress"],
+        "variant": "gcstress",
+        "description": ["Timing out for gcstress"]
     },
     {
         "tests": ["021-string2"],

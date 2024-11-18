@@ -2887,21 +2887,22 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
           break;
         }
 
-        /* must be in same class or in superclass */
-        // const RegType& this_super_klass = this_type.GetSuperClass(&reg_types_);
-        // TODO: re-enable constructor type verification
-        // if (this_super_klass.IsConflict()) {
-          // Unknown super class, fail so we re-check at runtime.
-          // Fail(VERIFY_ERROR_BAD_CLASS_SOFT) << "super class unknown for '" << this_type << "'";
-          // break;
-        // }
-
         /* arg must be an uninitialized reference */
         if (!this_type.IsUninitializedTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "Expected initialization on uninitialized reference "
               << this_type;
           break;
         }
+
+        // Note: According to JLS, constructors are never inherited. Therefore the target
+        // constructor should be defined exactly by the `this_type`, or by the direct
+        // superclass in the case of a constructor calling the superclass constructor.
+        // However, ART had this check commented out for a very long time and this has
+        // allowed bytecode optimizers such as R8 to inline constructors, often calling
+        // `j.l.Object.<init>` directly without any intermediate constructor. Since this
+        // optimization allows eliminating constructor methods, this often results in a
+        // significant dex size reduction. Therefore it is undesirable to reinstate this
+        // check and ART deliberately remains permissive here and diverges from the RI.
 
         /*
          * Replace the uninitialized reference with an initialized one. We need to do this for all

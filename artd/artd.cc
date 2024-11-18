@@ -1500,6 +1500,7 @@ ScopedAStatus Artd::checkPreRebootSystemRequirements(const std::string& in_chroo
 Result<void> Artd::Start() {
   OR_RETURN(SetLogVerbosity());
   MemMap::Init();
+  Runtime::AllowPageSizeAccess();
 
   ScopedAStatus status = ScopedAStatus::fromStatus(AServiceManager_registerLazyService(
       this->asBinder().get(), options_.is_pre_reboot ? kPreRebootServiceName : kServiceName));

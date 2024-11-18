@@ -51,6 +51,7 @@
 #include "oat.h"
 #include "oat_file_assistant_context.h"
 #include "runtime.h"
+#include "runtime_globals.h"
 #include "scoped_thread_state_change-inl.h"
 #include "vdex_file.h"
 #include "zlib.h"
@@ -1106,6 +1107,12 @@ const OatFile* OatFileAssistant::OatFileInfo::GetFile() {
       executable = LocationIsTrusted(filename_, /*trust_art_apex_data_files=*/true);
     }
     VLOG(oat) << "Loading " << filename_ << " with executable: " << executable;
+
+    if (gPageSize != kMinPageSize) {
+      LOG(WARNING) << "Loading odex files is only supported on devices with 4K page size";
+      return nullptr;
+    }
+
     if (use_fd_) {
       if (oat_fd_ >= 0 && vdex_fd_ >= 0) {
         ArrayRef<const std::string> dex_locations(&oat_file_assistant_->dex_location_,
@@ -1143,6 +1150,13 @@ bool OatFileAssistant::OatFileInfo::ShouldRecompileForFilter(CompilerFilter::Fil
                                                              const DexOptTrigger dexopt_trigger) {
   const OatFile* file = GetFile();
   DCHECK(file != nullptr);
+
+  if (CompilerFilter::IsBetter(target, CompilerFilter::kVerify) && gPageSize != kMinPageSize) {
+    // Prevent infinite recompilations during background dexopt on 16K page devices.
+    VLOG(oat) << "Adjusting target filter to 'verify' because loading odex files is only supported "
+                 "on devices with 4K page size";
+    target = CompilerFilter::kVerify;
+  }
 
   CompilerFilter::Filter current = file->GetCompilerFilter();
   if (dexopt_trigger.targetFilterIsBetter && CompilerFilter::IsBetter(target, current)) {

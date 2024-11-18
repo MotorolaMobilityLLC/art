@@ -44,8 +44,8 @@ std::ostream& operator<<(std::ostream& stream, StubType stub_type);
 class EXPORT PACKED(4) OatHeader {
  public:
   static constexpr std::array<uint8_t, 4> kOatMagic { { 'o', 'a', 't', '\n' } };
-  // Last oat version changed reason: Store resolved MethodType-s in .bss.
-  static constexpr std::array<uint8_t, 4> kOatVersion{{'2', '4', '9', '\0'}};
+  // Last oat version changed reason: Force 4K ELF alignment on art/odex files.
+  static constexpr std::array<uint8_t, 4> kOatVersion{{'2', '5', '2', '\0'}};
 
   static constexpr const char* kDex2OatCmdLineKey = "dex2oat-cmdline";
   static constexpr const char* kDebuggableKey = "debuggable";

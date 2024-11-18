@@ -1872,6 +1872,11 @@ static bool EnsureDirectoryExists(const std::string& directory, std::string* err
 }
 
 bool RuntimeImage::WriteImageToDisk(std::string* error_msg) {
+  if (gPageSize != kMinPageSize) {
+    *error_msg = "Writing runtime image is only supported on devices with 4K page size";
+    return false;
+  }
+
   gc::Heap* heap = Runtime::Current()->GetHeap();
   if (!heap->HasBootImageSpace()) {
     *error_msg = "Cannot generate an app image without a boot image";

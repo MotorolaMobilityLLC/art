@@ -107,8 +107,6 @@ class RegTypeCache {
                                      const RegType& right,
                                      MethodVerifier* verifier)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  const RegType& FromUnresolvedSuperClass(const RegType& child)
-      REQUIRES_SHARED(Locks::mutator_lock_);
 
   const RegType& FromTypeIndex(dex::TypeIndex type_index) REQUIRES_SHARED(Locks::mutator_lock_);
 

@@ -413,7 +413,6 @@ art_cc_test {
     // For backed-by API coverage.
     test_suites: [
         "cts",
-        "mcts-art",
     ],
 }
 

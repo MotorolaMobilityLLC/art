@@ -2666,8 +2666,10 @@ void InstructionCodeGeneratorRISCV64::GenerateMethodEntryExitHook(HInstruction* 
   __ Addi(tmp, tmp, -dchecked_integral_cast<int32_t>(kNumEntriesForWallClock * sizeof(void*)));
   __ Blt(tmp, tmp2, slow_path->GetEntryLabel());
 
-  // Update the index in the `Thread`.
-  __ Sd(tmp, TR, trace_buffer_curr_entry_offset);
+  // Update the index in the `Thread`. Temporarily free `tmp2` to be used by `Stored()`.
+  temps.FreeXRegister(tmp2);
+  __ Stored(tmp, TR, trace_buffer_curr_entry_offset);
+  tmp2 = temps.AllocateXRegister();
 
   // Record method pointer and trace action.
   __ Ld(tmp2, SP, 0);

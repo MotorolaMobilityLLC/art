@@ -1299,6 +1299,11 @@
         "description": ["Timing out for gcstress"]
     },
     {
+        "tests": ["153-reference-stress"],
+        "env_vars": {"SANITIZE_HOST": "address"},
+        "description": ["Timing out for ASAN."]
+    },
+    {
         "tests": ["021-string2"],
         "variant": "jit & debuggable",
         "bug": "b/109791792",

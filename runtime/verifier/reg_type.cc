@@ -241,18 +241,6 @@ Primitive::Type RegType::GetPrimitiveType() const {
   }
 }
 
-bool UninitializedType::IsUninitializedTypes() const {
-  return true;
-}
-
-bool UninitializedType::IsNonZeroReferenceTypes() const {
-  return true;
-}
-
-bool UnresolvedType::IsNonZeroReferenceTypes() const {
-  return true;
-}
-
 const RegType& RegType::GetSuperClass(RegTypeCache* cache) const {
   if (!IsUnresolvedTypes()) {
     ObjPtr<mirror::Class> super_klass = GetClass()->GetSuperClass();

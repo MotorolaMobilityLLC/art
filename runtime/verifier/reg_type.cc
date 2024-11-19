@@ -314,7 +314,7 @@ bool RegType::IsInstantiableTypes() const {
   return IsUnresolvedTypes() || (IsNonZeroReferenceTypes() && GetClass()->IsInstantiable());
 }
 
-static const RegType& SelectNonConstant(const RegType& a, const RegType& b) {
+static constexpr const RegType& SelectNonConstant(const RegType& a, const RegType& b) {
   return a.IsConstantTypes() ? b : a;
 }
 
@@ -461,30 +461,30 @@ ObjPtr<mirror::Class> InterfaceClassJoin(ObjPtr<mirror::Class> s, ObjPtr<mirror:
   return obj_class;
 }
 
-}  // namespace
+class RegTypeMergeImpl final : public RegType {
+ public:
+  explicit constexpr RegTypeMergeImpl(RegType::Kind kind)
+      : RegType(Handle<mirror::Class>(), "", /* unused cache id */ 0, kind) {}
 
-const RegType& RegType::Merge(const RegType& incoming_type,
-                              RegTypeCache* reg_types,
-                              MethodVerifier* verifier) const {
-  DCHECK(!Equals(incoming_type));  // Trivial equality handled by caller
-  // Perform pointer equality tests for undefined and conflict to avoid virtual method dispatch.
-  const UndefinedType& undefined = reg_types->Undefined();
-  const ConflictType& conflict = reg_types->Conflict();
-  DCHECK_EQ(this == &undefined, IsUndefined());
-  DCHECK_EQ(&incoming_type == &undefined, incoming_type.IsUndefined());
-  DCHECK_EQ(this == &conflict, IsConflict());
-  DCHECK_EQ(&incoming_type == &conflict, incoming_type.IsConflict());
-  if (this == &undefined || &incoming_type == &undefined) {
+  std::string Dump() const override { UNREACHABLE(); }
+  AssignmentType GetAssignmentTypeImpl() const override { UNREACHABLE(); }
+
+  constexpr RegType::Kind MergeKind(RegType::Kind incoming_kind) const;
+};
+
+constexpr RegType::Kind RegTypeMergeImpl::MergeKind(RegType::Kind incoming_kind) const {
+  const RegTypeMergeImpl incoming_type(incoming_kind);
+  if (IsUndefined() || incoming_type.IsUndefined()) {
     // There is a difference between undefined and conflict. Conflicts may be copied around, but
     // not used. Undefined registers must not be copied. So any merge with undefined should return
     // undefined.
-    return undefined;
-  } else if (this == &conflict || &incoming_type == &conflict) {
-    return conflict;  // (Conflict MERGE *) or (* MERGE Conflict) => Conflict
+    return Kind::kUndefined;
+  } else if (IsConflict() || incoming_type.IsConflict()) {
+    return Kind::kConflict;  // (Conflict MERGE *) or (* MERGE Conflict) => Conflict
   } else if (IsConstant() && incoming_type.IsConstant()) {
     // Kind enumerator values within the non-negative and can-be-negative constant groups are
     // ordered by increasing range, so the type with the higher kind can be used within these
-    // groups as the merged type and merging across the groups is also quite simple.
+    // groups as the merged kind and merging across the groups is also quite simple.
     static_assert(Kind::kZero < Kind::kBooleanConstant);
     static_assert(Kind::kBooleanConstant < Kind::kPositiveByteConstant);
     static_assert(Kind::kPositiveByteConstant < Kind::kPositiveShortConstant);
@@ -492,7 +492,7 @@ const RegType& RegType::Merge(const RegType& incoming_type,
     static_assert(Kind::kByteConstant < Kind::kShortConstant);
     static_assert(Kind::kShortConstant < Kind::kIntegerConstant);
 
-    auto is_non_negative = [](const RegType& reg_type) {
+    auto is_non_negative = [](const RegType& reg_type) constexpr {
       bool result = reg_type.IsZero() ||
                     reg_type.IsBooleanConstant() ||
                     reg_type.IsPositiveByteConstant() ||
@@ -506,33 +506,33 @@ const RegType& RegType::Merge(const RegType& incoming_type,
 
     bool is_non_negative_this = is_non_negative(*this);
     if (is_non_negative_this == is_non_negative(incoming_type)) {
-      return GetKind() >= incoming_type.GetKind() ? *this : incoming_type;
+      return GetKind() >= incoming_type.GetKind() ? GetKind() : incoming_type.GetKind();
     }
     Kind non_negative_kind = is_non_negative_this ? GetKind() : incoming_type.GetKind();
     Kind can_be_negative_kind = is_non_negative_this ? incoming_type.GetKind() : GetKind();
     if (can_be_negative_kind == Kind::kByteConstant &&
         non_negative_kind <= Kind::kPositiveByteConstant) {
-      return reg_types->ByteConstant();
+      return Kind::kByteConstant;
     } else if (can_be_negative_kind <= Kind::kShortConstant &&
                non_negative_kind <= Kind::kPositiveShortConstant) {
-      return reg_types->ShortConstant();
+      return Kind::kShortConstant;
     } else {
-      return reg_types->IntegerConstant();
+      return Kind::kIntegerConstant;
     }
   } else if (IsIntegralTypes() && incoming_type.IsIntegralTypes()) {
     if (IsBooleanTypes() && incoming_type.IsBooleanTypes()) {
-      return reg_types->Boolean();  // boolean MERGE boolean => boolean
+      return Kind::kBoolean;  // boolean MERGE boolean => boolean
     }
     if (IsByteTypes() && incoming_type.IsByteTypes()) {
-      return reg_types->Byte();  // byte MERGE byte => byte
+      return Kind::kByte;  // byte MERGE byte => byte
     }
     if (IsShortTypes() && incoming_type.IsShortTypes()) {
-      return reg_types->Short();  // short MERGE short => short
+      return Kind::kShort;  // short MERGE short => short
     }
     if (IsCharTypes() && incoming_type.IsCharTypes()) {
-      return reg_types->Char();  // char MERGE char => char
+      return Kind::kChar;  // char MERGE char => char
     }
-    return reg_types->Integer();  // int MERGE * => int
+    return Kind::kInteger;  // int MERGE * => int
   } else if ((IsFloatTypes() && incoming_type.IsFloatTypes()) ||
              (IsLongTypes() && incoming_type.IsLongTypes()) ||
              (IsLongHighTypes() && incoming_type.IsLongHighTypes()) ||
@@ -541,14 +541,58 @@ const RegType& RegType::Merge(const RegType& incoming_type,
     // check constant case was handled prior to entry
     DCHECK_IMPLIES(IsConstant(), !incoming_type.IsConstant());
     // float/long/double MERGE float/long/double_constant => float/long/double
-    return SelectNonConstant(*this, incoming_type);
+    return SelectNonConstant(*this, incoming_type).GetKind();
   } else if (IsReferenceTypes() && incoming_type.IsReferenceTypes()) {
     if (IsUninitializedTypes() || incoming_type.IsUninitializedTypes()) {
       // Something that is uninitialized hasn't had its constructor called. Unitialized types are
       // special. They may only ever be merged with themselves (must be taken care of by the
       // caller of Merge(), see the DCHECK on entry). So mark any other merge as conflicting here.
-      return conflict;
-    } else if (IsZeroOrNull() || incoming_type.IsZeroOrNull()) {
+      return Kind::kConflict;
+    } else {
+      // Use `UnresolvedMergedReference` to tell the caller to process a reference merge.
+      // This does not mean that the actual merged kind must be `UnresolvedMergedReference`.
+      return Kind::kUnresolvedMergedReference;
+    }
+  } else {
+    return Kind::kConflict;  // Unexpected types => Conflict
+  }
+}
+
+
+
+}  // namespace
+
+const RegType& RegType::Merge(const RegType& incoming_type,
+                              RegTypeCache* reg_types,
+                              MethodVerifier* verifier) const {
+  DCHECK(!Equals(incoming_type));  // Trivial equality handled by caller
+
+#define ADD_ONE_FOR_CONCRETE_REG_TYPE(name) + 1
+  constexpr size_t kNumKinds = 0 FOR_EACH_CONCRETE_REG_TYPE(ADD_ONE_FOR_CONCRETE_REG_TYPE);
+#undef ADD_ONE_FOR_CONCRETE_REG_TYPE
+  static constexpr std::array<std::array<RegType::Kind, kNumKinds>, kNumKinds> kMergeTable =
+      []() constexpr {
+    std::array<std::array<RegType::Kind, kNumKinds>, kNumKinds> result;
+    for (size_t lhs = 0u; lhs != kNumKinds; ++lhs) {
+      for (size_t rhs = 0u; rhs != kNumKinds; ++rhs) {
+        RegTypeMergeImpl lhs_impl(enum_cast<RegType::Kind>(lhs));
+        result[lhs][rhs] = lhs_impl.MergeKind(enum_cast<RegType::Kind>(rhs));
+      }
+    }
+    return result;
+  }();
+
+  Kind merge_kind = kMergeTable[GetKind()][incoming_type.GetKind()];
+  if (merge_kind != Kind::kUnresolvedMergedReference) {
+    return RegTypeFromKind(reg_types, merge_kind);
+  } else {
+    // The `UnresolvedMergedReference` tells us to do non-trivial reference merging which
+    // requires more information than the two kinds used for the lookup in `kMergeTable`.
+    DCHECK(IsReferenceTypes()) << *this;
+    DCHECK(incoming_type.IsReferenceTypes()) << incoming_type;
+    DCHECK(!IsUninitializedTypes()) << *this;
+    DCHECK(!incoming_type.IsUninitializedTypes());
+    if (IsZeroOrNull() || incoming_type.IsZeroOrNull()) {
       return SelectNonConstant2(*this, incoming_type);  // 0 MERGE ref => ref
     } else if (IsJavaLangObject() || incoming_type.IsJavaLangObject()) {
       return reg_types->JavaLangObject();  // Object MERGE ref => Object
@@ -610,8 +654,6 @@ const RegType& RegType::Merge(const RegType& incoming_type,
         return reg_types->FromClass(join_class);
       }
     }
-  } else {
-    return conflict;  // Unexpected types => Conflict
   }
 }
 

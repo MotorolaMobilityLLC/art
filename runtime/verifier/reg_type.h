@@ -48,34 +48,41 @@ namespace verifier {
 class MethodVerifier;
 class RegTypeCache;
 
-#define FOR_EACH_CONCRETE_REG_TYPE(V)     \
-  V(Undefined)                            \
-  V(Conflict)                             \
-  V(Boolean)                              \
-  V(Byte)                                 \
-  V(Char)                                 \
-  V(Short)                                \
-  V(Integer)                              \
-  V(LongLo)                               \
-  V(LongHi)                               \
-  V(Float)                                \
-  V(DoubleLo)                             \
-  V(DoubleHi)                             \
-  V(UnresolvedReference)                  \
-  V(UninitializedReference)               \
-  V(UninitializedThisReference)           \
-  V(UnresolvedUninitializedReference)     \
-  V(UnresolvedUninitializedThisReference) \
-  V(UnresolvedMergedReference)            \
-  V(UnresolvedSuperClass)                 \
-  V(Reference)                            \
-  V(PreciseConstant)                      \
-  V(PreciseConstantLo)                    \
-  V(PreciseConstantHi)                    \
-  V(ImpreciseConstantLo)                  \
-  V(ImpreciseConstantHi)                  \
-  V(ImpreciseConstant)                    \
-  V(Null)                                 \
+#define FOR_EACH_CONCRETE_REG_TYPE(V)                                         \
+  V(Undefined)                                                                \
+  V(Conflict)                                                                 \
+  V(Boolean)                                                                  \
+  V(Byte)                                                                     \
+  V(Char)                                                                     \
+  V(Short)                                                                    \
+  V(Integer)                                                                  \
+  V(LongLo)                                                                   \
+  V(LongHi)                                                                   \
+  V(Float)                                                                    \
+  V(DoubleLo)                                                                 \
+  V(DoubleHi)                                                                 \
+  /* Category 1 groups of constant types are ordered by increasing range */   \
+  /* within the non-negative and can-be-negative groups, so that merging */   \
+  /* can simply use the type with the higher kind value. */                   \
+  V(Zero)                                                                     \
+  V(BooleanConstant)                                                          \
+  V(PositiveByteConstant)                                                     \
+  V(PositiveShortConstant)                                                    \
+  V(CharConstant)                                                             \
+  V(ByteConstant)                                                             \
+  V(ShortConstant)                                                            \
+  V(IntegerConstant)                                                          \
+  V(ConstantLo)                                                               \
+  V(ConstantHi)                                                               \
+  V(Null)                                                                     \
+  V(UnresolvedReference)                                                      \
+  V(UninitializedReference)                                                   \
+  V(UninitializedThisReference)                                               \
+  V(UnresolvedUninitializedReference)                                         \
+  V(UnresolvedUninitializedThisReference)                                     \
+  V(UnresolvedMergedReference)                                                \
+  V(UnresolvedSuperClass)                                                     \
+  V(Reference)                                                                \
 
 #define FORWARD_DECLARE_REG_TYPE(name) class name##Type;
 FOR_EACH_CONCRETE_REG_TYPE(FORWARD_DECLARE_REG_TYPE)
@@ -100,39 +107,30 @@ class RegType {
   FOR_EACH_CONCRETE_REG_TYPE(DEFINE_IS_CONCRETE_REG_TYPE)
 #undef DEFINE_IS_CONCRETE_REG_TYPE
 
-  virtual bool IsConstantTypes() const { return false; }
-  bool IsConstant() const {
-    return IsImpreciseConstant() || IsPreciseConstant();
+  constexpr bool IsConstantTypes() const {
+    return IsConstant() || IsConstantLo() || IsConstantHi() || IsNull();
   }
-  bool IsConstantLo() const {
-    return IsImpreciseConstantLo() || IsPreciseConstantLo();
+  constexpr bool IsConstant() const {
+    return IsZero() ||
+           IsBooleanConstant() ||
+           IsPositiveByteConstant() ||
+           IsPositiveShortConstant() ||
+           IsCharConstant() ||
+           IsByteConstant() ||
+           IsShortConstant() ||
+           IsIntegerConstant();
   }
-  bool IsPrecise() const {
-    return IsPreciseConstantLo() || IsPreciseConstant() ||
-           IsPreciseConstantHi();
-  }
-  bool IsLongConstant() const { return IsConstantLo(); }
-  bool IsConstantHi() const {
-    return (IsPreciseConstantHi() || IsImpreciseConstantHi());
-  }
-  bool IsLongConstantHigh() const { return IsConstantHi(); }
+
   virtual bool IsUninitializedTypes() const { return false; }
   virtual bool IsUnresolvedTypes() const { return false; }
 
-  bool IsLowHalf() const {
-    return (IsLongLo() || IsDoubleLo() || IsPreciseConstantLo() || IsImpreciseConstantLo());
-  }
-  bool IsHighHalf() const {
-    return (IsLongHi() || IsDoubleHi() || IsPreciseConstantHi() || IsImpreciseConstantHi());
-  }
+  bool IsLowHalf() const { return (IsLongLo() || IsDoubleLo() || IsConstantLo()); }
+  bool IsHighHalf() const { return (IsLongHi() || IsDoubleHi() || IsConstantHi()); }
   bool IsLongOrDoubleTypes() const { return IsLowHalf(); }
   // Check this is the low half, and that type_h is its matching high-half.
   inline bool CheckWidePair(const RegType& type_h) const {
     if (IsLowHalf()) {
-      return ((IsImpreciseConstantLo() && type_h.IsPreciseConstantHi()) ||
-              (IsImpreciseConstantLo() && type_h.IsImpreciseConstantHi()) ||
-              (IsPreciseConstantLo() && type_h.IsPreciseConstantHi()) ||
-              (IsPreciseConstantLo() && type_h.IsImpreciseConstantHi()) ||
+      return ((IsConstantLo() && type_h.IsConstantHi()) ||
               (IsDoubleLo() && type_h.IsDoubleHi()) ||
               (IsLongLo() && type_h.IsLongHi()));
     }
@@ -142,12 +140,6 @@ class RegType {
   const RegType& HighHalf(RegTypeCache* cache) const
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  bool IsConstantBoolean() const;
-  virtual bool IsConstantChar() const { return false; }
-  virtual bool IsConstantByte() const { return false; }
-  virtual bool IsConstantShort() const { return false; }
-  virtual bool IsOne() const { return false; }
-  virtual bool IsZero() const { return false; }
   bool IsReferenceTypes() const {
     return IsNonZeroReferenceTypes() || IsZero() || IsNull();
   }
@@ -156,39 +148,37 @@ class RegType {
   }
   virtual bool IsNonZeroReferenceTypes() const { return false; }
   bool IsCategory1Types() const {
-    return IsChar() || IsInteger() || IsFloat() || IsConstant() || IsByte() ||
-           IsShort() || IsBoolean();
+    return IsIntegralTypes() || IsFloat();
   }
   bool IsCategory2Types() const {
     return IsLowHalf();  // Don't expect explicit testing of high halves
   }
-  bool IsBooleanTypes() const { return IsBoolean() || IsConstantBoolean(); }
-  bool IsByteTypes() const {
-    return IsConstantByte() || IsByte() || IsBoolean();
+  constexpr bool IsBooleanTypes() const { return IsBoolean() || IsZero() || IsBooleanConstant(); }
+  constexpr bool IsByteTypes() const {
+    return IsByte() || IsPositiveByteConstant() || IsByteConstant() || IsBooleanTypes();
   }
-  bool IsShortTypes() const {
-    return IsShort() || IsByte() || IsBoolean() || IsConstantShort();
+  constexpr bool IsShortTypes() const {
+    return IsShort() || IsPositiveShortConstant() || IsShortConstant() || IsByteTypes();
   }
-  bool IsCharTypes() const {
-    return IsChar() || IsBooleanTypes() || IsConstantChar();
+  constexpr bool IsCharTypes() const {
+    return IsChar() ||
+           IsCharConstant() ||
+           IsPositiveShortConstant() ||
+           IsPositiveByteConstant() ||
+           IsBooleanTypes();
   }
-  bool IsIntegralTypes() const {
-    return IsInteger() || IsConstant() || IsByte() || IsShort() || IsChar() ||
-           IsBoolean();
+  constexpr bool IsIntegralTypes() const {
+    return IsInteger() || IsIntegerConstant() || IsChar() || IsCharConstant() || IsShortTypes();
   }
   // Give the constant value encoded, but this shouldn't be called in the
   // general case.
   bool IsArrayIndexTypes() const { return IsIntegralTypes(); }
   // Float type may be derived from any constant type
   bool IsFloatTypes() const { return IsFloat() || IsConstant(); }
-  bool IsLongTypes() const { return IsLongLo() || IsLongConstant(); }
-  bool IsLongHighTypes() const {
-    return (IsLongHi() || IsPreciseConstantHi() || IsImpreciseConstantHi());
-  }
-  bool IsDoubleTypes() const { return IsDoubleLo() || IsLongConstant(); }
-  bool IsDoubleHighTypes() const {
-    return (IsDoubleHi() || IsPreciseConstantHi() || IsImpreciseConstantHi());
-  }
+  bool IsLongTypes() const { return IsLongLo() || IsConstantLo(); }
+  bool IsLongHighTypes() const { return (IsLongHi() || IsConstantHi()); }
+  bool IsDoubleTypes() const { return IsDoubleLo() || IsConstantLo(); }
+  bool IsDoubleHighTypes() const { return (IsDoubleHi() || IsConstantHi()); }
   bool HasClass() const {
     bool result = klass_.GetReference() != nullptr;
     DCHECK_IMPLIES(result, !klass_.IsNull());
@@ -547,167 +537,93 @@ class DoubleHiType final : public Cat2Type {
 
 class ConstantType : public RegType {
  public:
-  ConstantType(uint32_t constant, uint16_t cache_id, Kind kind)
+  constexpr ConstantType(uint16_t cache_id, Kind kind)
       REQUIRES_SHARED(Locks::mutator_lock_)
-      : RegType(Handle<mirror::Class>(), "", cache_id, kind), constant_(constant) {
-  }
-
-
-  // If this is a 32-bit constant, what is the value? This value may be
-  // imprecise in which case
-  // the value represents part of the integer range of values that may be held
-  // in the register.
-  int32_t ConstantValue() const {
-    DCHECK(IsConstantTypes());
-    return constant_;
-  }
-
-  int32_t ConstantValueLo() const {
-    DCHECK(IsConstantLo());
-    return constant_;
-  }
-
-  int32_t ConstantValueHi() const {
-    if (IsConstantHi() || IsPreciseConstantHi() || IsImpreciseConstantHi()) {
-      return constant_;
-    } else {
-      DCHECK(false);
-      return 0;
-    }
-  }
-
-  bool IsZero() const override {
-    return IsPreciseConstant() && ConstantValue() == 0;
-  }
-  bool IsOne() const override {
-    return IsPreciseConstant() && ConstantValue() == 1;
-  }
-
-  bool IsConstantChar() const override {
-    return IsConstant() && ConstantValue() >= 0 &&
-           ConstantValue() <= std::numeric_limits<uint16_t>::max();
-  }
-  bool IsConstantByte() const override {
-    return IsConstant() &&
-           ConstantValue() >= std::numeric_limits<int8_t>::min() &&
-           ConstantValue() <= std::numeric_limits<int8_t>::max();
-  }
-  bool IsConstantShort() const override {
-    return IsConstant() &&
-           ConstantValue() >= std::numeric_limits<int16_t>::min() &&
-           ConstantValue() <= std::numeric_limits<int16_t>::max();
-  }
-  bool IsConstantTypes() const override { return true; }
-
-  AssignmentType GetAssignmentTypeImpl() const override {
-    return AssignmentType::kNotAssignable;
-  }
-
- private:
-  const uint32_t constant_;
-};
-
-class PreciseConstantType final : public ConstantType {
- public:
-  PreciseConstantType(uint32_t constant, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : ConstantType(constant, cache_id, Kind::kPreciseConstant) {
-    CheckConstructorInvariants(this);
-  }
-
-  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+      : RegType(Handle<mirror::Class>(), "", cache_id, kind) {}
 
   AssignmentType GetAssignmentTypeImpl() const override {
     return AssignmentType::kNotAssignable;
   }
 };
 
-class PreciseConstantLoType final : public ConstantType {
+// Constant 0, or merged constants 0. Can be interpreted as `null`.
+class ZeroType final : public ConstantType {
  public:
-  PreciseConstantLoType(uint32_t constant, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : ConstantType(constant, cache_id, Kind::kPreciseConstantLo) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr explicit ZeroType(uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_);
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
-  AssignmentType GetAssignmentTypeImpl() const override {
-    return AssignmentType::kNotAssignable;
-  }
 };
 
-class PreciseConstantHiType final : public ConstantType {
+// Constant 1, or merged constants 0 - 1.
+class BooleanConstantType final : public ConstantType {
  public:
-  PreciseConstantHiType(uint32_t constant, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : ConstantType(constant, cache_id, Kind::kPreciseConstantHi) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr explicit BooleanConstantType(uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_);
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
-  AssignmentType GetAssignmentTypeImpl() const override {
-    return AssignmentType::kNotAssignable;
-  }
 };
 
-class ImpreciseConstantType final : public ConstantType {
+// Constants 2 - 0x7f, or merged constants 0 - 0x7f.
+class PositiveByteConstantType final : public ConstantType {
  public:
-  ImpreciseConstantType(uint32_t constant, uint16_t cache_id)
-       REQUIRES_SHARED(Locks::mutator_lock_)
-       : ConstantType(constant, cache_id, Kind::kImpreciseConstant) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr explicit PositiveByteConstantType(uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
-  AssignmentType GetAssignmentTypeImpl() const override {
-    return AssignmentType::kNotAssignable;
-  }
 };
 
-class ImpreciseConstantLoType final : public ConstantType {
+// Constants 0x80 - 0x7fff, or merged constants 0 - 0x7fff.
+class PositiveShortConstantType final : public ConstantType {
  public:
-  ImpreciseConstantLoType(uint32_t constant, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : ConstantType(constant, cache_id, Kind::kImpreciseConstantLo) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr explicit PositiveShortConstantType(uint16_t cache_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
-  AssignmentType GetAssignmentTypeImpl() const override {
-    return AssignmentType::kNotAssignable;
-  }
 };
 
-class ImpreciseConstantHiType final : public ConstantType {
+// Constants 0x8000 - 0xffff, or merged constants 0 - 0xffff.
+class CharConstantType final : public ConstantType {
  public:
-  ImpreciseConstantHiType(uint32_t constant, uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : ConstantType(constant, cache_id, Kind::kImpreciseConstantHi) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr explicit CharConstantType(uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_);
   std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+};
 
-  AssignmentType GetAssignmentTypeImpl() const override {
-    return AssignmentType::kNotAssignable;
-  }
+// Constants -0x80 - -1, or merged constants -x80 - 0x7f.
+class ByteConstantType final : public ConstantType {
+ public:
+  constexpr explicit ByteConstantType(uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_);
+  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+};
+
+// Constants -0x8000 - -0x81, or merged constants -x8000 - 0x7fff.
+class ShortConstantType final : public ConstantType {
+ public:
+  constexpr explicit ShortConstantType(uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_);
+  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+};
+
+// Constants -0x80000000 - -0x8001, or merged constants -0x80000000 - 0x7fffffff.
+class IntegerConstantType final : public ConstantType {
+ public:
+  constexpr explicit IntegerConstantType(uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_);
+  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+};
+
+class ConstantLoType final : public ConstantType {
+ public:
+  constexpr explicit ConstantLoType(uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_);
+  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
+};
+
+class ConstantHiType final : public ConstantType {
+ public:
+  constexpr explicit ConstantHiType(uint16_t cache_id) REQUIRES_SHARED(Locks::mutator_lock_);
+  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
 // Special "null" type that captures the semantics of null / bottom.
-class NullType final : public RegType {
+class NullType final : public ConstantType {
  public:
   std::string Dump() const override {
     return "null";
   }
 
-  AssignmentType GetAssignmentTypeImpl() const override {
-    return AssignmentType::kReference;
-  }
-
-  bool IsConstantTypes() const override {
-    return true;
-  }
-
-  constexpr NullType(const std::string_view& descriptor, uint16_t cache_id)
+  constexpr NullType(uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
@@ -1084,8 +1000,58 @@ constexpr DoubleHiType::DoubleHiType(const std::string_view& descriptor, uint16_
   CheckConstructorInvariants(this);
 }
 
-constexpr NullType::NullType(const std::string_view& descriptor, uint16_t cache_id)
-    : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kNull) {
+constexpr ZeroType::ZeroType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kZero) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr BooleanConstantType::BooleanConstantType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kBooleanConstant) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr PositiveByteConstantType::PositiveByteConstantType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kPositiveByteConstant) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr PositiveShortConstantType::PositiveShortConstantType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kPositiveShortConstant) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr CharConstantType::CharConstantType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kCharConstant) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr ByteConstantType::ByteConstantType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kByteConstant) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr ShortConstantType::ShortConstantType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kShortConstant) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr IntegerConstantType::IntegerConstantType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kIntegerConstant) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr ConstantLoType::ConstantLoType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kConstantLo) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr ConstantHiType::ConstantHiType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kConstantHi) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr NullType::NullType(uint16_t cache_id)
+    : ConstantType(cache_id, Kind::kNull) {
   CheckConstructorInvariants(this);
 }
 

@@ -26,6 +26,7 @@
 #include "dex/test_dex_file_builder.h"
 #include "reg_type-inl.h"
 #include "reg_type_cache-inl.h"
+#include "reg_type_test_utils.h"
 #include "scoped_thread_state_change-inl.h"
 #include "thread-current-inl.h"
 
@@ -55,32 +56,45 @@ class RegTypeTest : public CommonRuntimeTest {
     dex_file_ = builder.Build("arbitrary-location");
   }
 
+  static constexpr size_t kNumConstTypes = RegType::Kind::kNull - RegType::Kind::kZero + 1;
+
+  std::array<const RegType*, kNumConstTypes> GetConstRegTypes(const RegTypeCache& cache)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    return {
+      &cache.Zero(),
+      &cache.BooleanConstant(),
+      &cache.PositiveByteConstant(),
+      &cache.PositiveShortConstant(),
+      &cache.CharConstant(),
+      &cache.ByteConstant(),
+      &cache.ShortConstant(),
+      &cache.IntegerConstant(),
+      &cache.ConstantLo(),
+      &cache.ConstantHi(),
+      &cache.Null(),
+    };
+  };
+
   std::unique_ptr<const DexFile> dex_file_;
 };
 
-TEST_F(RegTypeTest, ConstLoHi) {
-  // Tests creating primitive types types.
+TEST_F(RegTypeTest, Constants) {
+  // Tests creating constant types.
   ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
   RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
-  const RegType& ref_type_const_0 = cache.FromCat1Const(10, true);
-  const RegType& ref_type_const_1 = cache.FromCat1Const(10, true);
-  const RegType& ref_type_const_2 = cache.FromCat1Const(30, true);
-  const RegType& ref_type_const_3 = cache.FromCat1Const(30, false);
-  EXPECT_TRUE(ref_type_const_0.Equals(ref_type_const_1));
-  EXPECT_FALSE(ref_type_const_0.Equals(ref_type_const_2));
-  EXPECT_FALSE(ref_type_const_0.Equals(ref_type_const_3));
+  std::array<const RegType*, kNumConstTypes> const_reg_types = GetConstRegTypes(cache);
 
-  const RegType& ref_type_const_wide_0 = cache.FromCat2ConstHi(50, true);
-  const RegType& ref_type_const_wide_1 = cache.FromCat2ConstHi(50, true);
-  EXPECT_TRUE(ref_type_const_wide_0.Equals(ref_type_const_wide_1));
+  for (size_t i = 0; i != kNumConstTypes; ++i) {
+    EXPECT_TRUE(const_reg_types[i]->IsConstantTypes());
+  }
 
-  const RegType& ref_type_const_wide_2 = cache.FromCat2ConstLo(50, true);
-  const RegType& ref_type_const_wide_3 = cache.FromCat2ConstLo(50, true);
-  const RegType& ref_type_const_wide_4 = cache.FromCat2ConstLo(55, true);
-  EXPECT_TRUE(ref_type_const_wide_2.Equals(ref_type_const_wide_3));
-  EXPECT_FALSE(ref_type_const_wide_2.Equals(ref_type_const_wide_4));
+  for (size_t i = 0; i != kNumConstTypes; ++i) {
+    for (size_t j = 0; j != kNumConstTypes; ++j) {
+      EXPECT_EQ(i == j, const_reg_types[i]->Equals(*(const_reg_types[j]))) << i << " " << j;
+    }
+  }
 }
 
 TEST_F(RegTypeTest, Pairs) {
@@ -89,24 +103,52 @@ TEST_F(RegTypeTest, Pairs) {
   ScopedNullHandle<mirror::ClassLoader> loader;
   RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
   int64_t val = static_cast<int32_t>(1234);
-  const RegType& precise_lo = cache.FromCat2ConstLo(static_cast<int32_t>(val), true);
-  const RegType& precise_hi = cache.FromCat2ConstHi(static_cast<int32_t>(val >> 32), true);
-  const RegType& precise_const = cache.FromCat1Const(static_cast<int32_t>(val >> 32), true);
+  const RegType& const_lo = cache.ConstantLo();
+  const RegType& const_hi = cache.ConstantHi();
   const RegType& long_lo = cache.LongLo();
   const RegType& long_hi = cache.LongHi();
+  const RegType& int_const = cache.IntegerConstant();
   // Check the expectations for types.
-  EXPECT_TRUE(precise_lo.IsLowHalf());
-  EXPECT_FALSE(precise_hi.IsLowHalf());
-  EXPECT_FALSE(precise_lo.IsHighHalf());
-  EXPECT_TRUE(precise_hi.IsHighHalf());
+  EXPECT_TRUE(const_lo.IsLowHalf());
+  EXPECT_FALSE(const_hi.IsLowHalf());
+  EXPECT_FALSE(const_lo.IsHighHalf());
+  EXPECT_TRUE(const_hi.IsHighHalf());
+  EXPECT_TRUE(const_lo.IsLongTypes());
+  EXPECT_FALSE(const_hi.IsLongTypes());
+  EXPECT_FALSE(const_lo.IsLongHighTypes());
+  EXPECT_TRUE(const_hi.IsLongHighTypes());
+  EXPECT_TRUE(long_lo.IsLowHalf());
+  EXPECT_FALSE(long_hi.IsLowHalf());
+  EXPECT_FALSE(long_lo.IsHighHalf());
+  EXPECT_TRUE(long_hi.IsHighHalf());
+  EXPECT_TRUE(long_lo.IsLongTypes());
+  EXPECT_FALSE(long_hi.IsLongTypes());
+  EXPECT_FALSE(long_lo.IsLongHighTypes());
   EXPECT_TRUE(long_hi.IsLongHighTypes());
-  EXPECT_TRUE(precise_hi.IsLongHighTypes());
   // Check Pairing.
-  EXPECT_FALSE(precise_lo.CheckWidePair(precise_const));
-  EXPECT_TRUE(precise_lo.CheckWidePair(precise_hi));
+  EXPECT_FALSE(const_lo.CheckWidePair(const_lo));
+  EXPECT_TRUE(const_lo.CheckWidePair(const_hi));
+  EXPECT_FALSE(const_lo.CheckWidePair(long_lo));
+  EXPECT_FALSE(const_lo.CheckWidePair(long_hi));
+  EXPECT_FALSE(const_lo.CheckWidePair(int_const));
+  EXPECT_FALSE(const_hi.CheckWidePair(const_lo));
+  EXPECT_FALSE(const_hi.CheckWidePair(const_hi));
+  EXPECT_FALSE(const_hi.CheckWidePair(long_lo));
+  EXPECT_FALSE(const_hi.CheckWidePair(long_hi));
+  EXPECT_FALSE(const_hi.CheckWidePair(int_const));
+  EXPECT_FALSE(long_lo.CheckWidePair(const_lo));
+  EXPECT_FALSE(long_lo.CheckWidePair(const_hi));
+  EXPECT_FALSE(long_lo.CheckWidePair(long_lo));
+  EXPECT_TRUE(long_lo.CheckWidePair(long_hi));
+  EXPECT_FALSE(long_lo.CheckWidePair(int_const));
+  EXPECT_FALSE(long_hi.CheckWidePair(const_lo));
+  EXPECT_FALSE(long_hi.CheckWidePair(const_hi));
+  EXPECT_FALSE(long_hi.CheckWidePair(long_lo));
+  EXPECT_FALSE(long_hi.CheckWidePair(long_hi));
+  EXPECT_FALSE(long_hi.CheckWidePair(int_const));
   // Test Merging.
-  EXPECT_TRUE((long_lo.Merge(precise_lo, &cache, /* verifier= */ nullptr)).IsLongTypes());
-  EXPECT_TRUE((long_hi.Merge(precise_hi, &cache, /* verifier= */ nullptr)).IsLongHighTypes());
+  EXPECT_TRUE((long_lo.Merge(const_lo, &cache, /* verifier= */ nullptr)).IsLongTypes());
+  EXPECT_TRUE((long_hi.Merge(const_hi, &cache, /* verifier= */ nullptr)).IsLongHighTypes());
 }
 
 TEST_F(RegTypeTest, Primitives) {
@@ -118,9 +160,7 @@ TEST_F(RegTypeTest, Primitives) {
   const RegType& bool_reg_type = cache.Boolean();
   EXPECT_FALSE(bool_reg_type.IsUndefined());
   EXPECT_FALSE(bool_reg_type.IsConflict());
-  EXPECT_FALSE(bool_reg_type.IsZero());
-  EXPECT_FALSE(bool_reg_type.IsOne());
-  EXPECT_FALSE(bool_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_TRUE(bool_reg_type.IsBoolean());
   EXPECT_FALSE(bool_reg_type.IsByte());
   EXPECT_FALSE(bool_reg_type.IsChar());
@@ -151,9 +191,7 @@ TEST_F(RegTypeTest, Primitives) {
   const RegType& byte_reg_type = cache.Byte();
   EXPECT_FALSE(byte_reg_type.IsUndefined());
   EXPECT_FALSE(byte_reg_type.IsConflict());
-  EXPECT_FALSE(byte_reg_type.IsZero());
-  EXPECT_FALSE(byte_reg_type.IsOne());
-  EXPECT_FALSE(byte_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(byte_reg_type.IsBoolean());
   EXPECT_TRUE(byte_reg_type.IsByte());
   EXPECT_FALSE(byte_reg_type.IsChar());
@@ -184,9 +222,7 @@ TEST_F(RegTypeTest, Primitives) {
   const RegType& char_reg_type = cache.Char();
   EXPECT_FALSE(char_reg_type.IsUndefined());
   EXPECT_FALSE(char_reg_type.IsConflict());
-  EXPECT_FALSE(char_reg_type.IsZero());
-  EXPECT_FALSE(char_reg_type.IsOne());
-  EXPECT_FALSE(char_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(char_reg_type.IsBoolean());
   EXPECT_FALSE(char_reg_type.IsByte());
   EXPECT_TRUE(char_reg_type.IsChar());
@@ -217,9 +253,7 @@ TEST_F(RegTypeTest, Primitives) {
   const RegType& short_reg_type = cache.Short();
   EXPECT_FALSE(short_reg_type.IsUndefined());
   EXPECT_FALSE(short_reg_type.IsConflict());
-  EXPECT_FALSE(short_reg_type.IsZero());
-  EXPECT_FALSE(short_reg_type.IsOne());
-  EXPECT_FALSE(short_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(short_reg_type.IsBoolean());
   EXPECT_FALSE(short_reg_type.IsByte());
   EXPECT_FALSE(short_reg_type.IsChar());
@@ -250,9 +284,7 @@ TEST_F(RegTypeTest, Primitives) {
   const RegType& int_reg_type = cache.Integer();
   EXPECT_FALSE(int_reg_type.IsUndefined());
   EXPECT_FALSE(int_reg_type.IsConflict());
-  EXPECT_FALSE(int_reg_type.IsZero());
-  EXPECT_FALSE(int_reg_type.IsOne());
-  EXPECT_FALSE(int_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(int_reg_type.IsBoolean());
   EXPECT_FALSE(int_reg_type.IsByte());
   EXPECT_FALSE(int_reg_type.IsChar());
@@ -283,9 +315,7 @@ TEST_F(RegTypeTest, Primitives) {
   const RegType& long_reg_type = cache.LongLo();
   EXPECT_FALSE(long_reg_type.IsUndefined());
   EXPECT_FALSE(long_reg_type.IsConflict());
-  EXPECT_FALSE(long_reg_type.IsZero());
-  EXPECT_FALSE(long_reg_type.IsOne());
-  EXPECT_FALSE(long_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(long_reg_type.IsBoolean());
   EXPECT_FALSE(long_reg_type.IsByte());
   EXPECT_FALSE(long_reg_type.IsChar());
@@ -316,9 +346,7 @@ TEST_F(RegTypeTest, Primitives) {
   const RegType& float_reg_type = cache.Float();
   EXPECT_FALSE(float_reg_type.IsUndefined());
   EXPECT_FALSE(float_reg_type.IsConflict());
-  EXPECT_FALSE(float_reg_type.IsZero());
-  EXPECT_FALSE(float_reg_type.IsOne());
-  EXPECT_FALSE(float_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(float_reg_type.IsBoolean());
   EXPECT_FALSE(float_reg_type.IsByte());
   EXPECT_FALSE(float_reg_type.IsChar());
@@ -349,9 +377,7 @@ TEST_F(RegTypeTest, Primitives) {
   const RegType& double_reg_type = cache.DoubleLo();
   EXPECT_FALSE(double_reg_type.IsUndefined());
   EXPECT_FALSE(double_reg_type.IsConflict());
-  EXPECT_FALSE(double_reg_type.IsZero());
-  EXPECT_FALSE(double_reg_type.IsOne());
-  EXPECT_FALSE(double_reg_type.IsLongConstant());
+  EXPECT_FALSE(bool_reg_type.IsConstantTypes());
   EXPECT_FALSE(double_reg_type.IsBoolean());
   EXPECT_FALSE(double_reg_type.IsByte());
   EXPECT_FALSE(double_reg_type.IsChar());
@@ -517,31 +543,29 @@ TEST_F(RegTypeTest, MergingFloat) {
   ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache_new(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  std::array<const RegType*, kNumConstTypes> const_reg_types = GetConstRegTypes(cache);
 
-  constexpr int32_t kTestConstantValue = 10;
-  const RegType& float_type = cache_new.Float();
-  const RegType& precise_cst = cache_new.FromCat1Const(kTestConstantValue, true);
-  const RegType& imprecise_cst = cache_new.FromCat1Const(kTestConstantValue, false);
-  {
-    // float MERGE precise cst => float.
-    const RegType& merged = float_type.Merge(precise_cst, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsFloat());
+  const RegType& float_type = cache.Float();
+  for (const RegType* const_type : const_reg_types) {
+    // float MERGE cst => float.
+    const RegType& merged = float_type.Merge(*const_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstant()) {
+      EXPECT_TRUE(merged.IsFloat()) << RegTypeWrapper(*const_type);
+    } else {
+      DCHECK(const_type->IsConstantLo() || const_type->IsConstantHi() || const_type->IsNull());
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // precise cst MERGE float => float.
-    const RegType& merged = precise_cst.Merge(float_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsFloat());
-  }
-  {
-    // float MERGE imprecise cst => float.
-    const RegType& merged = float_type.Merge(imprecise_cst, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsFloat());
-  }
-  {
-    // imprecise cst MERGE float => float.
-    const RegType& merged = imprecise_cst.Merge(float_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsFloat());
+  for (const RegType* const_type : const_reg_types) {
+    // cst MERGE float => float.
+    const RegType& merged = const_type->Merge(float_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstant()) {
+      EXPECT_TRUE(merged.IsFloat()) << RegTypeWrapper(*const_type);
+    } else {
+      DCHECK(const_type->IsConstantLo() || const_type->IsConstantHi() || const_type->IsNull());
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
 }
 
@@ -550,58 +574,46 @@ TEST_F(RegTypeTest, MergingLong) {
   ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache_new(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  std::array<const RegType*, kNumConstTypes> const_reg_types = GetConstRegTypes(cache);
 
-  constexpr int32_t kTestConstantValue = 10;
-  const RegType& long_lo_type = cache_new.LongLo();
-  const RegType& long_hi_type = cache_new.LongHi();
-  const RegType& precise_cst_lo = cache_new.FromCat2ConstLo(kTestConstantValue, true);
-  const RegType& imprecise_cst_lo = cache_new.FromCat2ConstLo(kTestConstantValue, false);
-  const RegType& precise_cst_hi = cache_new.FromCat2ConstHi(kTestConstantValue, true);
-  const RegType& imprecise_cst_hi = cache_new.FromCat2ConstHi(kTestConstantValue, false);
-  {
-    // lo MERGE precise cst lo => lo.
-    const RegType& merged = long_lo_type.Merge(precise_cst_lo, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongLo());
+  const RegType& long_lo_type = cache.LongLo();
+  const RegType& long_hi_type = cache.LongHi();
+  for (const RegType* const_type : const_reg_types) {
+    // lo MERGE cst lo => lo.
+    const RegType& merged = long_lo_type.Merge(*const_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantLo()) {
+      EXPECT_TRUE(merged.IsLongLo()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // precise cst lo MERGE lo => lo.
-    const RegType& merged = precise_cst_lo.Merge(long_lo_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongLo());
+  for (const RegType* const_type : const_reg_types) {
+    // cst lo MERGE lo => lo.
+    const RegType& merged = const_type->Merge(long_lo_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantLo()) {
+      EXPECT_TRUE(merged.IsLongLo()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // lo MERGE imprecise cst lo => lo.
-    const RegType& merged = long_lo_type.Merge(
-        imprecise_cst_lo, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongLo());
+  for (const RegType* const_type : const_reg_types) {
+    // hi MERGE cst hi => hi.
+    const RegType& merged = long_hi_type.Merge(*const_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantHi()) {
+      EXPECT_TRUE(merged.IsLongHi()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // imprecise cst lo MERGE lo => lo.
-    const RegType& merged = imprecise_cst_lo.Merge(
-        long_lo_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongLo());
-  }
-  {
-    // hi MERGE precise cst hi => hi.
-    const RegType& merged = long_hi_type.Merge(precise_cst_hi, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongHi());
-  }
-  {
-    // precise cst hi MERGE hi => hi.
-    const RegType& merged = precise_cst_hi.Merge(long_hi_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongHi());
-  }
-  {
-    // hi MERGE imprecise cst hi => hi.
-    const RegType& merged = long_hi_type.Merge(
-        imprecise_cst_hi, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongHi());
-  }
-  {
-    // imprecise cst hi MERGE hi => hi.
-    const RegType& merged = imprecise_cst_hi.Merge(
-        long_hi_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsLongHi());
+  for (const RegType* const_type : const_reg_types) {
+    // cst hi MERGE hi => hi.
+    const RegType& merged = const_type->Merge(long_hi_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantHi()) {
+      EXPECT_TRUE(merged.IsLongHi()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
 }
 
@@ -610,62 +622,46 @@ TEST_F(RegTypeTest, MergingDouble) {
   ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
   ScopedObjectAccess soa(Thread::Current());
   ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache_new(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  RegTypeCache cache(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
+  std::array<const RegType*, kNumConstTypes> const_reg_types = GetConstRegTypes(cache);
 
-  constexpr int32_t kTestConstantValue = 10;
-  const RegType& double_lo_type = cache_new.DoubleLo();
-  const RegType& double_hi_type = cache_new.DoubleHi();
-  const RegType& precise_cst_lo = cache_new.FromCat2ConstLo(kTestConstantValue, true);
-  const RegType& imprecise_cst_lo = cache_new.FromCat2ConstLo(kTestConstantValue, false);
-  const RegType& precise_cst_hi = cache_new.FromCat2ConstHi(kTestConstantValue, true);
-  const RegType& imprecise_cst_hi = cache_new.FromCat2ConstHi(kTestConstantValue, false);
-  {
-    // lo MERGE precise cst lo => lo.
-    const RegType& merged = double_lo_type.Merge(
-        precise_cst_lo, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleLo());
+  const RegType& double_lo_type = cache.DoubleLo();
+  const RegType& double_hi_type = cache.DoubleHi();
+  for (const RegType* const_type : const_reg_types) {
+    // lo MERGE cst lo => lo.
+    const RegType& merged = double_lo_type.Merge(*const_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantLo()) {
+      EXPECT_TRUE(merged.IsDoubleLo()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // precise cst lo MERGE lo => lo.
-    const RegType& merged = precise_cst_lo.Merge(
-        double_lo_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleLo());
+  for (const RegType* const_type : const_reg_types) {
+    // cst lo MERGE lo => lo.
+    const RegType& merged = const_type->Merge(double_lo_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantLo()) {
+      EXPECT_TRUE(merged.IsDoubleLo()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // lo MERGE imprecise cst lo => lo.
-    const RegType& merged = double_lo_type.Merge(
-        imprecise_cst_lo, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleLo());
+  for (const RegType* const_type : const_reg_types) {
+    // hi MERGE cst hi => hi.
+    const RegType& merged = double_hi_type.Merge(*const_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantHi()) {
+      EXPECT_TRUE(merged.IsDoubleHi()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
-  {
-    // imprecise cst lo MERGE lo => lo.
-    const RegType& merged = imprecise_cst_lo.Merge(
-        double_lo_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleLo());
-  }
-  {
-    // hi MERGE precise cst hi => hi.
-    const RegType& merged = double_hi_type.Merge(
-        precise_cst_hi, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleHi());
-  }
-  {
-    // precise cst hi MERGE hi => hi.
-    const RegType& merged = precise_cst_hi.Merge(
-        double_hi_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleHi());
-  }
-  {
-    // hi MERGE imprecise cst hi => hi.
-    const RegType& merged = double_hi_type.Merge(
-        imprecise_cst_hi, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleHi());
-  }
-  {
-    // imprecise cst hi MERGE hi => hi.
-    const RegType& merged = imprecise_cst_hi.Merge(
-        double_hi_type, &cache_new, /* verifier= */ nullptr);
-    EXPECT_TRUE(merged.IsDoubleHi());
+  for (const RegType* const_type : const_reg_types) {
+    // cst hi MERGE hi => hi.
+    const RegType& merged = const_type->Merge(double_hi_type, &cache, /* verifier= */ nullptr);
+    if (const_type->IsConstantHi()) {
+      EXPECT_TRUE(merged.IsDoubleHi()) << RegTypeWrapper(*const_type);
+    } else {
+      EXPECT_TRUE(merged.IsConflict()) << RegTypeWrapper(*const_type);
+    }
   }
 }
 
@@ -1040,20 +1036,6 @@ TEST_F(RegTypeTest, MergeSemiLatticeRef) {
     check(triple.in1, triple.in2, triple.out);
     check(triple.in2, triple.in1, triple.out);
   }
-}
-
-TEST_F(RegTypeTest, ConstPrecision) {
-  // Tests creating primitive types types.
-  ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
-  ScopedObjectAccess soa(Thread::Current());
-  ScopedNullHandle<mirror::ClassLoader> loader;
-  RegTypeCache cache_new(soa.Self(), class_linker_, arena_pool, loader, dex_file_.get());
-  const RegType& imprecise_const = cache_new.FromCat1Const(10, false);
-  const RegType& precise_const = cache_new.FromCat1Const(10, true);
-
-  EXPECT_TRUE(imprecise_const.IsImpreciseConstant());
-  EXPECT_TRUE(precise_const.IsPreciseConstant());
-  EXPECT_FALSE(imprecise_const.Equals(precise_const));
 }
 
 class RegTypeOOMTest : public RegTypeTest {

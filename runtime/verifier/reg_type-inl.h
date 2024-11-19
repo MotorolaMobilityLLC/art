@@ -58,15 +58,6 @@ inline bool RegType::CanAccessMember(ObjPtr<mirror::Class> klass, uint32_t acces
   }
 }
 
-inline bool RegType::IsConstantBoolean() const {
-  if (!IsConstant()) {
-    return false;
-  } else {
-    const ConstantType* const_val = down_cast<const ConstantType*>(this);
-    return const_val->ConstantValue() >= 0 && const_val->ConstantValue() <= 1;
-  }
-}
-
 inline bool RegType::AssignableFrom(const RegType& lhs,
                                     const RegType& rhs,
                                     bool strict,

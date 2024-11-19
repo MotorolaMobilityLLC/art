@@ -2197,29 +2197,29 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       /* could be long or double; resolved upon use */
     case Instruction::CONST_WIDE_16: {
       int64_t val = static_cast<int16_t>(inst->VRegB_21s());
-      const RegType& lo = reg_types_.FromCat2ConstLo(static_cast<int32_t>(val), true);
-      const RegType& hi = reg_types_.FromCat2ConstHi(static_cast<int32_t>(val >> 32), true);
+      const RegType& lo = reg_types_.ConstantLo();
+      const RegType& hi = reg_types_.ConstantHi();
       work_line_->SetRegisterTypeWide(inst->VRegA_21s(), lo, hi);
       break;
     }
     case Instruction::CONST_WIDE_32: {
       int64_t val = static_cast<int32_t>(inst->VRegB_31i());
-      const RegType& lo = reg_types_.FromCat2ConstLo(static_cast<int32_t>(val), true);
-      const RegType& hi = reg_types_.FromCat2ConstHi(static_cast<int32_t>(val >> 32), true);
+      const RegType& lo = reg_types_.ConstantLo();
+      const RegType& hi = reg_types_.ConstantHi();
       work_line_->SetRegisterTypeWide(inst->VRegA_31i(), lo, hi);
       break;
     }
     case Instruction::CONST_WIDE: {
       int64_t val = inst->VRegB_51l();
-      const RegType& lo = reg_types_.FromCat2ConstLo(static_cast<int32_t>(val), true);
-      const RegType& hi = reg_types_.FromCat2ConstHi(static_cast<int32_t>(val >> 32), true);
+      const RegType& lo = reg_types_.ConstantLo();
+      const RegType& hi = reg_types_.ConstantHi();
       work_line_->SetRegisterTypeWide(inst->VRegA_51l(), lo, hi);
       break;
     }
     case Instruction::CONST_WIDE_HIGH16: {
       int64_t val = static_cast<uint64_t>(inst->VRegB_21h()) << 48;
-      const RegType& lo = reg_types_.FromCat2ConstLo(static_cast<int32_t>(val), true);
-      const RegType& hi = reg_types_.FromCat2ConstHi(static_cast<int32_t>(val >> 32), true);
+      const RegType& lo = reg_types_.ConstantLo();
+      const RegType& hi = reg_types_.ConstantHi();
       work_line_->SetRegisterTypeWide(inst->VRegA_21h(), lo, hi);
       break;
     }
@@ -4250,8 +4250,8 @@ void MethodVerifier<kVerifierDebug>::VerifyAGet(const Instruction* inst,
       } else {
         // Category 2
         work_line_->SetRegisterTypeWide(inst->VRegA_23x(),
-                                        reg_types_.FromCat2ConstLo(0, false),
-                                        reg_types_.FromCat2ConstHi(0, false));
+                                        reg_types_.ConstantLo(),
+                                        reg_types_.ConstantHi());
       }
     } else if (!array_type.IsArrayTypes()) {
       Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "not array type " << array_type << " with aget";
@@ -4747,7 +4747,7 @@ template <bool kVerifierDebug>
 const RegType& MethodVerifier<kVerifierDebug>::DetermineCat1Constant(int32_t value) {
   // Imprecise constant type.
   if (value < -32768) {
-    return reg_types_.IntConstant();
+    return reg_types_.IntegerConstant();
   } else if (value < -128) {
     return reg_types_.ShortConstant();
   } else if (value < 0) {
@@ -4755,15 +4755,15 @@ const RegType& MethodVerifier<kVerifierDebug>::DetermineCat1Constant(int32_t val
   } else if (value == 0) {
     return reg_types_.Zero();
   } else if (value == 1) {
-    return reg_types_.One();
+    return reg_types_.BooleanConstant();
   } else if (value < 128) {
-    return reg_types_.PosByteConstant();
+    return reg_types_.PositiveByteConstant();
   } else if (value < 32768) {
-    return reg_types_.PosShortConstant();
+    return reg_types_.PositiveShortConstant();
   } else if (value < 65536) {
     return reg_types_.CharConstant();
   } else {
-    return reg_types_.IntConstant();
+    return reg_types_.IntegerConstant();
   }
 }
 

@@ -19,6 +19,7 @@
 #include <dlfcn.h>
 #include <sys/resource.h>
 
+#include "app_info.h"
 #include "art_method-inl.h"
 #include "base/file_utils.h"
 #include "base/logging.h"  // For VLOG.
@@ -276,13 +277,15 @@ void Jit::DeleteThreadPool() {
 
 void Jit::StartProfileSaver(const std::string& profile_filename,
                             const std::vector<std::string>& code_paths,
-                            const std::string& ref_profile_filename) {
+                            const std::string& ref_profile_filename,
+                            AppInfo::CodeType code_type) {
   if (options_->GetSaveProfilingInfo()) {
     ProfileSaver::Start(options_->GetProfileSaverOptions(),
                         profile_filename,
                         code_cache_,
                         code_paths,
-                        ref_profile_filename);
+                        ref_profile_filename,
+                        code_type);
   }
 }
 

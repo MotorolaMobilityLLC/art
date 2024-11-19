@@ -38,6 +38,44 @@ inline const art::verifier::RegType& RegTypeCache::GetFromId(uint16_t id) const 
   return *result;
 }
 
+namespace detail {
+
+struct RegKindToCacheId : RegTypeCache {
+  // Inherit fixed cache ids from `RegTypeCache` and add fake non-fixed cache ids so that
+  // we can use `FOR_EACH_CONCRETE_REG_TYPE` to check the fixed cache ids.
+#define DEFINE_FAKE_CACHE_ID(name)                                    \
+  static_assert(RegType::Kind::k##name >= kNumberOfFixedCacheIds);    \
+  static constexpr uint32_t k##name##CacheId = RegType::Kind::k##name;
+  DEFINE_FAKE_CACHE_ID(UnresolvedReference)
+  DEFINE_FAKE_CACHE_ID(UninitializedReference)
+  DEFINE_FAKE_CACHE_ID(UninitializedThisReference)
+  DEFINE_FAKE_CACHE_ID(UnresolvedUninitializedReference)
+  DEFINE_FAKE_CACHE_ID(UnresolvedUninitializedThisReference)
+  DEFINE_FAKE_CACHE_ID(UnresolvedMergedReference)
+  DEFINE_FAKE_CACHE_ID(UnresolvedSuperClass)
+  DEFINE_FAKE_CACHE_ID(Reference)
+#undef DEFINE_FAKE_CACHE_ID
+
+#define ASSERT_CACHE_ID_EQUALS_KIND(name) \
+  static_assert(k##name##CacheId == RegType::Kind::k##name);
+  FOR_EACH_CONCRETE_REG_TYPE(ASSERT_CACHE_ID_EQUALS_KIND);
+#undef ASSERT_CACHE_ID_EQUALS_KIND
+
+  static constexpr uint16_t Translate(RegType::Kind kind) {
+    DCHECK_LT(kind, kNumberOfFixedCacheIds);
+    return kind;
+  }
+};
+
+}  // namespace detail
+
+// Note: To avoid including `reg_types.h` from `reg_type_cache.h`, we define this as
+// a free function because we cannot forward-declare the nested enum `RegType::Kind`.
+inline const art::verifier::RegType& RegTypeFromKind(const RegTypeCache* reg_types,
+                                                     RegType::Kind kind) {
+  return reg_types->GetFromId(detail::RegKindToCacheId::Translate(kind));
+}
+
 inline const RegType& RegTypeCache::FromTypeIndex(dex::TypeIndex type_index) {
   DCHECK_LT(type_index.index_, dex_file_->NumTypeIds());
   if (entries_for_type_index_[type_index.index_] != nullptr) {

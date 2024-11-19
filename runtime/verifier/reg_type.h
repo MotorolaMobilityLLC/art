@@ -103,7 +103,7 @@ class RegType {
   constexpr Kind GetKind() const { return kind_; }
 
 #define DEFINE_IS_CONCRETE_REG_TYPE(name) \
-  bool Is##name() const { return GetKind() == Kind::k##name; }
+  constexpr bool Is##name() const { return GetKind() == Kind::k##name; }
   FOR_EACH_CONCRETE_REG_TYPE(DEFINE_IS_CONCRETE_REG_TYPE)
 #undef DEFINE_IS_CONCRETE_REG_TYPE
 
@@ -141,7 +141,7 @@ class RegType {
   const RegType& HighHalf(RegTypeCache* cache) const
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  bool IsReferenceTypes() const {
+  constexpr bool IsReferenceTypes() const {
     return IsNonZeroReferenceTypes() || IsZero() || IsNull();
   }
   bool IsZeroOrNull() const {
@@ -174,11 +174,11 @@ class RegType {
   // general case.
   bool IsArrayIndexTypes() const { return IsIntegralTypes(); }
   // Float type may be derived from any constant type
-  bool IsFloatTypes() const { return IsFloat() || IsConstant(); }
-  bool IsLongTypes() const { return IsLongLo() || IsConstantLo(); }
-  bool IsLongHighTypes() const { return (IsLongHi() || IsConstantHi()); }
-  bool IsDoubleTypes() const { return IsDoubleLo() || IsConstantLo(); }
-  bool IsDoubleHighTypes() const { return (IsDoubleHi() || IsConstantHi()); }
+  constexpr bool IsFloatTypes() const { return IsFloat() || IsConstant(); }
+  constexpr bool IsLongTypes() const { return IsLongLo() || IsConstantLo(); }
+  constexpr bool IsLongHighTypes() const { return (IsLongHi() || IsConstantHi()); }
+  constexpr bool IsDoubleTypes() const { return IsDoubleLo() || IsConstantLo(); }
+  constexpr bool IsDoubleHighTypes() const { return (IsDoubleHi() || IsConstantHi()); }
   bool HasClass() const {
     bool result = klass_.GetReference() != nullptr;
     DCHECK_IMPLIES(result, !klass_.IsNull());
@@ -359,7 +359,7 @@ class ConflictType final : public RegType {
     return AssignmentType::kConflict;
   }
 
-  constexpr ConflictType(const std::string_view& descriptor, uint16_t cache_id)
+  constexpr ConflictType(uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
@@ -374,7 +374,7 @@ class UndefinedType final : public RegType {
     return AssignmentType::kNotAssignable;
   }
 
-  constexpr UndefinedType(const std::string_view& descriptor, uint16_t cache_id)
+  constexpr UndefinedType(uint16_t cache_id)
       REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
@@ -949,13 +949,13 @@ inline constexpr void RegType::CheckConstructorInvariants([[maybe_unused]] Class
   }
 }
 
-constexpr UndefinedType::UndefinedType(const std::string_view& descriptor, uint16_t cache_id)
-    : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kUndefined) {
+constexpr UndefinedType::UndefinedType(uint16_t cache_id)
+    : RegType(Handle<mirror::Class>(), "", cache_id, Kind::kUndefined) {
   CheckConstructorInvariants(this);
 }
 
-constexpr ConflictType::ConflictType(const std::string_view& descriptor, uint16_t cache_id)
-    : RegType(Handle<mirror::Class>(), descriptor, cache_id, Kind::kConflict) {
+constexpr ConflictType::ConflictType(uint16_t cache_id)
+    : RegType(Handle<mirror::Class>(), "", cache_id, Kind::kConflict) {
   CheckConstructorInvariants(this);
 }
 

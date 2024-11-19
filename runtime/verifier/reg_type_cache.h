@@ -197,6 +197,12 @@ class RegTypeCache {
   static constexpr uint32_t kNumberOfFixedCacheIds = kNullCacheId + 1u;
 
  private:
+  // We want 0 to mean an empty slot in `ids_for_type_index_`, so that we do not need to fill
+  // the array after allocaing zero-initialized storage. This needs to correspond to a fixed
+  // cache id that cannot be returned for a type index, such as `kUndefinedCacheId`.
+  static constexpr uint32_t kNoIdForTypeIndex = 0u;
+  static_assert(kNoIdForTypeIndex == kUndefinedCacheId);
+
   void FillPrimitiveAndConstantTypes() REQUIRES_SHARED(Locks::mutator_lock_);
   ObjPtr<mirror::Class> ResolveClass(const char* descriptor, size_t descriptor_length)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -234,7 +240,7 @@ class RegTypeCache {
   const DexFile* const dex_file_;
 
   // Fast lookup by type index.
-  const RegType** const entries_for_type_index_;
+  uint16_t* const ids_for_type_index_;
 
   // Cache last uninitialized "this" type used for constructors.
   const UninitializedType* last_uninitialized_this_type_;

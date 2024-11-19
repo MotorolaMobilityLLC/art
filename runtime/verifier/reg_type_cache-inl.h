@@ -78,8 +78,8 @@ inline const art::verifier::RegType& RegTypeFromKind(const RegTypeCache* reg_typ
 
 inline const RegType& RegTypeCache::FromTypeIndex(dex::TypeIndex type_index) {
   DCHECK_LT(type_index.index_, dex_file_->NumTypeIds());
-  if (entries_for_type_index_[type_index.index_] != nullptr) {
-    return *entries_for_type_index_[type_index.index_];
+  if (ids_for_type_index_[type_index.index_] != kNoIdForTypeIndex) {
+    return GetFromId(ids_for_type_index_[type_index.index_]);
   }
   return FromTypeIndexUncached(type_index);
 }

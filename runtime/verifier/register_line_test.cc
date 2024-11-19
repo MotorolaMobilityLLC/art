@@ -19,6 +19,7 @@
 #include "common_runtime_test.h"
 #include "method_verifier.h"
 #include "reg_type_cache-inl.h"
+#include "reg_type_test_utils.h"
 
 namespace art HIDDEN {
 namespace verifier {
@@ -50,20 +51,6 @@ class RegisterLineTest : public CommonRuntimeTest {
     return verifier->allocator_;
   }
 };
-
-// Helper class to avoid thread safety analysis errors from gtest's `operator<<`
-// instantiation for `RegType` not being marked as holding the mutator lock.
-class RegTypeWrapper {
- public:
-  explicit RegTypeWrapper(const RegType& reg_type) : reg_type_(reg_type) {}
- private:
-  const RegType& reg_type_;
-  friend std::ostream& operator<<(std::ostream& os, const RegTypeWrapper& rtw);
-};
-
-std::ostream& operator<<(std::ostream& os, const RegTypeWrapper& rtw) NO_THREAD_SAFETY_ANALYSIS {
-  return os << rtw.reg_type_;
-}
 
 TEST_F(RegisterLineTest, NewInstanceDexPcsMerging) {
   ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();

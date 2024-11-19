@@ -55,23 +55,6 @@ std::ostream& operator<<(std::ostream& os, RegType::Kind kind) {
   return os << kind_name;
 }
 
-std::string PreciseConstantType::Dump() const {
-  std::stringstream result;
-  uint32_t val = ConstantValue();
-  if (val == 0) {
-    CHECK(IsPreciseConstant());
-    result << "Zero/null";
-  } else {
-    result << "Precise ";
-    if (IsConstantShort()) {
-      result << StringPrintf("Constant: %d", val);
-    } else {
-      result << StringPrintf("Constant: 0x%x", val);
-    }
-  }
-  return result.str();
-}
-
 std::string BooleanType::Dump() const {
   return "Boolean";
 }
@@ -90,6 +73,10 @@ std::string ShortType::Dump() const {
 
 std::string CharType::Dump() const {
   return "Char";
+}
+
+std::string IntegerType::Dump() const {
+  return "Integer";
 }
 
 std::string FloatType::Dump() const {
@@ -112,8 +99,44 @@ std::string DoubleHiType::Dump() const {
   return "Double (High Half)";
 }
 
-std::string IntegerType::Dump() const {
-  return "Integer";
+std::string ZeroType::Dump() const {
+  return "Zero/null";
+}
+
+std::string BooleanConstantType::Dump() const {
+  return "BooleanConstant";
+}
+
+std::string PositiveByteConstantType::Dump() const {
+  return "PositiveByteConstant";
+}
+
+std::string PositiveShortConstantType::Dump() const {
+  return "PositiveShortConstant";
+}
+
+std::string CharConstantType::Dump() const {
+  return "CharConstant";
+}
+
+std::string ByteConstantType::Dump() const {
+  return "ByteConstant";
+}
+
+std::string ShortConstantType::Dump() const {
+  return "ShortConstant";
+}
+
+std::string IntegerConstantType::Dump() const {
+  return "IntegerConstant";
+}
+
+std::string ConstantLoType::Dump() const {
+  return "Low-half Constant";
+}
+
+std::string ConstantHiType::Dump() const {
+  return "High-half Constant";
 }
 
 std::string UndefinedType::Dump() const REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -183,75 +206,6 @@ std::string UninitializedThisReferenceType::Dump() const {
   return result.str();
 }
 
-std::string ImpreciseConstantType::Dump() const {
-  std::stringstream result;
-  uint32_t val = ConstantValue();
-  if (val == 0) {
-    result << "Zero/null";
-  } else {
-    result << "Imprecise ";
-    if (IsConstantShort()) {
-      result << StringPrintf("Constant: %d", val);
-    } else {
-      result << StringPrintf("Constant: 0x%x", val);
-    }
-  }
-  return result.str();
-}
-std::string PreciseConstantLoType::Dump() const {
-  std::stringstream result;
-
-  int32_t val = ConstantValueLo();
-  result << "Precise ";
-  if (val >= std::numeric_limits<jshort>::min() &&
-      val <= std::numeric_limits<jshort>::max()) {
-    result << StringPrintf("Low-half Constant: %d", val);
-  } else {
-    result << StringPrintf("Low-half Constant: 0x%x", val);
-  }
-  return result.str();
-}
-
-std::string ImpreciseConstantLoType::Dump() const {
-  std::stringstream result;
-
-  int32_t val = ConstantValueLo();
-  result << "Imprecise ";
-  if (val >= std::numeric_limits<jshort>::min() &&
-      val <= std::numeric_limits<jshort>::max()) {
-    result << StringPrintf("Low-half Constant: %d", val);
-  } else {
-    result << StringPrintf("Low-half Constant: 0x%x", val);
-  }
-  return result.str();
-}
-
-std::string PreciseConstantHiType::Dump() const {
-  std::stringstream result;
-  int32_t val = ConstantValueHi();
-  result << "Precise ";
-  if (val >= std::numeric_limits<jshort>::min() &&
-      val <= std::numeric_limits<jshort>::max()) {
-    result << StringPrintf("High-half Constant: %d", val);
-  } else {
-    result << StringPrintf("High-half Constant: 0x%x", val);
-  }
-  return result.str();
-}
-
-std::string ImpreciseConstantHiType::Dump() const {
-  std::stringstream result;
-  int32_t val = ConstantValueHi();
-  result << "Imprecise ";
-  if (val >= std::numeric_limits<jshort>::min() &&
-      val <= std::numeric_limits<jshort>::max()) {
-    result << StringPrintf("High-half Constant: %d", val);
-  } else {
-    result << StringPrintf("High-half Constant: 0x%x", val);
-  }
-  return result.str();
-}
-
 const RegType& RegType::HighHalf(RegTypeCache* cache) const {
   DCHECK(IsLowHalf());
   if (IsLongLo()) {
@@ -259,9 +213,8 @@ const RegType& RegType::HighHalf(RegTypeCache* cache) const {
   } else if (IsDoubleLo()) {
     return cache->DoubleHi();
   } else {
-    DCHECK(IsImpreciseConstantLo());
-    const ConstantType* const_val = down_cast<const ConstantType*>(this);
-    return cache->FromCat2ConstHi(const_val->ConstantValue(), false);
+    DCHECK(IsConstantLo());
+    return cache->ConstantHi();
   }
 }
 
@@ -380,7 +333,6 @@ static const RegType& SelectNonConstant(const RegType& a, const RegType& b) {
 static const RegType& SelectNonConstant2(const RegType& a, const RegType& b) {
   return a.IsConstantTypes() ? (b.IsZero() ? a : b) : a;
 }
-
 
 namespace {
 
@@ -542,72 +494,43 @@ const RegType& RegType::Merge(const RegType& incoming_type,
   } else if (this == &conflict || &incoming_type == &conflict) {
     return conflict;  // (Conflict MERGE *) or (* MERGE Conflict) => Conflict
   } else if (IsConstant() && incoming_type.IsConstant()) {
-    const ConstantType& type1 = *down_cast<const ConstantType*>(this);
-    const ConstantType& type2 = *down_cast<const ConstantType*>(&incoming_type);
-    int32_t val1 = type1.ConstantValue();
-    int32_t val2 = type2.ConstantValue();
-    if (val1 >= 0 && val2 >= 0) {
-      // +ve1 MERGE +ve2 => MAX(+ve1, +ve2)
-      if (val1 >= val2) {
-        if (!type1.IsPreciseConstant()) {
-          return *this;
-        } else {
-          return reg_types->FromCat1Const(val1, false);
-        }
-      } else {
-        if (!type2.IsPreciseConstant()) {
-          return type2;
-        } else {
-          return reg_types->FromCat1Const(val2, false);
-        }
-      }
-    } else if (val1 < 0 && val2 < 0) {
-      // -ve1 MERGE -ve2 => MIN(-ve1, -ve2)
-      if (val1 <= val2) {
-        if (!type1.IsPreciseConstant()) {
-          return *this;
-        } else {
-          return reg_types->FromCat1Const(val1, false);
-        }
-      } else {
-        if (!type2.IsPreciseConstant()) {
-          return type2;
-        } else {
-          return reg_types->FromCat1Const(val2, false);
-        }
-      }
-    } else {
-      // Values are +ve and -ve, choose smallest signed type in which they both fit
-      if (type1.IsConstantByte()) {
-        if (type2.IsConstantByte()) {
-          return reg_types->ByteConstant();
-        } else if (type2.IsConstantShort()) {
-          return reg_types->ShortConstant();
-        } else {
-          return reg_types->IntConstant();
-        }
-      } else if (type1.IsConstantShort()) {
-        if (type2.IsConstantShort()) {
-          return reg_types->ShortConstant();
-        } else {
-          return reg_types->IntConstant();
-        }
-      } else {
-        return reg_types->IntConstant();
-      }
+    // Kind enumerator values within the non-negative and can-be-negative constant groups are
+    // ordered by increasing range, so the type with the higher kind can be used within these
+    // groups as the merged type and merging across the groups is also quite simple.
+    static_assert(Kind::kZero < Kind::kBooleanConstant);
+    static_assert(Kind::kBooleanConstant < Kind::kPositiveByteConstant);
+    static_assert(Kind::kPositiveByteConstant < Kind::kPositiveShortConstant);
+    static_assert(Kind::kPositiveShortConstant < Kind::kCharConstant);
+    static_assert(Kind::kByteConstant < Kind::kShortConstant);
+    static_assert(Kind::kShortConstant < Kind::kIntegerConstant);
+
+    auto is_non_negative = [](const RegType& reg_type) {
+      bool result = reg_type.IsZero() ||
+                    reg_type.IsBooleanConstant() ||
+                    reg_type.IsPositiveByteConstant() ||
+                    reg_type.IsPositiveShortConstant() ||
+                    reg_type.IsCharConstant();
+      DCHECK_NE(
+          result,
+          reg_type.IsByteConstant() || reg_type.IsShortConstant() || reg_type.IsIntegerConstant());
+      return result;
+    };
+
+    bool is_non_negative_this = is_non_negative(*this);
+    if (is_non_negative_this == is_non_negative(incoming_type)) {
+      return GetKind() >= incoming_type.GetKind() ? *this : incoming_type;
     }
-  } else if (IsConstantLo() && incoming_type.IsConstantLo()) {
-    const ConstantType& type1 = *down_cast<const ConstantType*>(this);
-    const ConstantType& type2 = *down_cast<const ConstantType*>(&incoming_type);
-    int32_t val1 = type1.ConstantValueLo();
-    int32_t val2 = type2.ConstantValueLo();
-    return reg_types->FromCat2ConstLo(val1 | val2, false);
-  } else if (IsConstantHi() && incoming_type.IsConstantHi()) {
-    const ConstantType& type1 = *down_cast<const ConstantType*>(this);
-    const ConstantType& type2 = *down_cast<const ConstantType*>(&incoming_type);
-    int32_t val1 = type1.ConstantValueHi();
-    int32_t val2 = type2.ConstantValueHi();
-    return reg_types->FromCat2ConstHi(val1 | val2, false);
+    Kind non_negative_kind = is_non_negative_this ? GetKind() : incoming_type.GetKind();
+    Kind can_be_negative_kind = is_non_negative_this ? incoming_type.GetKind() : GetKind();
+    if (can_be_negative_kind == Kind::kByteConstant &&
+        non_negative_kind <= Kind::kPositiveByteConstant) {
+      return reg_types->ByteConstant();
+    } else if (can_be_negative_kind <= Kind::kShortConstant &&
+               non_negative_kind <= Kind::kPositiveShortConstant) {
+      return reg_types->ShortConstant();
+    } else {
+      return reg_types->IntegerConstant();
+    }
   } else if (IsIntegralTypes() && incoming_type.IsIntegralTypes()) {
     if (IsBooleanTypes() && incoming_type.IsBooleanTypes()) {
       return reg_types->Boolean();  // boolean MERGE boolean => boolean

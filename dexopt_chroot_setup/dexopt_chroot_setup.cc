@@ -314,7 +314,21 @@ Result<void> BindMountRecursive(const std::string& source, const std::string& ta
       // `source` itself. Already mounted.
       continue;
     }
-    OR_RETURN(BindMount(entry.mount_point, std::string(target).append(sub_dir)));
+    if (Result<void> result = BindMount(entry.mount_point, std::string(target).append(sub_dir));
+        !result.ok()) {
+      // Match paths for the "u:object_r:apk_tmp_file:s0" file context in
+      // system/sepolicy/private/file_contexts.
+      std::regex apk_tmp_file_re(R"re((/data|/mnt/expand/[^/]+)/app/vmdl[^/]+\.tmp(/.*)?)re");
+      std::smatch match;
+      if (std::regex_match(entry.mount_point, match, apk_tmp_file_re)) {
+        // Don't bother. The mount point is a temporary directory created by Package Manager during
+        // app install. We won't be able to dexopt the app there anyway because it's not in the
+        // Package Manager's snapshot.
+        LOG(INFO) << ART_FORMAT("Skipped temporary mount point '{}'", entry.mount_point);
+        continue;
+      }
+      return result;
+    }
   }
   return {};
 }

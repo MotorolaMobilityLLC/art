@@ -24,8 +24,8 @@
 #include <android-base/logging.h>
 
 #include "base/arena_allocator.h"
+#include "base/arena_containers.h"
 #include "base/macros.h"
-#include "base/scoped_arena_containers.h"
 #include "base/value_object.h"
 #include "dex/code_item_accessors.h"
 #include "dex/dex_file_types.h"
@@ -66,7 +66,7 @@ class VerifierDeps;
 // execution of that instruction.
 class PcToRegisterLineTable {
  public:
-  explicit PcToRegisterLineTable(ScopedArenaAllocator& allocator);
+  explicit PcToRegisterLineTable(ArenaAllocator& allocator);
   ~PcToRegisterLineTable();
 
   // Initialize the RegisterTable. Every instruction address can have a different set of information
@@ -75,7 +75,7 @@ class PcToRegisterLineTable {
   void Init(InstructionFlags* flags,
             uint32_t insns_size,
             uint16_t registers_size,
-            ScopedArenaAllocator& allocator,
+            ArenaAllocator& allocator,
             RegTypeCache* reg_types,
             uint32_t interesting_dex_pc);
 
@@ -88,7 +88,7 @@ class PcToRegisterLineTable {
   }
 
  private:
-  ScopedArenaVector<RegisterLineArenaUniquePtr> register_lines_;
+  ArenaVector<RegisterLineArenaUniquePtr> register_lines_;
 
   DISALLOW_COPY_AND_ASSIGN(PcToRegisterLineTable);
 };
@@ -284,8 +284,7 @@ class MethodVerifier {
   Thread* const self_;
 
   // Arena allocator.
-  ArenaStack arena_stack_;
-  ScopedArenaAllocator allocator_;
+  ArenaAllocator allocator_;
 
   RegTypeCache& reg_types_;  // TODO: Change to a pointer in a separate CL.
 

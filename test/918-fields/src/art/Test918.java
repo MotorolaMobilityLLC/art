@@ -28,8 +28,7 @@ public class Test918 {
     public static void doTest() throws Exception {
         testField(Math.class, "PI");
         testField(InterruptedIOException.class, "bytesTransferred");
-        // TODO(b/378676805): Update this check.
-        // testField(Foo.class, "this$0");
+        testField(Foo.class, "this$0");
         testField(Bar.class, "VAL");
         testField(Generics.class, "generics");
         testField(Generics.class, "privateValue");
@@ -65,7 +64,15 @@ public class Test918 {
     private static native int getFieldModifiers(Field f);
     private static native boolean isFieldSynthetic(Field f);
 
-    private class Foo {}
+    private class Foo {
+        public void inc() {
+            // Touch a field in the outer class. Needed to avoid a javac optimization which removes
+            // the synthetic field that refers to the instance of the outer class (this$0).
+            fooVal++;
+        }
+    }
+
+    private int fooVal = 0;
 
     private static interface Bar {
         public static int VAL = 1;

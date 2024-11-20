@@ -10994,24 +10994,8 @@ void ClassLinker::InsertDexFileInToClassLoader(ObjPtr<mirror::Object> dex_file,
   }
 }
 
-class ReclaimMemoryDexCacheVisitor : public DexCacheVisitor {
- public:
-  ReclaimMemoryDexCacheVisitor() {}
-
-  void Visit(ObjPtr<mirror::DexCache> dex_cache)
-      REQUIRES_SHARED(Locks::dex_lock_, Locks::mutator_lock_) override {
-    dex_cache->ReclaimMemory();
-  }
-};
-
 void ClassLinker::CleanupClassLoaders() {
   Thread* const self = Thread::Current();
-  // We clear dex cache arrays for every GC.
-  {
-    ReaderMutexLock mu(self, *Locks::dex_lock_);
-    ReclaimMemoryDexCacheVisitor visitor;
-    VisitDexCaches(&visitor);
-  }
   std::list<ClassLoaderData> to_delete;
   // Do the delete outside the lock to avoid lock violation in jit code cache.
   {

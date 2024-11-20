@@ -62,6 +62,10 @@ class Matcher {
   bool Const0();
   bool IPutOnThis();
 
+  // Match Fn1 or Fn2. This should be used in combination of e.g. Required.
+  template <bool (Matcher::*Fn1)(), bool (Matcher::*Fn2)()>
+  bool Or();
+
  private:
   explicit Matcher(const CodeItemDataAccessor* code_item)
       : code_item_(code_item),
@@ -126,6 +130,11 @@ bool Matcher::IPutOnThis() {
       instruction_->VRegB_22c() == code_item_->RegistersSize() - code_item_->InsSize();
 }
 
+template <bool (Matcher::*Fn1)(), bool (Matcher::*Fn2)()>
+bool Matcher::Or() {
+  return (this->*Fn1)() || (this->*Fn2)();
+}
+
 bool Matcher::DoMatch(const CodeItemDataAccessor* code_item, MatchFn* const* pattern, size_t size) {
   Matcher matcher(code_item);
   while (matcher.pos_ != size) {
@@ -140,13 +149,18 @@ bool Matcher::DoMatch(const CodeItemDataAccessor* code_item, MatchFn* const* pat
 // sure we invoke a constructor either in the same class or superclass with at least "this".
 ArtMethod* GetTargetConstructor(ArtMethod* method, const Instruction* invoke_direct)
     REQUIRES_SHARED(Locks::mutator_lock_) {
-  DCHECK_EQ(invoke_direct->Opcode(), Instruction::INVOKE_DIRECT);
+  DCHECK(invoke_direct->Opcode() == Instruction::INVOKE_DIRECT ||
+         invoke_direct->Opcode() == Instruction::INVOKE_DIRECT_RANGE);
   if (kIsDebugBuild) {
+    uint16_t vregc = invoke_direct->Opcode() == Instruction::INVOKE_DIRECT
+                         ? invoke_direct->VRegC_35c()
+                         : invoke_direct->VRegC_3rc();
     CodeItemDataAccessor accessor(method->DexInstructionData());
-    DCHECK_EQ(invoke_direct->VRegC_35c(),
-              accessor.RegistersSize() - accessor.InsSize());
+    DCHECK_EQ(vregc, accessor.RegistersSize() - accessor.InsSize());
   }
-  uint32_t method_index = invoke_direct->VRegB_35c();
+  uint32_t method_index = invoke_direct->Opcode() == Instruction::INVOKE_DIRECT
+                              ? invoke_direct->VRegB_35c()
+                              : invoke_direct->VRegB_3rc();
   ArtMethod* target_method = Runtime::Current()->GetClassLinker()->LookupResolvedMethod(
       method_index, method->GetDexCache(), method->GetClassLoader());
   if (kIsDebugBuild && target_method != nullptr) {
@@ -162,25 +176,47 @@ ArtMethod* GetTargetConstructor(ArtMethod* method, const Instruction* invoke_dir
 size_t CountForwardedConstructorArguments(const CodeItemDataAccessor* code_item,
                                           const Instruction* invoke_direct,
                                           uint16_t zero_vreg_mask) {
-  DCHECK_EQ(invoke_direct->Opcode(), Instruction::INVOKE_DIRECT);
-  size_t number_of_args = invoke_direct->VRegA_35c();
+  DCHECK(invoke_direct->Opcode() == Instruction::INVOKE_DIRECT ||
+         invoke_direct->Opcode() == Instruction::INVOKE_DIRECT_RANGE);
+  size_t number_of_args = invoke_direct->Opcode() == Instruction::INVOKE_DIRECT
+                              ? invoke_direct->VRegA_35c()
+                              : invoke_direct->VRegA_3rc();
   DCHECK_NE(number_of_args, 0u);
-  uint32_t args[Instruction::kMaxVarArgRegs];
-  invoke_direct->GetVarArgs(args);
-  uint16_t this_vreg = args[0];
-  DCHECK_EQ(this_vreg, code_item->RegistersSize() - code_item->InsSize());  // Checked by verifier.
-  size_t forwarded = 1u;
-  while (forwarded < number_of_args &&
-      args[forwarded] == this_vreg + forwarded &&
-      (zero_vreg_mask & (1u << args[forwarded])) == 0) {
-    ++forwarded;
-  }
-  for (size_t i = forwarded; i != number_of_args; ++i) {
-    if ((zero_vreg_mask & (1u << args[i])) == 0) {
-      return static_cast<size_t>(-1);
+
+  if (invoke_direct->Opcode() == Instruction::INVOKE_DIRECT) {
+    uint32_t args[Instruction::kMaxVarArgRegs];
+    invoke_direct->GetVarArgs(args);
+    uint16_t this_vreg = args[0];
+    DCHECK_EQ(this_vreg,
+              code_item->RegistersSize() - code_item->InsSize());  // Checked by verifier.
+    size_t forwarded = 1u;
+    while (forwarded < number_of_args &&
+        args[forwarded] == this_vreg + forwarded &&
+        (zero_vreg_mask & (1u << args[forwarded])) == 0) {
+      ++forwarded;
     }
+    for (size_t i = forwarded; i != number_of_args; ++i) {
+      if ((zero_vreg_mask & (1u << args[i])) == 0) {
+        return static_cast<size_t>(-1);
+      }
+    }
+    return forwarded;
+  } else {
+    uint16_t this_vreg = invoke_direct->VRegC_3rc();
+    DCHECK_EQ(this_vreg,
+              code_item->RegistersSize() - code_item->InsSize());  // Checked by verifier.
+    size_t forwarded = 1u;
+    while (forwarded < number_of_args &&
+           (zero_vreg_mask & (1u << (this_vreg + forwarded))) == 0) {
+      ++forwarded;
+    }
+    for (size_t i = forwarded; i != number_of_args; ++i) {
+      if ((zero_vreg_mask & (1u << (this_vreg + i))) == 0) {
+        return static_cast<size_t>(-1);
+      }
+    }
+    return forwarded;
   }
-  return forwarded;
 }
 
 uint16_t GetZeroVRegMask(const Instruction* const0) {
@@ -271,10 +307,12 @@ bool DoAnalyseConstructor(const CodeItemDataAccessor* code_item,
   // of the parameters or 0 and the code must then finish with RETURN_VOID.
   // The called constructor must be either java.lang.Object.<init>() or it
   // must also match the same pattern.
-  static Matcher::MatchFn* const kConstructorPattern[] = {
+  static constexpr Matcher::MatchFn* const kConstructorPattern[] = {
       &Matcher::Mark,
       &Matcher::Repeated<&Matcher::Const0>,
-      &Matcher::Required<&Matcher::Opcode<Instruction::INVOKE_DIRECT>>,
+      // Either invoke-direct or invoke-direct/range works
+      &Matcher::Required<&Matcher::Or<&Matcher::Opcode<Instruction::INVOKE_DIRECT>,
+                                      &Matcher::Opcode<Instruction::INVOKE_DIRECT_RANGE>>>,
       &Matcher::Mark,
       &Matcher::Repeated<&Matcher::Const0>,
       &Matcher::Repeated<&Matcher::IPutOnThis>,
@@ -300,15 +338,19 @@ bool DoAnalyseConstructor(const CodeItemDataAccessor* code_item,
     const Instruction& instruction = pair.Inst();
     if (instruction.Opcode() == Instruction::RETURN_VOID) {
       break;
-    } else if (instruction.Opcode() == Instruction::INVOKE_DIRECT) {
+    } else if (instruction.Opcode() == Instruction::INVOKE_DIRECT ||
+               instruction.Opcode() == Instruction::INVOKE_DIRECT_RANGE) {
       ArtMethod* target_method = GetTargetConstructor(method, &instruction);
       if (target_method == nullptr) {
         return false;
       }
       // We allow forwarding constructors only if they pass more arguments
       // to prevent infinite recursion.
+      size_t number_of_args = instruction.Opcode() == Instruction::INVOKE_DIRECT
+                                  ? instruction.VRegA_35c()
+                                  : instruction.VRegA_3rc();
       if (target_method->GetDeclaringClass() == method->GetDeclaringClass() &&
-          instruction.VRegA_35c() <= code_item->InsSize()) {
+          number_of_args <= code_item->InsSize()) {
         return false;
       }
       size_t forwarded = CountForwardedConstructorArguments(code_item, &instruction, zero_vreg_mask);
@@ -452,6 +494,7 @@ bool InlineMethodAnalyser::AnalyseMethodCode(ArtMethod* method,
     case Instruction::CONST_WIDE_32:
     case Instruction::CONST_WIDE_HIGH16:
     case Instruction::INVOKE_DIRECT:
+    case Instruction::INVOKE_DIRECT_RANGE:
       if (method != nullptr && !method->IsStatic() && method->IsConstructor()) {
         return AnalyseConstructor(code_item, method, result);
       }

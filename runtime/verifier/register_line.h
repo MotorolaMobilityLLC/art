@@ -138,17 +138,6 @@ class RegisterLine {
   // Get the type of register vsrc.
   const RegType& GetRegisterType(MethodVerifier* verifier, uint32_t vsrc) const;
 
-  ALWAYS_INLINE bool VerifyRegisterType(MethodVerifier* verifier,
-                                        uint32_t vsrc,
-                                        const RegType& check_type)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  bool VerifyRegisterTypeWide(MethodVerifier* verifier,
-                              uint32_t vsrc,
-                              const RegType& check_type1,
-                              const RegType& check_type2)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
   void CopyFromLine(const RegisterLine* src);
 
   std::string Dump(MethodVerifier* verifier) const REQUIRES_SHARED(Locks::mutator_lock_);
@@ -215,111 +204,6 @@ class RegisterLine {
 
   // Return how many bytes of memory a register line uses.
   ALWAYS_INLINE static size_t ComputeSize(size_t num_regs);
-
-  /*
-   * Verify types for a simple two-register instruction (e.g. "neg-int").
-   * "dst_type" is stored into vA, and "src_type" is verified against vB.
-   */
-  void CheckUnaryOp(MethodVerifier* verifier,
-                    const Instruction* inst,
-                    const RegType& dst_type,
-                    const RegType& src_type)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckUnaryOpWide(MethodVerifier* verifier,
-                        const Instruction* inst,
-                        const RegType& dst_type1,
-                        const RegType& dst_type2,
-                        const RegType& src_type1,
-                        const RegType& src_type2)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckUnaryOpToWide(MethodVerifier* verifier,
-                          const Instruction* inst,
-                          const RegType& dst_type1,
-                          const RegType& dst_type2,
-                          const RegType& src_type)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckUnaryOpFromWide(MethodVerifier* verifier,
-                            const Instruction* inst,
-                            const RegType& dst_type,
-                            const RegType& src_type1,
-                            const RegType& src_type2)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  /*
-   * Verify types for a simple three-register instruction (e.g. "add-int").
-   * "dst_type" is stored into vA, and "src_type1"/"src_type2" are verified
-   * against vB/vC.
-   */
-  void CheckBinaryOp(MethodVerifier* verifier,
-                     const Instruction* inst,
-                     const RegType& dst_type,
-                     const RegType& src_type1,
-                     const RegType& src_type2,
-                     bool check_boolean_op)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckBinaryOpWide(MethodVerifier* verifier,
-                         const Instruction* inst,
-                         const RegType& dst_type1,
-                         const RegType& dst_type2,
-                         const RegType& src_type1_1,
-                         const RegType& src_type1_2,
-                         const RegType& src_type2_1,
-                         const RegType& src_type2_2)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckBinaryOpWideShift(MethodVerifier* verifier,
-                              const Instruction* inst,
-                              const RegType& long_lo_type,
-                              const RegType& long_hi_type,
-                              const RegType& int_type)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  /*
-   * Verify types for a binary "2addr" operation. "src_type1"/"src_type2"
-   * are verified against vA/vB, then "dst_type" is stored into vA.
-   */
-  void CheckBinaryOp2addr(MethodVerifier* verifier,
-                          const Instruction* inst,
-                          const RegType& dst_type,
-                          const RegType& src_type1,
-                          const RegType& src_type2,
-                          bool check_boolean_op)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckBinaryOp2addrWide(MethodVerifier* verifier,
-                              const Instruction* inst,
-                              const RegType& dst_type1,
-                              const RegType& dst_type2,
-                              const RegType& src_type1_1,
-                              const RegType& src_type1_2,
-                              const RegType& src_type2_1,
-                              const RegType& src_type2_2)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void CheckBinaryOp2addrWideShift(MethodVerifier* verifier,
-                                   const Instruction* inst,
-                                   const RegType& long_lo_type,
-                                   const RegType& long_hi_type,
-                                   const RegType& int_type)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  /*
-   * Verify types for A two-register instruction with a literal constant (e.g. "add-int/lit8").
-   * "dst_type" is stored into vA, and "src_type" is verified against vB.
-   *
-   * If "check_boolean_op" is set, we use the constant value in vC.
-   */
-  void CheckLiteralOp(MethodVerifier* verifier,
-                      const Instruction* inst,
-                      const RegType& dst_type,
-                      const RegType& src_type,
-                      bool check_boolean_op,
-                      bool is_lit16)
-      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Verify/push monitor onto the monitor stack, locking the value in reg_idx at location insn_idx.
   void PushMonitor(MethodVerifier* verifier, uint32_t reg_idx, int32_t insn_idx)

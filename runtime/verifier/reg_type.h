@@ -75,6 +75,7 @@ class RegTypeCache;
   V(ConstantLo)                                                               \
   V(ConstantHi)                                                               \
   V(Null)                                                                     \
+  V(JavaLangObject)                                                           \
   V(UnresolvedReference)                                                      \
   V(UninitializedReference)                                                   \
   V(UninitializedThisReference)                                               \
@@ -191,15 +192,15 @@ class RegType {
     // We do not need the class for primitive types.
     return IsReference();
   }
-  bool IsJavaLangObject() const REQUIRES_SHARED(Locks::mutator_lock_);
   bool IsArrayTypes() const REQUIRES_SHARED(Locks::mutator_lock_);
   bool IsObjectArrayTypes() const REQUIRES_SHARED(Locks::mutator_lock_);
   Primitive::Type GetPrimitiveType() const;
   bool IsJavaLangObjectArray() const
       REQUIRES_SHARED(Locks::mutator_lock_);
   bool IsInstantiableTypes() const REQUIRES_SHARED(Locks::mutator_lock_);
-  const std::string_view& GetDescriptor() const {
-    DCHECK(IsReference() ||
+  constexpr const std::string_view& GetDescriptor() const {
+    DCHECK(IsJavaLangObject() ||
+           IsReference() ||
            IsUninitializedTypes() ||
            (IsUnresolvedTypes() && !IsUnresolvedMergedReference()));
     return descriptor_;
@@ -209,14 +210,6 @@ class RegType {
   uint16_t GetId() const { return cache_id_; }
 
   std::string Dump() const REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // Can this type access other?
-  bool CanAccess(const RegType& other) const
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // Can this type access a member with the given properties?
-  bool CanAccessMember(ObjPtr<mirror::Class> klass, uint32_t access_flags) const
-      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Can this type be assigned by src?
   // Note: Object and interface types may always be assigned to one another, see
@@ -470,12 +463,30 @@ class NullType final : public ConstantType {
       REQUIRES_SHARED(Locks::mutator_lock_);
 };
 
+// The reference type for `java.lang.Object` class is specialized to allow compile-time
+// evaluation of merged types and assignablility. Note that we do not record the trivial
+// assignability for `java.lang.Object` in the `VerifierDeps`.
+class JavaLangObjectType final : public RegType {
+ public:
+  constexpr JavaLangObjectType(std::string_view descriptor,
+                               uint16_t cache_id,
+                               const UninitializedReferenceType* uninitialized_type)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  const UninitializedReferenceType* GetUninitializedType() const {
+    return uninitialized_type_;
+  }
+
+ private:
+  const UninitializedReferenceType* const uninitialized_type_;
+};
+
 // Common parent of all uninitialized types. Uninitialized types are created by
 // "new" dex
 // instructions and must be passed to a constructor.
 class UninitializedType : public RegType {
  public:
-  UninitializedType(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
+  constexpr UninitializedType(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
       REQUIRES_SHARED(Locks::mutator_lock_)
       : RegType(descriptor, cache_id, kind) {}
 };
@@ -524,22 +535,16 @@ class ReferenceType final : public RegType {
 // Similar to ReferenceType but not yet having been passed to a constructor.
 class UninitializedReferenceType final : public UninitializedType {
  public:
-  UninitializedReferenceType(uint16_t cache_id, const ReferenceType* initialized_type)
-      REQUIRES_SHARED(Locks::mutator_lock_)
-      : UninitializedType(initialized_type->GetDescriptor(),
-                          cache_id,
-                          Kind::kUninitializedReference),
-        initialized_type_(initialized_type) {
-    CheckConstructorInvariants(this);
-  }
+  constexpr UninitializedReferenceType(uint16_t cache_id, const RegType* initialized_type)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
-  const ReferenceType* GetInitializedType() const {
+  const RegType* GetInitializedType() const {
     return initialized_type_;
   }
 
  private:
   // The corresponding initialized type to transition to after a constructor call.
-  const ReferenceType* const initialized_type_;
+  const RegType* const initialized_type_;
 };
 
 // Similar to UninitializedReferenceType but special case for the this argument
@@ -724,7 +729,8 @@ struct IsUnresolvedTypes : std::bool_constant<
 
 template <class ConcreteRegType>
 struct IsNonZeroReferenceTypes
-    : std::bool_constant<std::is_same_v<ReferenceType, ConcreteRegType> ||
+    : std::bool_constant<std::is_same_v<JavaLangObjectType, ConcreteRegType> ||
+                         std::is_same_v<ReferenceType, ConcreteRegType> ||
                          std::is_base_of_v<UnresolvedType, ConcreteRegType> ||
                          std::is_base_of_v<UninitializedType, ConcreteRegType>> {};
 
@@ -741,6 +747,8 @@ inline constexpr void RegType::CheckConstructorInvariants([[maybe_unused]] Class
     DCHECK(descriptor_.empty()) << *this;
   } else if constexpr (std::is_base_of_v<PrimitiveType, Class>) {
     DCHECK_EQ(descriptor_.length(), 1u) << *this;
+  } else if constexpr (std::is_same_v<Class, JavaLangObjectType>) {
+    DCHECK(!descriptor_.empty()) << *this;
   } else if constexpr (std::is_same_v<Class, UnresolvedMergedReferenceType>) {
     // `UnresolvedMergedReferenceType` is an unresolved type but it has an empty descriptor.
     DCHECK(descriptor_.empty()) << *this;
@@ -865,6 +873,24 @@ constexpr ConstantHiType::ConstantHiType(uint16_t cache_id)
 
 constexpr NullType::NullType(uint16_t cache_id)
     : ConstantType(cache_id, Kind::kNull) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr JavaLangObjectType::JavaLangObjectType(
+    std::string_view descriptor,
+    uint16_t cache_id,
+    const UninitializedReferenceType* uninitialized_type)
+    : RegType(descriptor, cache_id, Kind::kJavaLangObject),
+      uninitialized_type_(uninitialized_type) {
+  CheckConstructorInvariants(this);
+}
+
+constexpr UninitializedReferenceType::UninitializedReferenceType(uint16_t cache_id,
+                                                                 const RegType* initialized_type)
+    : UninitializedType(initialized_type->GetDescriptor(),
+                        cache_id,
+                        Kind::kUninitializedReference),
+      initialized_type_(initialized_type) {
   CheckConstructorInvariants(this);
 }
 

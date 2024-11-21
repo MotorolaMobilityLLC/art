@@ -54,6 +54,7 @@ class DoubleLoType;
 class FloatType;
 class IntegerConstantType;
 class IntegerType;
+class JavaLangObjectType;
 class LongHiType;
 class LongLoType;
 class MethodVerifier;
@@ -150,7 +151,7 @@ class RegTypeCache {
   const ReferenceType& JavaLangInvokeMethodHandle() REQUIRES_SHARED(Locks::mutator_lock_);
   const ReferenceType& JavaLangInvokeMethodType() REQUIRES_SHARED(Locks::mutator_lock_);
   const ReferenceType& JavaLangThrowable() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ReferenceType& JavaLangObject() REQUIRES_SHARED(Locks::mutator_lock_);
+  const JavaLangObjectType& JavaLangObject() REQUIRES_SHARED(Locks::mutator_lock_);
 
   const UninitializedType& Uninitialized(const RegType& type)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -192,7 +193,11 @@ class RegTypeCache {
   static constexpr uint32_t kConstantLoCacheId = kIntegerConstantCacheId + 1u;
   static constexpr uint32_t kConstantHiCacheId = kConstantLoCacheId + 1u;
   static constexpr uint32_t kNullCacheId = kConstantHiCacheId + 1u;
-  static constexpr uint32_t kNumberOfFixedCacheIds = kNullCacheId + 1u;
+  static constexpr uint32_t kJavaLangObjectCacheId = kNullCacheId + 1u;
+  static constexpr uint32_t kNumberOfRegKindCacheIds = kJavaLangObjectCacheId + 1u;
+
+  static constexpr uint32_t kUninitializedJavaLangObjectCacheId = kNumberOfRegKindCacheIds;
+  static constexpr uint32_t kNumberOfFixedCacheIds = kUninitializedJavaLangObjectCacheId + 1u;
 
  private:
   // We want 0 to mean an empty slot in `ids_for_type_index_`, so that we do not need to fill

@@ -676,6 +676,38 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
     return *declaring_class_;
   }
 
+  ObjPtr<mirror::Class> GetRegTypeClass(const RegType& reg_type)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    DCHECK(reg_type.IsJavaLangObject() || reg_type.IsReference()) << reg_type;
+    return reg_type.IsJavaLangObject() ? GetClassRoot<mirror::Object>(GetClassLinker())
+                                       : reg_type.GetClass();
+  }
+
+  bool CanAccess(const RegType& other) REQUIRES_SHARED(Locks::mutator_lock_) {
+    DCHECK(other.IsJavaLangObject() || other.IsReference() || other.IsUnresolvedReference());
+    const RegType& declaring_class = GetDeclaringClass();
+    if (declaring_class.Equals(other)) {
+      return true;  // Trivial accessibility.
+    } else if (other.IsUnresolvedReference()) {
+      return false;  // More complicated test not possible on unresolved types, be conservative.
+    } else if (declaring_class.IsUnresolvedReference()) {
+      // Be conservative, only allow if `other` is public.
+      return other.IsJavaLangObject() || (other.IsReference() && other.GetClass()->IsPublic());
+    } else {
+      return GetRegTypeClass(declaring_class)->CanAccess(GetRegTypeClass(other));
+    }
+  }
+
+  bool CanAccessMember(ObjPtr<mirror::Class> klass, uint32_t access_flags)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    const RegType& declaring_class = GetDeclaringClass();
+    if (declaring_class.IsUnresolvedReference()) {
+      return false;  // More complicated test not possible on unresolved types, be conservative.
+    } else {
+      return GetRegTypeClass(declaring_class)->CanAccessMember(klass, access_flags);
+    }
+  }
+
   InstructionFlags* CurrentInsnFlags() {
     return &GetModifiableInstructionFlags(work_insn_idx_);
   }
@@ -2419,7 +2451,9 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       // Dex file verifier ensures that all valid type indexes reference valid descriptors and the
       // `CheckNewInstance()` ensures that the descriptor starts with an `L` before we get to the
       // code flow verification. So, we should not see a conflict (void) or a primitive type here.
-      DCHECK(res_type.IsReference() || res_type.IsUnresolvedReference()) << res_type;
+      DCHECK(res_type.IsJavaLangObject() ||
+             res_type.IsReference() ||
+             res_type.IsUnresolvedReference()) << res_type;
       // TODO: check Compiler::CanAccessTypeWithoutChecks returns false when res_type is unresolved
       // can't create an instance of an interface or abstract class */
       if (!res_type.IsInstantiableTypes()) {
@@ -3565,7 +3599,7 @@ const RegType& MethodVerifier<kVerifierDebug>::ResolveClass(dex::TypeIndex class
           || !result.IsUnresolvedTypes())) {
     const RegType& referrer = GetDeclaringClass();
     if ((IsSdkVersionSetAndAtLeast(api_level_, SdkVersion::kP) || !referrer.IsUnresolvedTypes()) &&
-        !referrer.CanAccess(result)) {
+        !CanAccess(result)) {
       if (IsAotMode()) {
         Fail(VERIFY_ERROR_ACCESS_CLASS);
         VLOG(verifier)
@@ -3680,9 +3714,8 @@ ArtMethod* MethodVerifier<kVerifierDebug>::ResolveMethodAndCheckAccess(
   if (klass_type.IsUnresolvedTypes()) {
     return nullptr;  // Can't resolve Class so no more to do here
   }
-  ObjPtr<mirror::Class> klass = klass_type.GetClass();
-  const RegType& referrer = GetDeclaringClass();
   ClassLinker* class_linker = GetClassLinker();
+  ObjPtr<mirror::Class> klass = GetRegTypeClass(klass_type);
 
   ArtMethod* res_method = dex_cache_->GetResolvedMethod(dex_method_idx);
   if (res_method == nullptr) {
@@ -3768,10 +3801,10 @@ ArtMethod* MethodVerifier<kVerifierDebug>::ResolveMethodAndCheckAccess(
     return nullptr;
   }
   // Check if access is allowed.
-  if (!referrer.CanAccessMember(res_method->GetDeclaringClass(), res_method->GetAccessFlags())) {
+  if (!CanAccessMember(res_method->GetDeclaringClass(), res_method->GetAccessFlags())) {
     Fail(VERIFY_ERROR_ACCESS_METHOD) << "illegal method access (call "
                                      << res_method->PrettyMethod()
-                                     << " from " << referrer << ")";
+                                     << " from " << GetDeclaringClass() << ")";
     return res_method;
   }
   // Check that invoke-virtual and invoke-super are not used on private methods of the same class.
@@ -3862,11 +3895,14 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgsFromIterator(
       const uint32_t method_idx = GetMethodIdxOfInvoke(inst);
       const dex::TypeIndex class_idx = dex_file_->GetMethodId(method_idx).class_idx_;
       const RegType* res_method_class = &reg_types_.FromTypeIndex(class_idx);
-      DCHECK_IMPLIES(res_method != nullptr, res_method_class->IsReference());
+      DCHECK_IMPLIES(res_method != nullptr,
+                     res_method_class->IsJavaLangObject() || res_method_class->IsReference());
+      DCHECK_IMPLIES(res_method != nullptr && res_method_class->IsJavaLangObject(),
+                     res_method->GetDeclaringClass()->IsObjectClass());
       // Miranda methods have the declaring interface as their declaring class, not the abstract
       // class. It would be wrong to use this for the type check (interface type checks are
       // postponed to runtime).
-      if (res_method != nullptr && !res_method->IsMiranda()) {
+      if (res_method != nullptr && res_method_class->IsReference() && !res_method->IsMiranda()) {
         ObjPtr<mirror::Class> klass = res_method->GetDeclaringClass();
         if (res_method_class->GetClass() != klass) {
           // The resolved method is in a superclass, not directly in the referenced class.
@@ -4038,7 +4074,8 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgs(
       VerifyInvocationArgsUnresolvedMethod(inst, method_type, is_range);
       return nullptr;
     }
-    if (reference_type.GetClass()->IsInterface()) {
+    DCHECK(reference_type.IsJavaLangObject() || reference_type.IsReference());
+    if (reference_type.IsReference() && reference_type.GetClass()->IsInterface()) {
       if (!GetDeclaringClass().HasClass()) {
         Fail(VERIFY_ERROR_NO_CLASS) << "Unable to resolve the full class of 'this' used in an"
                                     << "interface invoke-super";
@@ -4072,7 +4109,7 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgs(
         return nullptr;
       }
       if (!reference_type.IsStrictlyAssignableFrom(GetDeclaringClass(), this) ||
-          (res_method->GetMethodIndex() >= super.GetClass()->GetVTableLength())) {
+          (res_method->GetMethodIndex() >= GetRegTypeClass(super)->GetVTableLength())) {
         Fail(VERIFY_ERROR_NO_METHOD) << "invalid invoke-super from "
                                     << dex_file_->PrettyMethod(dex_method_idx_)
                                     << " to super " << super
@@ -4450,8 +4487,7 @@ ArtField* MethodVerifier<kVerifierDebug>::GetStaticField(int field_idx) {
     DCHECK(self_->IsExceptionPending());
     self_->ClearException();
     return nullptr;
-  } else if (!GetDeclaringClass().CanAccessMember(field->GetDeclaringClass(),
-                                                  field->GetAccessFlags())) {
+  } else if (!CanAccessMember(field->GetDeclaringClass(), field->GetAccessFlags())) {
     Fail(VERIFY_ERROR_ACCESS_FIELD) << "cannot access static field " << field->PrettyField()
                                     << " from " << GetDeclaringClass();
     return nullptr;
@@ -4487,6 +4523,7 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(const RegType& obj_ty
 
     return nullptr;  // Can't resolve Class so no more to do here
   }
+  DCHECK(klass_type.IsJavaLangObject() || klass_type.IsReference());
   ClassLinker* class_linker = GetClassLinker();
   ArtField* field = class_linker->ResolveFieldJLS(field_idx, dex_cache_, class_loader_);
 
@@ -4502,8 +4539,11 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(const RegType& obj_ty
     // Fall through into a few last soft failure checks below.
   } else {
     ObjPtr<mirror::Class> klass = field->GetDeclaringClass();
+    DCHECK_IMPLIES(klass_type.IsJavaLangObject(), klass->IsObjectClass());
     const RegType& field_klass =
-        LIKELY(klass_type.GetClass() == klass) ? klass_type : reg_types_.FromClass(klass);
+        LIKELY(klass_type.IsJavaLangObject() || klass_type.GetClass() == klass)
+            ? klass_type
+            : reg_types_.FromClass(klass);
     if (obj_type.IsUninitializedTypes()) {
       // Field accesses through uninitialized references are only allowable for constructors where
       // the field is declared in this class.
@@ -4532,8 +4572,7 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(const RegType& obj_ty
   }
 
   // Few last soft failure checks.
-  if (!GetDeclaringClass().CanAccessMember(field->GetDeclaringClass(),
-                                           field->GetAccessFlags())) {
+  if (!CanAccessMember(field->GetDeclaringClass(), field->GetAccessFlags())) {
     Fail(VERIFY_ERROR_ACCESS_FIELD) << "cannot access instance field " << field->PrettyField()
                                     << " from " << GetDeclaringClass();
     return nullptr;

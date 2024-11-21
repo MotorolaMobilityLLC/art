@@ -51,7 +51,7 @@ if [[ $action = create ]]; then
     if [[ "$TARGET_ARCH" = "riscv64" ]]; then
         # Get U-Boot for Ubuntu 22.04 (Jammy)
         get_stable_binary \
-            u/u-boot/u-boot-qemu_2023.07+dfsg-1ubuntu2_all.deb \
+            u/u-boot/u-boot-qemu_2024.01+dfsg-5ubuntu2_all.deb \
             usr/lib/u-boot/qemu-riscv64_smode/uboot.elf
 
         # Get OpenSBI for Ubuntu 22.04 (Jammy)

@@ -263,7 +263,8 @@ void VerifierDeps::AddAssignability(const DexFile& dex_file,
   CHECK(destination.IsUnresolvedReference() || destination.HasClass());
   CHECK(!destination.IsUnresolvedMergedReference());
 
-  if (source.IsUnresolvedReference() || source.HasClass()) {
+  if (source.IsUnresolvedReference() || source.IsJavaLangObject() || source.HasClass()) {
+    DCHECK_IMPLIES(source.IsJavaLangObject(), destination.IsUnresolvedReference());
     // Get string IDs for both descriptors and store in the appropriate set.
     dex::StringIndex destination_id =
         GetIdFromString(dex_file, std::string(destination.GetDescriptor()));

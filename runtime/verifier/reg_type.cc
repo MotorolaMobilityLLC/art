@@ -81,6 +81,7 @@ std::string RegType::Dump() const {
     case Kind::kConstantLo: return "Low-half Constant";
     case Kind::kConstantHi: return "High-half Constant";
     case Kind::kNull: return "null";
+    case Kind::kJavaLangObject: return "Reference java.lang.Object";
 
     case Kind::kUnresolvedReference:
       reference_tag = "Unresolved Reference: ";
@@ -163,10 +164,6 @@ Primitive::Type RegType::GetPrimitiveType() const {
   }
 }
 
-bool RegType::IsJavaLangObject() const REQUIRES_SHARED(Locks::mutator_lock_) {
-  return IsReference() && GetClass()->IsObjectClass();
-}
-
 bool RegType::IsObjectArrayTypes() const {
   if (IsUnresolvedMergedReference()) {
     return down_cast<const UnresolvedMergedReferenceType&>(*this).IsObjectArrayTypesImpl();
@@ -203,7 +200,8 @@ bool RegType::IsJavaLangObjectArray() const {
 }
 
 bool RegType::IsInstantiableTypes() const {
-  return IsUnresolvedTypes() || (IsNonZeroReferenceTypes() && GetClass()->IsInstantiable());
+  DCHECK(IsJavaLangObject() || IsReference() || IsUnresolvedReference()) << *this;
+  return !IsReference() || GetClass()->IsInstantiable();
 }
 
 static constexpr const RegType& SelectNonConstant(const RegType& a, const RegType& b) {
@@ -437,6 +435,8 @@ constexpr RegType::Kind RegTypeMergeImpl::MergeKind(RegType::Kind incoming_kind)
       // special. They may only ever be merged with themselves (must be taken care of by the
       // caller of Merge(), see the DCHECK on entry). So mark any other merge as conflicting here.
       return Kind::kConflict;
+    } else if (IsJavaLangObject() || incoming_type.IsJavaLangObject()) {
+      return Kind::kJavaLangObject;
     } else {
       // Use `UnresolvedMergedReference` to tell the caller to process a reference merge.
       // This does not mean that the actual merged kind must be `UnresolvedMergedReference`.
@@ -477,10 +477,10 @@ const RegType& RegType::Merge(const RegType& incoming_type,
     DCHECK(incoming_type.IsReferenceTypes()) << incoming_type;
     DCHECK(!IsUninitializedTypes()) << *this;
     DCHECK(!incoming_type.IsUninitializedTypes());
+    DCHECK(!IsJavaLangObject());
+    DCHECK(!incoming_type.IsJavaLangObject());
     if (IsZeroOrNull() || incoming_type.IsZeroOrNull()) {
       return SelectNonConstant2(*this, incoming_type);  // 0 MERGE ref => ref
-    } else if (IsJavaLangObject() || incoming_type.IsJavaLangObject()) {
-      return reg_types->JavaLangObject();  // Object MERGE ref => Object
     } else if (IsUnresolvedTypes() || incoming_type.IsUnresolvedTypes()) {
       // We know how to merge an unresolved type with itself, 0 or Object. In this case we
       // have two sub-classes and don't know how to merge. Create a new string-based unresolved

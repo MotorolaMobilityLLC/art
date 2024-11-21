@@ -400,9 +400,7 @@ const UninitializedType& RegTypeCache::Uninitialized(const RegType& type) {
       const UninitRefType* uninit_ref_type = ref_type.GetUninitializedType();
       if (uninit_ref_type == nullptr) {
         uninit_ref_type = new (&allocator_) UninitRefType(entries_.size(), &ref_type);
-        // Add `uninit_ref_type` to `entries_` but do not unnecessarily cache it in the
-        // `klass_entries_` even for resolved types. We can retrieve it directly from `ref_type`.
-        entries_.push_back(uninit_ref_type);
+        AddEntry(uninit_ref_type);
         ref_type.SetUninitializedType(uninit_ref_type);
       }
       return uninit_ref_type;
@@ -442,7 +440,9 @@ const UninitializedType& RegTypeCache::UninitializedThisArgument(const RegType& 
     for (size_t i = kNumberOfFixedCacheIds; i < entries_.size(); i++) {
       const RegType* cur_entry = entries_[i];
       if (cur_entry->IsUnresolvedUninitializedThisReference() &&
-          cur_entry->GetDescriptor() == descriptor) {
+          down_cast<const UnresolvedUninitializedThisReferenceType*>(cur_entry)
+              ->GetInitializedType() == &type) {
+        DCHECK_EQ(cur_entry->GetDescriptor(), type.GetDescriptor());
         return *down_cast<const UninitializedType*>(cur_entry);
       }
     }
@@ -453,7 +453,10 @@ const UninitializedType& RegTypeCache::UninitializedThisArgument(const RegType& 
     ObjPtr<mirror::Class> klass = type.GetClass();
     for (size_t i = kNumberOfFixedCacheIds; i < entries_.size(); i++) {
       const RegType* cur_entry = entries_[i];
-      if (cur_entry->IsUninitializedThisReference() && cur_entry->GetClass() == klass) {
+      if (cur_entry->IsUninitializedThisReference() &&
+          down_cast<const UninitializedThisReferenceType*>(cur_entry)
+              ->GetInitializedType() == &type) {
+        DCHECK_EQ(cur_entry->GetDescriptor(), type.GetDescriptor());
         return *down_cast<const UninitializedType*>(cur_entry);
       }
     }
@@ -461,10 +464,7 @@ const UninitializedType& RegTypeCache::UninitializedThisArgument(const RegType& 
         entries_.size(), down_cast<const ReferenceType*>(&type));
   }
   last_uninitialized_this_type_ = entry;
-  // Add `entry` to `entries_` but do not unnecessarily  cache it in `klass_entries_` even
-  // for resolved types.
-  entries_.push_back(entry);
-  return *entry;
+  return AddEntry(entry);
 }
 
 const RegType& RegTypeCache::GetComponentType(const RegType& array) {

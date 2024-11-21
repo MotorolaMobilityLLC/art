@@ -188,14 +188,24 @@ std::string ReferenceType::Dump() const {
 }
 
 std::string UninitializedReferenceType::Dump() const {
+  DCHECK(!HasClass());
+  DCHECK(initialized_type_ != nullptr);
+  DCHECK(initialized_type_->HasClass());
+  DCHECK(initialized_type_->GetClass()->DescriptorEquals(GetDescriptor()));
   std::stringstream result;
-  result << "Uninitialized Reference: " << mirror::Class::PrettyDescriptor(GetClass());
+  result << "Uninitialized Reference: "
+         << mirror::Class::PrettyDescriptor(initialized_type_->GetClass());
   return result.str();
 }
 
 std::string UninitializedThisReferenceType::Dump() const {
+  DCHECK(!HasClass());
+  DCHECK(initialized_type_ != nullptr);
+  DCHECK(initialized_type_->HasClass());
+  DCHECK(initialized_type_->GetClass()->DescriptorEquals(GetDescriptor()));
   std::stringstream result;
-  result << "Uninitialized This Reference: " << mirror::Class::PrettyDescriptor(GetClass());
+  result << "Uninitialized This Reference: "
+         << mirror::Class::PrettyDescriptor(initialized_type_->GetClass());
   return result.str();
 }
 
@@ -614,6 +624,7 @@ const RegType& RegType::Merge(const RegType& incoming_type,
 }
 
 void RegType::CheckClassDescriptor() const {
+  CHECK(IsReference());
   CHECK(HasClass());
   CHECK(!descriptor_.empty()) << *this;
   std::string temp;

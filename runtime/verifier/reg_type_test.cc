@@ -421,10 +421,6 @@ TEST_F(RegTypeReferenceTest, UnresolvedType) {
 
   const RegType& ref_type_1 = cache.FromDescriptor("Ljava/lang/DoesNotExist;");
   EXPECT_TRUE(ref_type_0.Equals(ref_type_1));
-
-  const RegType& unresolved_super_class =  cache.FromUnresolvedSuperClass(ref_type_0);
-  EXPECT_TRUE(unresolved_super_class.IsUnresolvedSuperClass());
-  EXPECT_TRUE(unresolved_super_class.IsNonZeroReferenceTypes());
 }
 
 TEST_F(RegTypeReferenceTest, UnresolvedUnintializedType) {

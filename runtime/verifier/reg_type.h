@@ -81,7 +81,6 @@ class RegTypeCache;
   V(UnresolvedUninitializedReference)                                         \
   V(UnresolvedUninitializedThisReference)                                     \
   V(UnresolvedMergedReference)                                                \
-  V(UnresolvedSuperClass)                                                     \
   V(Reference)                                                                \
 
 #define FORWARD_DECLARE_REG_TYPE(name) class name##Type;
@@ -195,8 +194,7 @@ class RegType {
   bool IsInstantiableTypes() const REQUIRES_SHARED(Locks::mutator_lock_);
   const std::string_view& GetDescriptor() const {
     DCHECK(HasClass() ||
-           (IsUnresolvedTypes() && !IsUnresolvedMergedReference() &&
-            !IsUnresolvedSuperClass()));
+           (IsUnresolvedTypes() && !IsUnresolvedMergedReference()));
     return descriptor_;
   }
   ObjPtr<mirror::Class> GetClass() const REQUIRES_SHARED(Locks::mutator_lock_) {
@@ -210,8 +208,6 @@ class RegType {
     return klass_;
   }
   uint16_t GetId() const { return cache_id_; }
-  const RegType& GetSuperClass(RegTypeCache* cache) const
-      REQUIRES_SHARED(Locks::mutator_lock_);
 
   virtual std::string Dump() const
       REQUIRES_SHARED(Locks::mutator_lock_) = 0;
@@ -806,26 +802,6 @@ class UnresolvedUninitializedThisReferenceType final : public UninitializedType 
   const UnresolvedReferenceType* initialized_type_;
 };
 
-// Type representing the super-class of an unresolved type.
-class UnresolvedSuperClassType final : public UnresolvedType {
- public:
-  UnresolvedSuperClassType(uint16_t child_id,
-                           RegTypeCache* reg_type_cache,
-                           uint16_t cache_id)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  uint16_t GetUnresolvedSuperClassChildId() const {
-    DCHECK(IsUnresolvedSuperClass());
-    return static_cast<uint16_t>(unresolved_child_id_ & 0xFFFF);
-  }
-
-  std::string Dump() const override REQUIRES_SHARED(Locks::mutator_lock_);
-
- private:
-  const uint16_t unresolved_child_id_;
-  const RegTypeCache* const reg_type_cache_;
-};
-
 // A merge of unresolved (and resolved) types. If the types were resolved this may be
 // Conflict or another known ReferenceType.
 class UnresolvedMergedReferenceType final : public UnresolvedType {
@@ -922,9 +898,6 @@ inline constexpr void RegType::CheckConstructorInvariants([[maybe_unused]] Class
   // Note: `HasClass()` cannot be `constexpr` as long as we compare the result with the
   // `HasClassVirtual()`. Therefore we need to use the `klass_` directly for those paths
   // that require compile-time evaluation.
-  // Note: cpplint seems to be confused by the `} else if constexpr (<multi-line-condition>) {`
-  // and says: "If an else has a brace on one side, it should have it on both". This is a bogus
-  // error as this is a variation of the common `} else if (...) {` pattern.
   if constexpr (std::is_same_v<Class, UndefinedType> ||
                 std::is_same_v<Class, ConflictType> ||
                 std::is_same_v<Class, NullType> ||
@@ -935,10 +908,8 @@ inline constexpr void RegType::CheckConstructorInvariants([[maybe_unused]] Class
     // We use an invalid handle for primitive types because we do not actually need the class.
     DCHECK(klass_.GetReference() == nullptr) << *this;
     DCHECK_EQ(descriptor_.length(), 1u) << *this;
-  } else if constexpr (std::is_same_v<Class, UnresolvedSuperClassType> ||  // NOLINT
-                       std::is_same_v<Class, UnresolvedMergedReferenceType>) {
-    // `UnresolvedSuperClassType` and `UnresolvedMergedReferenceType` are
-    // unresolved types but they have an empty descriptor.
+  } else if constexpr (std::is_same_v<Class, UnresolvedMergedReferenceType>) {
+    // `UnresolvedMergedReferenceType` is an unresolved type but it has an empty descriptor.
     DCHECK(klass_.GetReference() == nullptr) << *this;
     DCHECK(descriptor_.empty()) << *this;
   } else if constexpr (detail::IsUnresolvedTypes<Class>::value) {

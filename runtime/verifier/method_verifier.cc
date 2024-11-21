@@ -4051,7 +4051,15 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgs(
         return nullptr;
       }
     } else {
-      const RegType& super = GetDeclaringClass().GetSuperClass(&reg_types_);
+      if (UNLIKELY(!class_def_.superclass_idx_.IsValid())) {
+        // Verification error in `j.l.Object` leads to a hang while trying to verify
+        // the exception class. It is better to crash directly.
+        LOG(FATAL) << "No superclass for invoke-super from "
+                   << dex_file_->PrettyMethod(dex_method_idx_)
+                   << " to super " << res_method->PrettyMethod() << ".";
+        UNREACHABLE();
+      }
+      const RegType& super = reg_types_.FromTypeIndex(class_def_.superclass_idx_);
       if (super.IsUnresolvedTypes()) {
         Fail(VERIFY_ERROR_NO_METHOD) << "unknown super class in invoke-super from "
                                     << dex_file_->PrettyMethod(dex_method_idx_)

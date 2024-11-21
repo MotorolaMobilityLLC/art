@@ -923,14 +923,14 @@ struct OatWriter::OrderedMethodData {
   // Bin each method according to the profile flags.
   //
   // Groups by e.g.
-  //  -- not hot at all
-  //  -- hot
-  //  -- hot and startup
-  //  -- hot and post-startup
-  //  -- hot and startup and poststartup
-  //  -- startup
+  //  -- startup and hot and poststartup
+  //  -- startup and hot
   //  -- startup and post-startup
+  //  -- startup
+  //  -- hot and post-startup
+  //  -- hot
   //  -- post-startup
+  //  -- not hot at all
   //
   // (See MethodHotness enum definition for up-to-date binning order.)
   bool operator<(const OrderedMethodData& other) const {
@@ -942,8 +942,9 @@ struct OatWriter::OrderedMethodData {
       return name < other_name;
     }
 
-    // Use the profile's method hotness to determine sort order.
-    if (hotness_bits < other.hotness_bits) {
+    // Use the profile's method hotness to determine sort order, with startup
+    // methods appearing first.
+    if (hotness_bits > other.hotness_bits) {
       return true;
     }
 
@@ -1069,9 +1070,9 @@ class OatWriter::LayoutCodeMethodVisitor final : public OatDexMethodVisitor {
         // Note: Bin-to-bin order does not matter. If the kernel does or does not read-ahead
         // any memory, it only goes into the buffer cache and does not grow the PSS until the
         // first time that memory is referenced in the process.
-        constexpr uint32_t kHotBit = 1u;
-        constexpr uint32_t kStartupBit = 2u;
-        constexpr uint32_t kPostStartupBit = 4u;
+        constexpr uint32_t kStartupBit = 4u;
+        constexpr uint32_t kHotBit = 2u;
+        constexpr uint32_t kPostStartupBit = 1u;
         hotness_bits =
             (pci->IsHotMethod(profile_index_, method_index) ? kHotBit : 0u) |
             (pci->IsStartupMethod(profile_index_, method_index) ? kStartupBit : 0u) |

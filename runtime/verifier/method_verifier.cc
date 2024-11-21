@@ -708,6 +708,244 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
     }
   }
 
+  ALWAYS_INLINE inline bool VerifyRegisterType(uint32_t vsrc, const RegType& check_type)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    // Verify the src register type against the check type refining the type of the register
+    const RegType& src_type = work_line_->GetRegisterType(this, vsrc);
+    if (UNLIKELY(!check_type.IsAssignableFrom(src_type, this))) {
+      enum VerifyError fail_type;
+      if (!check_type.IsNonZeroReferenceTypes() || !src_type.IsNonZeroReferenceTypes()) {
+        // Hard fail if one of the types is primitive, since they are concretely known.
+        fail_type = VERIFY_ERROR_BAD_CLASS_HARD;
+      } else if (check_type.IsUninitializedTypes() || src_type.IsUninitializedTypes()) {
+        // Hard fail for uninitialized types, which don't match anything but themselves.
+        fail_type = VERIFY_ERROR_BAD_CLASS_HARD;
+      } else if (check_type.IsUnresolvedTypes() || src_type.IsUnresolvedTypes()) {
+        fail_type = VERIFY_ERROR_UNRESOLVED_TYPE_CHECK;
+      } else {
+        fail_type = VERIFY_ERROR_BAD_CLASS_HARD;
+      }
+      Fail(fail_type) << "register v" << vsrc << " has type "
+                      << src_type << " but expected " << check_type;
+      return false;
+    }
+    if (check_type.IsLowHalf()) {
+      const RegType& src_type_h = work_line_->GetRegisterType(this, vsrc + 1);
+      if (UNLIKELY(!src_type.CheckWidePair(src_type_h))) {
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+            << "wide register v" << vsrc << " has type " << src_type << "/" << src_type_h;
+        return false;
+      }
+    }
+    // The register at vsrc has a defined type, we know the lower-upper-bound, but this is less
+    // precise than the subtype in vsrc so leave it for reference types. For primitive types if
+    // they are a defined type then they are as precise as we can get, however, for constant types
+    // we may wish to refine them. Unfortunately constant propagation has rendered this useless.
+    return true;
+  }
+
+  bool VerifyRegisterTypeWide(uint32_t vsrc,
+                              const RegType& check_type1,
+                              const RegType& check_type2)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    DCHECK(check_type1.CheckWidePair(check_type2));
+    // Verify the src register type against the check type refining the type of the register
+    const RegType& src_type = work_line_->GetRegisterType(this, vsrc);
+    if (!check_type1.IsAssignableFrom(src_type, this)) {
+      Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+          << "register v" << vsrc << " has type " << src_type << " but expected " << check_type1;
+      return false;
+    }
+    const RegType& src_type_h = work_line_->GetRegisterType(this, vsrc + 1);
+    if (!src_type.CheckWidePair(src_type_h)) {
+      Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+          << "wide register v" << vsrc << " has type " << src_type << "/" << src_type_h;
+      return false;
+    }
+    // The register at vsrc has a defined type, we know the lower-upper-bound, but this is less
+    // precise than the subtype in vsrc so leave it for reference types. For primitive types if
+    // they are a defined type then they are as precise as we can get, however, for constant types
+    // we may wish to refine them. Unfortunately constant propagation has rendered this useless.
+    return true;
+  }
+
+  /*
+   * Verify types for a simple two-register instruction (e.g. "neg-int").
+   * "dst_type" is stored into vA, and "src_type" is verified against vB.
+   */
+  void CheckUnaryOp(const Instruction* inst, const RegType& dst_type, const RegType& src_type)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    if (VerifyRegisterType(inst->VRegB_12x(), src_type)) {
+      work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_12x(), dst_type);
+    }
+  }
+
+  void CheckUnaryOpWide(const Instruction* inst,
+                        const RegType& dst_type1,
+                        const RegType& dst_type2,
+                        const RegType& src_type1,
+                        const RegType& src_type2)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    if (VerifyRegisterTypeWide(inst->VRegB_12x(), src_type1, src_type2)) {
+      work_line_->SetRegisterTypeWide(inst->VRegA_12x(), dst_type1, dst_type2);
+    }
+  }
+
+  void CheckUnaryOpToWide(const Instruction* inst,
+                          const RegType& dst_type1,
+                          const RegType& dst_type2,
+                          const RegType& src_type)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    if (VerifyRegisterType(inst->VRegB_12x(), src_type)) {
+      work_line_->SetRegisterTypeWide(inst->VRegA_12x(), dst_type1, dst_type2);
+    }
+  }
+
+  void CheckUnaryOpFromWide(const Instruction* inst,
+                            const RegType& dst_type,
+                            const RegType& src_type1,
+                            const RegType& src_type2)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    if (VerifyRegisterTypeWide(inst->VRegB_12x(), src_type1, src_type2)) {
+      work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_12x(), dst_type);
+    }
+  }
+
+  /*
+   * Verify types for a simple three-register instruction (e.g. "add-int").
+   * "dst_type" is stored into vA, and "src_type1"/"src_type2" are verified
+   * against vB/vC.
+   */
+  void CheckBinaryOp(const Instruction* inst,
+                     const RegType& dst_type,
+                     const RegType& src_type1,
+                     const RegType& src_type2,
+                     bool check_boolean_op)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    const uint32_t vregB = inst->VRegB_23x();
+    const uint32_t vregC = inst->VRegC_23x();
+    if (VerifyRegisterType(vregB, src_type1) &&
+        VerifyRegisterType(vregC, src_type2)) {
+      if (check_boolean_op) {
+        DCHECK(dst_type.IsInteger());
+        if (work_line_->GetRegisterType(this, vregB).IsBooleanTypes() &&
+            work_line_->GetRegisterType(this, vregC).IsBooleanTypes()) {
+          work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_23x(), reg_types_.Boolean());
+          return;
+        }
+      }
+      work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_23x(), dst_type);
+    }
+  }
+
+  void CheckBinaryOpWide(const Instruction* inst,
+                         const RegType& dst_type1,
+                         const RegType& dst_type2,
+                         const RegType& src_type1_1,
+                         const RegType& src_type1_2,
+                         const RegType& src_type2_1,
+                         const RegType& src_type2_2)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    if (VerifyRegisterTypeWide(inst->VRegB_23x(), src_type1_1, src_type1_2) &&
+        VerifyRegisterTypeWide(inst->VRegC_23x(), src_type2_1, src_type2_2)) {
+      work_line_->SetRegisterTypeWide(inst->VRegA_23x(), dst_type1, dst_type2);
+    }
+  }
+
+  void CheckBinaryOpWideShift(const Instruction* inst,
+                              const RegType& long_lo_type,
+                              const RegType& long_hi_type,
+                              const RegType& int_type)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    if (VerifyRegisterTypeWide(inst->VRegB_23x(), long_lo_type, long_hi_type) &&
+        VerifyRegisterType(inst->VRegC_23x(), int_type)) {
+      work_line_->SetRegisterTypeWide(inst->VRegA_23x(), long_lo_type, long_hi_type);
+    }
+  }
+
+  /*
+   * Verify types for a binary "2addr" operation. "src_type1"/"src_type2"
+   * are verified against vA/vB, then "dst_type" is stored into vA.
+   */
+  void CheckBinaryOp2addr(const Instruction* inst,
+                          const RegType& dst_type,
+                          const RegType& src_type1,
+                          const RegType& src_type2,
+                          bool check_boolean_op)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    const uint32_t vregA = inst->VRegA_12x();
+    const uint32_t vregB = inst->VRegB_12x();
+    if (VerifyRegisterType(vregA, src_type1) &&
+        VerifyRegisterType(vregB, src_type2)) {
+      if (check_boolean_op) {
+        DCHECK(dst_type.IsInteger());
+        if (work_line_->GetRegisterType(this, vregA).IsBooleanTypes() &&
+            work_line_->GetRegisterType(this, vregB).IsBooleanTypes()) {
+          work_line_->SetRegisterType<LockOp::kClear>(vregA, reg_types_.Boolean());
+          return;
+        }
+      }
+      work_line_->SetRegisterType<LockOp::kClear>(vregA, dst_type);
+    }
+  }
+
+  void CheckBinaryOp2addrWide(const Instruction* inst,
+                              const RegType& dst_type1,
+                              const RegType& dst_type2,
+                              const RegType& src_type1_1,
+                              const RegType& src_type1_2,
+                              const RegType& src_type2_1,
+                              const RegType& src_type2_2)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    const uint32_t vregA = inst->VRegA_12x();
+    const uint32_t vregB = inst->VRegB_12x();
+    if (VerifyRegisterTypeWide(vregA, src_type1_1, src_type1_2) &&
+        VerifyRegisterTypeWide(vregB, src_type2_1, src_type2_2)) {
+      work_line_->SetRegisterTypeWide(vregA, dst_type1, dst_type2);
+    }
+  }
+
+  void CheckBinaryOp2addrWideShift(const Instruction* inst,
+                                   const RegType& long_lo_type,
+                                   const RegType& long_hi_type,
+                                   const RegType& int_type)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    const uint32_t vregA = inst->VRegA_12x();
+    const uint32_t vregB = inst->VRegB_12x();
+    if (VerifyRegisterTypeWide(vregA, long_lo_type, long_hi_type) &&
+        VerifyRegisterType(vregB, int_type)) {
+      work_line_->SetRegisterTypeWide(vregA, long_lo_type, long_hi_type);
+    }
+  }
+
+  /*
+   * Verify types for A two-register instruction with a literal constant (e.g. "add-int/lit8").
+   * "dst_type" is stored into vA, and "src_type" is verified against vB.
+   *
+   * If "check_boolean_op" is set, we use the constant value in vC.
+   */
+  void CheckLiteralOp(const Instruction* inst,
+                      const RegType& dst_type,
+                      const RegType& src_type,
+                      bool check_boolean_op,
+                      bool is_lit16)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    const uint32_t vregA = is_lit16 ? inst->VRegA_22s() : inst->VRegA_22b();
+    const uint32_t vregB = is_lit16 ? inst->VRegB_22s() : inst->VRegB_22b();
+    if (VerifyRegisterType(vregB, src_type)) {
+      if (check_boolean_op) {
+        DCHECK(dst_type.IsInteger());
+        /* check vB with the call, then check the constant manually */
+        const uint32_t val = is_lit16 ? inst->VRegC_22s() : inst->VRegC_22b();
+        if (work_line_->GetRegisterType(this, vregB).IsBooleanTypes() && (val == 0 || val == 1)) {
+          work_line_->SetRegisterType<LockOp::kClear>(vregA, reg_types_.Boolean());
+          return;
+        }
+      }
+      work_line_->SetRegisterType<LockOp::kClear>(vregA, dst_type);
+    }
+  }
+
   InstructionFlags* CurrentInsnFlags() {
     return &GetModifiableInstructionFlags(work_insn_idx_);
   }
@@ -2144,8 +2382,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                            return_type.IsShort() || return_type.IsChar()) &&
                            src_type.IsInteger()));
           /* check the register contents */
-          bool success =
-              work_line_->VerifyRegisterType(this, vregA, use_src ? src_type : return_type);
+          bool success = VerifyRegisterType(vregA, use_src ? src_type : return_type);
           if (!success) {
             AppendToLastFailMessage(StringPrintf(" return-1nr on invalid register v%d", vregA));
           }
@@ -2161,7 +2398,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         } else {
           /* check the register contents */
           const uint32_t vregA = inst->VRegA_11x();
-          bool success = work_line_->VerifyRegisterType(this, vregA, return_type);
+          bool success = VerifyRegisterType(vregA, return_type);
           if (!success) {
             AppendToLastFailMessage(StringPrintf(" return-wide on invalid register v%d", vregA));
           }
@@ -2481,33 +2718,31 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       break;
     case Instruction::CMPL_FLOAT:
     case Instruction::CMPG_FLOAT:
-      if (!work_line_->VerifyRegisterType(this, inst->VRegB_23x(), reg_types_.Float())) {
+      if (!VerifyRegisterType(inst->VRegB_23x(), reg_types_.Float())) {
         break;
       }
-      if (!work_line_->VerifyRegisterType(this, inst->VRegC_23x(), reg_types_.Float())) {
+      if (!VerifyRegisterType(inst->VRegC_23x(), reg_types_.Float())) {
         break;
       }
       work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_23x(), reg_types_.Integer());
       break;
     case Instruction::CMPL_DOUBLE:
     case Instruction::CMPG_DOUBLE:
-      if (!work_line_->VerifyRegisterTypeWide(this, inst->VRegB_23x(), reg_types_.DoubleLo(),
-                                              reg_types_.DoubleHi())) {
+      if (!VerifyRegisterTypeWide(inst->VRegB_23x(), reg_types_.DoubleLo(),
+                                  reg_types_.DoubleHi())) {
         break;
       }
-      if (!work_line_->VerifyRegisterTypeWide(this, inst->VRegC_23x(), reg_types_.DoubleLo(),
-                                              reg_types_.DoubleHi())) {
+      if (!VerifyRegisterTypeWide(inst->VRegC_23x(), reg_types_.DoubleLo(),
+                                  reg_types_.DoubleHi())) {
         break;
       }
       work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_23x(), reg_types_.Integer());
       break;
     case Instruction::CMP_LONG:
-      if (!work_line_->VerifyRegisterTypeWide(this, inst->VRegB_23x(), reg_types_.LongLo(),
-                                              reg_types_.LongHi())) {
+      if (!VerifyRegisterTypeWide(inst->VRegB_23x(), reg_types_.LongLo(), reg_types_.LongHi())) {
         break;
       }
-      if (!work_line_->VerifyRegisterTypeWide(this, inst->VRegC_23x(), reg_types_.LongLo(),
-                                              reg_types_.LongHi())) {
+      if (!VerifyRegisterTypeWide(inst->VRegC_23x(), reg_types_.LongLo(), reg_types_.LongHi())) {
         break;
       }
       work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_23x(), reg_types_.Integer());
@@ -2536,7 +2771,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::PACKED_SWITCH:
     case Instruction::SPARSE_SWITCH:
       /* verify that vAA is an integer, or can be converted to one */
-      work_line_->VerifyRegisterType(this, inst->VRegA_31t(), reg_types_.Integer());
+      VerifyRegisterType(inst->VRegA_31t(), reg_types_.Integer());
       break;
 
     case Instruction::FILL_ARRAY_DATA: {
@@ -3086,74 +3321,69 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     }
     case Instruction::NEG_INT:
     case Instruction::NOT_INT:
-      work_line_->CheckUnaryOp(this, inst, reg_types_.Integer(), reg_types_.Integer());
+      CheckUnaryOp(inst, reg_types_.Integer(), reg_types_.Integer());
       break;
     case Instruction::NEG_LONG:
     case Instruction::NOT_LONG:
-      work_line_->CheckUnaryOpWide(this, inst, reg_types_.LongLo(), reg_types_.LongHi(),
-                                   reg_types_.LongLo(), reg_types_.LongHi());
+      CheckUnaryOpWide(inst, reg_types_.LongLo(), reg_types_.LongHi(),
+                       reg_types_.LongLo(), reg_types_.LongHi());
       break;
     case Instruction::NEG_FLOAT:
-      work_line_->CheckUnaryOp(this, inst, reg_types_.Float(), reg_types_.Float());
+      CheckUnaryOp(inst, reg_types_.Float(), reg_types_.Float());
       break;
     case Instruction::NEG_DOUBLE:
-      work_line_->CheckUnaryOpWide(this, inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
-                                   reg_types_.DoubleLo(), reg_types_.DoubleHi());
+      CheckUnaryOpWide(inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
+                       reg_types_.DoubleLo(), reg_types_.DoubleHi());
       break;
     case Instruction::INT_TO_LONG:
-      work_line_->CheckUnaryOpToWide(this, inst, reg_types_.LongLo(), reg_types_.LongHi(),
-                                     reg_types_.Integer());
+      CheckUnaryOpToWide(inst, reg_types_.LongLo(), reg_types_.LongHi(), reg_types_.Integer());
       break;
     case Instruction::INT_TO_FLOAT:
-      work_line_->CheckUnaryOp(this, inst, reg_types_.Float(), reg_types_.Integer());
+      CheckUnaryOp(inst, reg_types_.Float(), reg_types_.Integer());
       break;
     case Instruction::INT_TO_DOUBLE:
-      work_line_->CheckUnaryOpToWide(this, inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
-                                     reg_types_.Integer());
+      CheckUnaryOpToWide(inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
+                         reg_types_.Integer());
       break;
     case Instruction::LONG_TO_INT:
-      work_line_->CheckUnaryOpFromWide(this, inst, reg_types_.Integer(),
-                                       reg_types_.LongLo(), reg_types_.LongHi());
+      CheckUnaryOpFromWide(inst, reg_types_.Integer(), reg_types_.LongLo(), reg_types_.LongHi());
       break;
     case Instruction::LONG_TO_FLOAT:
-      work_line_->CheckUnaryOpFromWide(this, inst, reg_types_.Float(),
-                                       reg_types_.LongLo(), reg_types_.LongHi());
+      CheckUnaryOpFromWide(inst, reg_types_.Float(), reg_types_.LongLo(), reg_types_.LongHi());
       break;
     case Instruction::LONG_TO_DOUBLE:
-      work_line_->CheckUnaryOpWide(this, inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
-                                   reg_types_.LongLo(), reg_types_.LongHi());
+      CheckUnaryOpWide(inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
+                       reg_types_.LongLo(), reg_types_.LongHi());
       break;
     case Instruction::FLOAT_TO_INT:
-      work_line_->CheckUnaryOp(this, inst, reg_types_.Integer(), reg_types_.Float());
+      CheckUnaryOp(inst, reg_types_.Integer(), reg_types_.Float());
       break;
     case Instruction::FLOAT_TO_LONG:
-      work_line_->CheckUnaryOpToWide(this, inst, reg_types_.LongLo(), reg_types_.LongHi(),
-                                     reg_types_.Float());
+      CheckUnaryOpToWide(inst, reg_types_.LongLo(), reg_types_.LongHi(), reg_types_.Float());
       break;
     case Instruction::FLOAT_TO_DOUBLE:
-      work_line_->CheckUnaryOpToWide(this, inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
-                                     reg_types_.Float());
+      CheckUnaryOpToWide(inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(), reg_types_.Float());
       break;
     case Instruction::DOUBLE_TO_INT:
-      work_line_->CheckUnaryOpFromWide(this, inst, reg_types_.Integer(),
-                                       reg_types_.DoubleLo(), reg_types_.DoubleHi());
+      CheckUnaryOpFromWide(inst, reg_types_.Integer(),
+                           reg_types_.DoubleLo(), reg_types_.DoubleHi());
       break;
     case Instruction::DOUBLE_TO_LONG:
-      work_line_->CheckUnaryOpWide(this, inst, reg_types_.LongLo(), reg_types_.LongHi(),
-                                   reg_types_.DoubleLo(), reg_types_.DoubleHi());
+      CheckUnaryOpWide(inst, reg_types_.LongLo(), reg_types_.LongHi(),
+                       reg_types_.DoubleLo(), reg_types_.DoubleHi());
       break;
     case Instruction::DOUBLE_TO_FLOAT:
-      work_line_->CheckUnaryOpFromWide(this, inst, reg_types_.Float(),
-                                       reg_types_.DoubleLo(), reg_types_.DoubleHi());
+      CheckUnaryOpFromWide(inst, reg_types_.Float(),
+                           reg_types_.DoubleLo(), reg_types_.DoubleHi());
       break;
     case Instruction::INT_TO_BYTE:
-      work_line_->CheckUnaryOp(this, inst, reg_types_.Byte(), reg_types_.Integer());
+      CheckUnaryOp(inst, reg_types_.Byte(), reg_types_.Integer());
       break;
     case Instruction::INT_TO_CHAR:
-      work_line_->CheckUnaryOp(this, inst, reg_types_.Char(), reg_types_.Integer());
+      CheckUnaryOp(inst, reg_types_.Char(), reg_types_.Integer());
       break;
     case Instruction::INT_TO_SHORT:
-      work_line_->CheckUnaryOp(this, inst, reg_types_.Short(), reg_types_.Integer());
+      CheckUnaryOp(inst, reg_types_.Short(), reg_types_.Integer());
       break;
 
     case Instruction::ADD_INT:
@@ -3164,14 +3394,12 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::SHL_INT:
     case Instruction::SHR_INT:
     case Instruction::USHR_INT:
-      work_line_->CheckBinaryOp(this, inst, reg_types_.Integer(), reg_types_.Integer(),
-                                reg_types_.Integer(), false);
+      CheckBinaryOp(inst, reg_types_.Integer(), reg_types_.Integer(), reg_types_.Integer(), false);
       break;
     case Instruction::AND_INT:
     case Instruction::OR_INT:
     case Instruction::XOR_INT:
-      work_line_->CheckBinaryOp(this, inst, reg_types_.Integer(), reg_types_.Integer(),
-                                reg_types_.Integer(), true);
+      CheckBinaryOp(inst, reg_types_.Integer(), reg_types_.Integer(), reg_types_.Integer(), true);
       break;
     case Instruction::ADD_LONG:
     case Instruction::SUB_LONG:
@@ -3181,33 +3409,31 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::AND_LONG:
     case Instruction::OR_LONG:
     case Instruction::XOR_LONG:
-      work_line_->CheckBinaryOpWide(this, inst, reg_types_.LongLo(), reg_types_.LongHi(),
-                                    reg_types_.LongLo(), reg_types_.LongHi(),
-                                    reg_types_.LongLo(), reg_types_.LongHi());
+      CheckBinaryOpWide(inst, reg_types_.LongLo(), reg_types_.LongHi(),
+                        reg_types_.LongLo(), reg_types_.LongHi(),
+                        reg_types_.LongLo(), reg_types_.LongHi());
       break;
     case Instruction::SHL_LONG:
     case Instruction::SHR_LONG:
     case Instruction::USHR_LONG:
       /* shift distance is Int, making these different from other binary operations */
-      work_line_->CheckBinaryOpWideShift(this, inst, reg_types_.LongLo(), reg_types_.LongHi(),
-                                         reg_types_.Integer());
+      CheckBinaryOpWideShift(inst, reg_types_.LongLo(), reg_types_.LongHi(), reg_types_.Integer());
       break;
     case Instruction::ADD_FLOAT:
     case Instruction::SUB_FLOAT:
     case Instruction::MUL_FLOAT:
     case Instruction::DIV_FLOAT:
     case Instruction::REM_FLOAT:
-      work_line_->CheckBinaryOp(this, inst, reg_types_.Float(), reg_types_.Float(),
-                                reg_types_.Float(), false);
+      CheckBinaryOp(inst, reg_types_.Float(), reg_types_.Float(), reg_types_.Float(), false);
       break;
     case Instruction::ADD_DOUBLE:
     case Instruction::SUB_DOUBLE:
     case Instruction::MUL_DOUBLE:
     case Instruction::DIV_DOUBLE:
     case Instruction::REM_DOUBLE:
-      work_line_->CheckBinaryOpWide(this, inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
-                                    reg_types_.DoubleLo(), reg_types_.DoubleHi(),
-                                    reg_types_.DoubleLo(), reg_types_.DoubleHi());
+      CheckBinaryOpWide(inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
+                        reg_types_.DoubleLo(), reg_types_.DoubleHi(),
+                        reg_types_.DoubleLo(), reg_types_.DoubleHi());
       break;
     case Instruction::ADD_INT_2ADDR:
     case Instruction::SUB_INT_2ADDR:
@@ -3216,18 +3442,18 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::SHL_INT_2ADDR:
     case Instruction::SHR_INT_2ADDR:
     case Instruction::USHR_INT_2ADDR:
-      work_line_->CheckBinaryOp2addr(this, inst, reg_types_.Integer(), reg_types_.Integer(),
-                                     reg_types_.Integer(), false);
+      CheckBinaryOp2addr(
+          inst, reg_types_.Integer(), reg_types_.Integer(), reg_types_.Integer(), false);
       break;
     case Instruction::AND_INT_2ADDR:
     case Instruction::OR_INT_2ADDR:
     case Instruction::XOR_INT_2ADDR:
-      work_line_->CheckBinaryOp2addr(this, inst, reg_types_.Integer(), reg_types_.Integer(),
-                                     reg_types_.Integer(), true);
+      CheckBinaryOp2addr(
+          inst, reg_types_.Integer(), reg_types_.Integer(), reg_types_.Integer(), true);
       break;
     case Instruction::DIV_INT_2ADDR:
-      work_line_->CheckBinaryOp2addr(this, inst, reg_types_.Integer(), reg_types_.Integer(),
-                                     reg_types_.Integer(), false);
+      CheckBinaryOp2addr(
+          inst, reg_types_.Integer(), reg_types_.Integer(), reg_types_.Integer(), false);
       break;
     case Instruction::ADD_LONG_2ADDR:
     case Instruction::SUB_LONG_2ADDR:
@@ -3237,46 +3463,43 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::AND_LONG_2ADDR:
     case Instruction::OR_LONG_2ADDR:
     case Instruction::XOR_LONG_2ADDR:
-      work_line_->CheckBinaryOp2addrWide(this, inst, reg_types_.LongLo(), reg_types_.LongHi(),
-                                         reg_types_.LongLo(), reg_types_.LongHi(),
-                                         reg_types_.LongLo(), reg_types_.LongHi());
+      CheckBinaryOp2addrWide(inst, reg_types_.LongLo(), reg_types_.LongHi(),
+                             reg_types_.LongLo(), reg_types_.LongHi(),
+                             reg_types_.LongLo(), reg_types_.LongHi());
       break;
     case Instruction::SHL_LONG_2ADDR:
     case Instruction::SHR_LONG_2ADDR:
     case Instruction::USHR_LONG_2ADDR:
-      work_line_->CheckBinaryOp2addrWideShift(this, inst, reg_types_.LongLo(), reg_types_.LongHi(),
-                                              reg_types_.Integer());
+      CheckBinaryOp2addrWideShift(
+          inst, reg_types_.LongLo(), reg_types_.LongHi(), reg_types_.Integer());
       break;
     case Instruction::ADD_FLOAT_2ADDR:
     case Instruction::SUB_FLOAT_2ADDR:
     case Instruction::MUL_FLOAT_2ADDR:
     case Instruction::DIV_FLOAT_2ADDR:
     case Instruction::REM_FLOAT_2ADDR:
-      work_line_->CheckBinaryOp2addr(this, inst, reg_types_.Float(), reg_types_.Float(),
-                                     reg_types_.Float(), false);
+      CheckBinaryOp2addr(inst, reg_types_.Float(), reg_types_.Float(), reg_types_.Float(), false);
       break;
     case Instruction::ADD_DOUBLE_2ADDR:
     case Instruction::SUB_DOUBLE_2ADDR:
     case Instruction::MUL_DOUBLE_2ADDR:
     case Instruction::DIV_DOUBLE_2ADDR:
     case Instruction::REM_DOUBLE_2ADDR:
-      work_line_->CheckBinaryOp2addrWide(this, inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
-                                         reg_types_.DoubleLo(),  reg_types_.DoubleHi(),
-                                         reg_types_.DoubleLo(), reg_types_.DoubleHi());
+      CheckBinaryOp2addrWide(inst, reg_types_.DoubleLo(), reg_types_.DoubleHi(),
+                             reg_types_.DoubleLo(),  reg_types_.DoubleHi(),
+                             reg_types_.DoubleLo(), reg_types_.DoubleHi());
       break;
     case Instruction::ADD_INT_LIT16:
     case Instruction::RSUB_INT_LIT16:
     case Instruction::MUL_INT_LIT16:
     case Instruction::DIV_INT_LIT16:
     case Instruction::REM_INT_LIT16:
-      work_line_->CheckLiteralOp(this, inst, reg_types_.Integer(), reg_types_.Integer(), false,
-                                 true);
+      CheckLiteralOp(inst, reg_types_.Integer(), reg_types_.Integer(), false, true);
       break;
     case Instruction::AND_INT_LIT16:
     case Instruction::OR_INT_LIT16:
     case Instruction::XOR_INT_LIT16:
-      work_line_->CheckLiteralOp(this, inst, reg_types_.Integer(), reg_types_.Integer(), true,
-                                 true);
+      CheckLiteralOp(inst, reg_types_.Integer(), reg_types_.Integer(), true, true);
       break;
     case Instruction::ADD_INT_LIT8:
     case Instruction::RSUB_INT_LIT8:
@@ -3286,14 +3509,12 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::SHL_INT_LIT8:
     case Instruction::SHR_INT_LIT8:
     case Instruction::USHR_INT_LIT8:
-      work_line_->CheckLiteralOp(this, inst, reg_types_.Integer(), reg_types_.Integer(), false,
-                                 false);
+      CheckLiteralOp(inst, reg_types_.Integer(), reg_types_.Integer(), false, false);
       break;
     case Instruction::AND_INT_LIT8:
     case Instruction::OR_INT_LIT8:
     case Instruction::XOR_INT_LIT8:
-      work_line_->CheckLiteralOp(this, inst, reg_types_.Integer(), reg_types_.Integer(), true,
-                                 false);
+      CheckLiteralOp(inst, reg_types_.Integer(), reg_types_.Integer(), true, false);
       break;
 
     /* These should never appear during verification. */
@@ -3947,7 +4168,7 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgsFromIterator(
         return nullptr;
       }
     } else {
-      if (!work_line_->VerifyRegisterType(this, get_reg, reg_type)) {
+      if (!VerifyRegisterType(get_reg, reg_type)) {
         // Continue on soft failures. We need to find possible hard failures to avoid problems in
         // the compiler.
         if (flags_.have_pending_hard_failure_) {
@@ -4247,7 +4468,7 @@ void MethodVerifier<kVerifierDebug>::VerifyNewArray(const Instruction* inst,
       Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "new-array on non-array class " << res_type;
     } else if (!is_filled) {
       /* make sure "size" register is valid type */
-      work_line_->VerifyRegisterType(this, inst->VRegB_22c(), reg_types_.Integer());
+      VerifyRegisterType(inst->VRegB_22c(), reg_types_.Integer());
       /* set register type to array class */
       work_line_->SetRegisterType<LockOp::kClear>(inst->VRegA_22c(), res_type);
     } else {
@@ -4262,7 +4483,7 @@ void MethodVerifier<kVerifierDebug>::VerifyNewArray(const Instruction* inst,
       }
       for (size_t ui = 0; ui < arg_count; ui++) {
         uint32_t get_reg = is_range ? inst->VRegC_3rc() + ui : arg[ui];
-        work_line_->VerifyRegisterType(this, get_reg, expected_type);
+        VerifyRegisterType(get_reg, expected_type);
         if (flags_.have_pending_hard_failure_) {
           // Don't continue on hard failures.
           return;
@@ -4426,7 +4647,7 @@ void MethodVerifier<kVerifierDebug>::VerifyAPut(const Instruction* inst,
           }
         }
       }
-      work_line_->VerifyRegisterType(this, inst->VRegA_23x(), *modified_reg_type);
+      VerifyRegisterType(inst->VRegA_23x(), *modified_reg_type);
     } else if (!array_type.IsArrayTypes()) {
       Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "not array type " << array_type << " with aput";
     } else if (array_type.IsUnresolvedMergedReference()) {
@@ -4451,7 +4672,7 @@ void MethodVerifier<kVerifierDebug>::VerifyAPut(const Instruction* inst,
           // The instruction agrees with the type of array, confirm the value to be stored does too
           // Note: we use the instruction type (rather than the component type) for aput-object as
           // incompatible classes will be caught at runtime as an array store exception
-          work_line_->VerifyRegisterType(this, vregA, insn_type);
+          VerifyRegisterType(vregA, insn_type);
         }
       }
     }
@@ -4692,7 +4913,7 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
                                           << "' in put-object";
         return;
       }
-      work_line_->VerifyRegisterType(this, vregA, field_type);
+      VerifyRegisterType(vregA, field_type);
     }
   } else if (kAccType == FieldAccessType::kAccGet) {
     // sget or iget.

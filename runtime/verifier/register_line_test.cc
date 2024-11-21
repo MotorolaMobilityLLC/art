@@ -47,7 +47,7 @@ class RegisterLineTest : public CommonRuntimeTest {
         /*api_level=*/ 0u);
   }
 
-  ScopedArenaAllocator& GetScopedArenaAllocator(MethodVerifier* verifier) {
+  ArenaAllocator& GetArenaAllocator(MethodVerifier* verifier) {
     return verifier->allocator_;
   }
 };
@@ -119,7 +119,7 @@ TEST_F(RegisterLineTest, NewInstanceDexPcsMerging) {
 
   constexpr size_t kNumRegs = 1u;
   constexpr uint32_t kVReg = 0u;
-  ScopedArenaAllocator& allocator = GetScopedArenaAllocator(verifier.get());
+  ArenaAllocator& allocator = GetArenaAllocator(verifier.get());
   RegisterLineArenaUniquePtr line1(RegisterLine::Create(kNumRegs, allocator, &reg_types));
   RegisterLineArenaUniquePtr line2(RegisterLine::Create(kNumRegs, allocator, &reg_types));
   for (const TestCase& test_case : test_cases) {

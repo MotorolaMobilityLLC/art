@@ -73,13 +73,13 @@ using android::base::StringPrintf;
 
 static constexpr bool kTimeVerifyMethod = !kIsDebugBuild;
 
-PcToRegisterLineTable::PcToRegisterLineTable(ScopedArenaAllocator& allocator)
+PcToRegisterLineTable::PcToRegisterLineTable(ArenaAllocator& allocator)
     : register_lines_(allocator.Adapter(kArenaAllocVerifier)) {}
 
 void PcToRegisterLineTable::Init(InstructionFlags* flags,
                                  uint32_t insns_size,
                                  uint16_t registers_size,
-                                 ScopedArenaAllocator& allocator,
+                                 ArenaAllocator& allocator,
                                  RegTypeCache* reg_types,
                                  uint32_t interesting_dex_pc) {
   DCHECK_GT(insns_size, 0U);
@@ -4833,8 +4833,7 @@ MethodVerifier::MethodVerifier(Thread* self,
                                uint32_t dex_method_idx,
                                bool aot_mode)
     : self_(self),
-      arena_stack_(arena_pool),
-      allocator_(&arena_stack_),
+      allocator_(arena_pool),
       reg_types_(*reg_types),
       reg_table_(allocator_),
       work_insn_idx_(dex::kDexNoIndex),
@@ -5025,8 +5024,7 @@ MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
                    << " took " << PrettyDuration(duration_ns)
                    << (impl::IsLargeMethod(verifier.CodeItem()) ? " (large method)" : "")
                    << " (" << StringPrintf("%.2f", bytecodes_per_second) << " bytecodes/s)"
-                   << " (" << verifier.allocator_.ApproximatePeakBytes()
-                   << "B approximate peak alloc)";
+                   << " (" << verifier.allocator_.BytesAllocated() << "B arena alloc)";
     }
   }
   result.types = verifier.encountered_failure_types_;

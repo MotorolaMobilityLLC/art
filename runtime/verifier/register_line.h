@@ -23,10 +23,10 @@
 
 #include <android-base/logging.h>
 
+#include "base/arena_containers.h"
 #include "base/locks.h"
 #include "base/macros.h"
 #include "base/safe_map.h"
-#include "base/scoped_arena_containers.h"
 
 namespace art HIDDEN {
 
@@ -67,7 +67,7 @@ class RegisterLine {
  public:
   using RegisterStackMask = uint32_t;
   // A map from register to a bit vector of indices into the monitors_ stack.
-  using RegToLockDepthsMap = ScopedArenaSafeMap<uint32_t, RegisterStackMask>;
+  using RegToLockDepthsMap = ArenaSafeMap<uint32_t, RegisterStackMask>;
 
   // Maximum number of nested monitors to track before giving up and
   // taking the slow path.
@@ -75,9 +75,7 @@ class RegisterLine {
       std::numeric_limits<RegisterStackMask>::digits;
 
   // Create a register line of num_regs registers.
-  static RegisterLine* Create(size_t num_regs,
-                              ScopedArenaAllocator& allocator,
-                              RegTypeCache* reg_types);
+  static RegisterLine* Create(size_t num_regs, ArenaAllocator& allocator, RegTypeCache* reg_types);
 
   // Implement category-1 "move" instructions. Copy a 32-bit value from "vsrc" to "vdst".
   void CopyRegister1(MethodVerifier* verifier, uint32_t vdst, uint32_t vsrc, TypeCategory cat)
@@ -411,7 +409,7 @@ class RegisterLine {
     reg_to_lock_depths_.erase(reg);
   }
 
-  RegisterLine(size_t num_regs, ScopedArenaAllocator& allocator, RegTypeCache* reg_types);
+  RegisterLine(size_t num_regs, ArenaAllocator& allocator, RegTypeCache* reg_types);
 
   static constexpr uint32_t kNoDexPc = static_cast<uint32_t>(-1);
 
@@ -425,7 +423,7 @@ class RegisterLine {
   uint32_t* allocation_dex_pcs_;
 
   // A stack of monitor enter locations.
-  ScopedArenaVector<uint32_t> monitors_;
+  ArenaVector<uint32_t> monitors_;
 
   // A map from register to a bit vector of indices into the monitors_ stack. As we pop the monitor
   // stack we verify that monitor-enter/exit are correctly nested. That is, if there was a

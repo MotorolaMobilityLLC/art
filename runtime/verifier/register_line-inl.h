@@ -193,7 +193,7 @@ inline void RegisterLine::DCheckUniqueNewInstanceDexPc(MethodVerifier* verifier,
 inline void RegisterLine::EnsureAllocationDexPcsAvailable() {
   DCHECK_NE(num_regs_, 0u);
   if (allocation_dex_pcs_ == nullptr) {
-    ScopedArenaAllocatorAdapter<uint32_t> allocator(monitors_.get_allocator());
+    ArenaAllocatorAdapter<uint32_t> allocator(monitors_.get_allocator());
     allocation_dex_pcs_ = allocator.allocate(num_regs_);
     std::fill_n(allocation_dex_pcs_, num_regs_, kNoDexPc);
   }
@@ -214,14 +214,14 @@ inline size_t RegisterLine::ComputeSize(size_t num_regs) {
 }
 
 inline RegisterLine* RegisterLine::Create(size_t num_regs,
-                                          ScopedArenaAllocator& allocator,
+                                          ArenaAllocator& allocator,
                                           RegTypeCache* reg_types) {
   void* memory = allocator.Alloc(ComputeSize(num_regs));
   return new (memory) RegisterLine(num_regs, allocator, reg_types);
 }
 
 inline RegisterLine::RegisterLine(size_t num_regs,
-                                  ScopedArenaAllocator& allocator,
+                                  ArenaAllocator& allocator,
                                   RegTypeCache* reg_types)
     : num_regs_(num_regs),
       allocation_dex_pcs_(nullptr),
@@ -229,7 +229,11 @@ inline RegisterLine::RegisterLine(size_t num_regs,
       reg_to_lock_depths_(std::less<uint32_t>(),
                           allocator.Adapter(kArenaAllocVerifier)),
       this_initialized_(false) {
-  std::uninitialized_fill_n(line_, num_regs_, RegTypeCache::kUndefinedCacheId);
+  // `ArenaAllocator` guarantees zero-initialization.
+  static_assert(RegTypeCache::kUndefinedCacheId == 0u);
+  DCHECK(std::all_of(line_,
+                     line_ + num_regs_,
+                     [](auto id) { return id == RegTypeCache::kUndefinedCacheId;}));
   SetResultTypeToUnknown(reg_types);
 }
 

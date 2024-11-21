@@ -3857,17 +3857,21 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgsFromIterator(
                                        ? GetRegTypeCache()->FromUninitialized(actual_arg_type)
                                        : actual_arg_type;
     if (method_type != METHOD_INTERFACE && !adjusted_type.IsZeroOrNull()) {
-      const RegType* res_method_class;
+      // Get the referenced class first. This is fast because it's already cached by the type
+      // index due to method resolution. It is usually the resolved method's declaring class.
+      const uint32_t method_idx = GetMethodIdxOfInvoke(inst);
+      const dex::TypeIndex class_idx = dex_file_->GetMethodId(method_idx).class_idx_;
+      const RegType* res_method_class = &reg_types_.FromTypeIndex(class_idx);
+      DCHECK_IMPLIES(res_method != nullptr, res_method_class->IsReference());
       // Miranda methods have the declaring interface as their declaring class, not the abstract
       // class. It would be wrong to use this for the type check (interface type checks are
       // postponed to runtime).
       if (res_method != nullptr && !res_method->IsMiranda()) {
         ObjPtr<mirror::Class> klass = res_method->GetDeclaringClass();
-        res_method_class = &reg_types_.FromClass(klass);
-      } else {
-        const uint32_t method_idx = GetMethodIdxOfInvoke(inst);
-        const dex::TypeIndex class_idx = dex_file_->GetMethodId(method_idx).class_idx_;
-        res_method_class = &reg_types_.FromTypeIndex(class_idx);
+        if (res_method_class->GetClass() != klass) {
+          // The resolved method is in a superclass, not directly in the referenced class.
+          res_method_class = &reg_types_.FromClass(klass);
+        }
       }
       if (!res_method_class->IsAssignableFrom(adjusted_type, this)) {
         Fail(adjusted_type.IsUnresolvedTypes()
@@ -4498,7 +4502,8 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(const RegType& obj_ty
     // Fall through into a few last soft failure checks below.
   } else {
     ObjPtr<mirror::Class> klass = field->GetDeclaringClass();
-    const RegType& field_klass = reg_types_.FromClass(klass);
+    const RegType& field_klass =
+        LIKELY(klass_type.GetClass() == klass) ? klass_type : reg_types_.FromClass(klass);
     if (obj_type.IsUninitializedTypes()) {
       // Field accesses through uninitialized references are only allowable for constructors where
       // the field is declared in this class.

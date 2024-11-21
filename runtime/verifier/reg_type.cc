@@ -55,95 +55,62 @@ std::ostream& operator<<(std::ostream& os, RegType::Kind kind) {
   return os << kind_name;
 }
 
-std::string BooleanType::Dump() const {
-  return "Boolean";
+std::string RegType::Dump() const {
+  std::string_view reference_tag;
+  switch (GetKind()) {
+    case Kind::kUndefined: return "Undefined";
+    case Kind::kConflict: return "Conflict";
+    case Kind::kBoolean: return "Boolean";
+    case Kind::kByte: return "Byte";
+    case Kind::kShort: return "Short";
+    case Kind::kChar: return "Char";
+    case Kind::kInteger: return "Integer";
+    case Kind::kLongLo: return "Long (Low Half)";
+    case Kind::kLongHi: return "Long (High Half)";
+    case Kind::kFloat: return "Float";
+    case Kind::kDoubleLo: return "Double (Low Half)";
+    case Kind::kDoubleHi: return "Double (High Half)";
+    case Kind::kZero: return "Zero/null";
+    case Kind::kBooleanConstant: return "BooleanConstant";
+    case Kind::kPositiveByteConstant: return "PositiveByteConstant";
+    case Kind::kPositiveShortConstant: return "PositiveShortConstant";
+    case Kind::kCharConstant: return "CharConstant";
+    case Kind::kByteConstant: return "ByteConstant";
+    case Kind::kShortConstant: return "ShortConstant";
+    case Kind::kIntegerConstant: return "IntegerConstant";
+    case Kind::kConstantLo: return "Low-half Constant";
+    case Kind::kConstantHi: return "High-half Constant";
+    case Kind::kNull: return "null";
+
+    case Kind::kUnresolvedReference:
+      reference_tag = "Unresolved Reference: ";
+      break;
+    case Kind::kUninitializedReference:
+      reference_tag = "Uninitialized Reference: ";
+      break;
+    case Kind::kUninitializedThisReference:
+      reference_tag = "Uninitialized This Reference: ";
+      break;
+    case Kind::kUnresolvedUninitializedReference:
+      reference_tag = "Unresolved And Uninitialized Reference: ";
+      break;
+    case Kind::kUnresolvedUninitializedThisReference:
+      reference_tag = "Unresolved And Uninitialized This Reference: ";
+      break;
+    case Kind::kReference:
+      reference_tag = "Reference: ";
+      break;
+
+    case Kind::kUnresolvedMergedReference:
+      return down_cast<const UnresolvedMergedReferenceType&>(*this).DumpImpl();
+  }
+  DCHECK(!reference_tag.empty());
+  std::string result(reference_tag);
+  AppendPrettyDescriptor(std::string(GetDescriptor()).c_str(), &result);
+  return result;
 }
 
-std::string ConflictType::Dump() const {
-    return "Conflict";
-}
-
-std::string ByteType::Dump() const {
-  return "Byte";
-}
-
-std::string ShortType::Dump() const {
-  return "Short";
-}
-
-std::string CharType::Dump() const {
-  return "Char";
-}
-
-std::string IntegerType::Dump() const {
-  return "Integer";
-}
-
-std::string FloatType::Dump() const {
-  return "Float";
-}
-
-std::string LongLoType::Dump() const {
-  return "Long (Low Half)";
-}
-
-std::string LongHiType::Dump() const {
-  return "Long (High Half)";
-}
-
-std::string DoubleLoType::Dump() const {
-  return "Double (Low Half)";
-}
-
-std::string DoubleHiType::Dump() const {
-  return "Double (High Half)";
-}
-
-std::string ZeroType::Dump() const {
-  return "Zero/null";
-}
-
-std::string BooleanConstantType::Dump() const {
-  return "BooleanConstant";
-}
-
-std::string PositiveByteConstantType::Dump() const {
-  return "PositiveByteConstant";
-}
-
-std::string PositiveShortConstantType::Dump() const {
-  return "PositiveShortConstant";
-}
-
-std::string CharConstantType::Dump() const {
-  return "CharConstant";
-}
-
-std::string ByteConstantType::Dump() const {
-  return "ByteConstant";
-}
-
-std::string ShortConstantType::Dump() const {
-  return "ShortConstant";
-}
-
-std::string IntegerConstantType::Dump() const {
-  return "IntegerConstant";
-}
-
-std::string ConstantLoType::Dump() const {
-  return "Low-half Constant";
-}
-
-std::string ConstantHiType::Dump() const {
-  return "High-half Constant";
-}
-
-std::string UndefinedType::Dump() const REQUIRES_SHARED(Locks::mutator_lock_) {
-  return "Undefined";
-}
-
-std::string UnresolvedMergedReferenceType::Dump() const {
+std::string UnresolvedMergedReferenceType::DumpImpl() const {
   std::stringstream result;
   result << "UnresolvedMergedReferences(" << GetResolvedPart().Dump() << " | ";
   const BitVector& types = GetUnresolvedTypes();
@@ -158,54 +125,6 @@ std::string UnresolvedMergedReferenceType::Dump() const {
     result << reg_type_cache_->GetFromId(idx).Dump();
   }
   result << ")";
-  return result.str();
-}
-
-std::string UnresolvedReferenceType::Dump() const {
-  std::stringstream result;
-  result << "Unresolved Reference: " << PrettyDescriptor(std::string(GetDescriptor()).c_str());
-  return result.str();
-}
-
-std::string UnresolvedUninitializedReferenceType::Dump() const {
-  std::stringstream result;
-  result << "Unresolved And Uninitialized Reference: "
-      << PrettyDescriptor(std::string(GetDescriptor()).c_str());
-  return result.str();
-}
-
-std::string UnresolvedUninitializedThisReferenceType::Dump() const {
-  std::stringstream result;
-  result << "Unresolved And Uninitialized This Reference: "
-      << PrettyDescriptor(std::string(GetDescriptor()).c_str());
-  return result.str();
-}
-
-std::string ReferenceType::Dump() const {
-  std::stringstream result;
-  result << "Reference: " << mirror::Class::PrettyDescriptor(GetClass());
-  return result.str();
-}
-
-std::string UninitializedReferenceType::Dump() const {
-  DCHECK(!HasClass());
-  DCHECK(initialized_type_ != nullptr);
-  DCHECK(initialized_type_->HasClass());
-  DCHECK(initialized_type_->GetClass()->DescriptorEquals(GetDescriptor()));
-  std::stringstream result;
-  result << "Uninitialized Reference: "
-         << mirror::Class::PrettyDescriptor(initialized_type_->GetClass());
-  return result.str();
-}
-
-std::string UninitializedThisReferenceType::Dump() const {
-  DCHECK(!HasClass());
-  DCHECK(initialized_type_ != nullptr);
-  DCHECK(initialized_type_->HasClass());
-  DCHECK(initialized_type_->GetClass()->DescriptorEquals(GetDescriptor()));
-  std::stringstream result;
-  result << "Uninitialized This Reference: "
-         << mirror::Class::PrettyDescriptor(initialized_type_->GetClass());
   return result.str();
 }
 
@@ -248,9 +167,10 @@ bool RegType::IsJavaLangObject() const REQUIRES_SHARED(Locks::mutator_lock_) {
   return IsReference() && GetClass()->IsObjectClass();
 }
 
-bool RegType::IsObjectArrayTypes() const REQUIRES_SHARED(Locks::mutator_lock_) {
-  if (IsUnresolvedTypes()) {
-    DCHECK(!IsUnresolvedMergedReference());
+bool RegType::IsObjectArrayTypes() const {
+  if (IsUnresolvedMergedReference()) {
+    return down_cast<const UnresolvedMergedReferenceType&>(*this).IsObjectArrayTypesImpl();
+  } else if (IsUnresolvedTypes()) {
     // Primitive arrays will always resolve.
     DCHECK(descriptor_[1] == 'L' || descriptor_[1] == '[');
     return descriptor_[0] == '[';
@@ -262,9 +182,10 @@ bool RegType::IsObjectArrayTypes() const REQUIRES_SHARED(Locks::mutator_lock_) {
   }
 }
 
-bool RegType::IsArrayTypes() const REQUIRES_SHARED(Locks::mutator_lock_) {
-  if (IsUnresolvedTypes()) {
-    DCHECK(!IsUnresolvedMergedReference());
+bool RegType::IsArrayTypes() const {
+  if (IsUnresolvedMergedReference()) {
+    return down_cast<const UnresolvedMergedReferenceType&>(*this).IsArrayTypesImpl();
+  } else if (IsUnresolvedTypes()) {
     return descriptor_[0] == '[';
   } else if (HasClass()) {
     return GetClass()->IsArrayClass();
@@ -435,9 +356,7 @@ ObjPtr<mirror::Class> InterfaceClassJoin(ObjPtr<mirror::Class> s, ObjPtr<mirror:
 class RegTypeMergeImpl final : public RegType {
  public:
   explicit constexpr RegTypeMergeImpl(RegType::Kind kind)
-      : RegType(Handle<mirror::Class>(), "", /* unused cache id */ 0, kind) {}
-
-  std::string Dump() const override { UNREACHABLE(); }
+      : RegType("", /* unused cache id */ 0, kind) {}
 
   constexpr RegType::Kind MergeKind(RegType::Kind incoming_kind) const;
 };
@@ -623,9 +542,9 @@ const RegType& RegType::Merge(const RegType& incoming_type,
   }
 }
 
-void RegType::CheckClassDescriptor() const {
+void ReferenceType::CheckClassDescriptor() const {
   CHECK(IsReference());
-  CHECK(HasClass());
+  CHECK(!klass_.IsNull());
   CHECK(!descriptor_.empty()) << *this;
   std::string temp;
   CHECK_EQ(descriptor_, klass_->GetDescriptor(&temp)) << *this;
@@ -672,7 +591,7 @@ void UnresolvedMergedReferenceType::CheckInvariants() const {
   }
 }
 
-bool UnresolvedMergedReferenceType::IsArrayTypes() const {
+bool UnresolvedMergedReferenceType::IsArrayTypesImpl() const {
   // For a merge to be an array, both the resolved and the unresolved part need to be object
   // arrays.
   // (Note: we encode a missing resolved part [which doesn't need to be an array] as zero.)
@@ -687,7 +606,7 @@ bool UnresolvedMergedReferenceType::IsArrayTypes() const {
   const RegType& unresolved = reg_type_cache_->GetFromId(idx);
   return unresolved.IsArrayTypes();
 }
-bool UnresolvedMergedReferenceType::IsObjectArrayTypes() const {
+bool UnresolvedMergedReferenceType::IsObjectArrayTypesImpl() const {
   // Same as IsArrayTypes, as primitive arrays are always resolved.
   return IsArrayTypes();
 }

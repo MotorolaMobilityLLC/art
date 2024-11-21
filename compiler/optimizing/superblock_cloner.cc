@@ -887,6 +887,9 @@ bool SuperblockCloner::IsSubgraphClonable() const {
     DCHECK_EQ(exits.size(), 1u);
     HInstruction* value = live_out.first;
     if (!value->GetBlock()->Dominates(exits[0])) {
+      // This case can only happen when `value` is used in a catch phi, so the graph must contain a
+      // catch block.
+      DCHECK(graph_->HasTryCatch());
       return false;
     }
   }

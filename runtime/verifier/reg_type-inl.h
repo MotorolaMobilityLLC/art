@@ -28,6 +28,16 @@
 namespace art HIDDEN {
 namespace verifier {
 
+inline ObjPtr<mirror::Class> RegType::GetClass() const {
+  DCHECK(IsReference()) << Dump();
+  return down_cast<const ReferenceType&>(*this).GetClassImpl();
+}
+
+inline Handle<mirror::Class> RegType::GetClassHandle() const {
+  DCHECK(IsReference()) << Dump();
+  return down_cast<const ReferenceType&>(*this).GetClassHandleImpl();
+}
+
 inline bool RegType::CanAccess(const RegType& other) const {
   DCHECK(IsReferenceTypes());
   DCHECK(!IsNull());
@@ -63,9 +73,7 @@ namespace detail {
 class RegTypeAssignableImpl final : RegType {
  public:
   explicit constexpr RegTypeAssignableImpl(RegType::Kind kind)
-      : RegType(Handle<mirror::Class>(), "", /* unused cache id */ 0, kind) {}
-
-  std::string Dump() const override { UNREACHABLE(); }
+      : RegType("", /* unused cache id */ 0, kind) {}
 
   static constexpr Assignability AssignableFrom(RegType::Kind lhs_kind, RegType::Kind rhs_kind);
 };

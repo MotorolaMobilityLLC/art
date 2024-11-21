@@ -386,23 +386,6 @@ const RegType& RegTypeCache::FromUnresolvedMerge(const RegType& left,
                                                                   entries_.size()));
 }
 
-const RegType& RegTypeCache::FromUnresolvedSuperClass(const RegType& child) {
-  // Check if entry already exists.
-  for (size_t i = kNumberOfFixedCacheIds; i < entries_.size(); i++) {
-    const RegType* cur_entry = entries_[i];
-    if (cur_entry->IsUnresolvedSuperClass()) {
-      const UnresolvedSuperClassType* tmp_entry =
-          down_cast<const UnresolvedSuperClassType*>(cur_entry);
-      uint16_t unresolved_super_child_id =
-          tmp_entry->GetUnresolvedSuperClassChildId();
-      if (unresolved_super_child_id == child.GetId()) {
-        return *cur_entry;
-      }
-    }
-  }
-  return AddEntry(new (&allocator_) UnresolvedSuperClassType(child.GetId(), this, entries_.size()));
-}
-
 const UninitializedType& RegTypeCache::Uninitialized(const RegType& type) {
   auto get_or_create_uninitialized_type =
     [&](auto& ref_type) REQUIRES_SHARED(Locks::mutator_lock_) {

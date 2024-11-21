@@ -52,7 +52,6 @@ struct RegKindToCacheId : RegTypeCache {
   DEFINE_FAKE_CACHE_ID(UnresolvedUninitializedReference)
   DEFINE_FAKE_CACHE_ID(UnresolvedUninitializedThisReference)
   DEFINE_FAKE_CACHE_ID(UnresolvedMergedReference)
-  DEFINE_FAKE_CACHE_ID(UnresolvedSuperClass)
   DEFINE_FAKE_CACHE_ID(Reference)
 #undef DEFINE_FAKE_CACHE_ID
 

@@ -161,13 +161,6 @@ std::string UnresolvedMergedReferenceType::Dump() const {
   return result.str();
 }
 
-std::string UnresolvedSuperClassType::Dump() const {
-  std::stringstream result;
-  uint16_t super_type_id = GetUnresolvedSuperClassChildId();
-  result << "UnresolvedSuperClass(" << reg_type_cache_->GetFromId(super_type_id).Dump() << ")";
-  return result.str();
-}
-
 std::string UnresolvedReferenceType::Dump() const {
   std::stringstream result;
   result << "Unresolved Reference: " << PrettyDescriptor(std::string(GetDescriptor()).c_str());
@@ -241,25 +234,6 @@ Primitive::Type RegType::GetPrimitiveType() const {
   }
 }
 
-const RegType& RegType::GetSuperClass(RegTypeCache* cache) const {
-  if (!IsUnresolvedTypes()) {
-    ObjPtr<mirror::Class> super_klass = GetClass()->GetSuperClass();
-    if (super_klass != nullptr) {
-      return cache->FromClass(super_klass);
-    } else {
-      return cache->Zero();
-    }
-  } else {
-    if (!IsUnresolvedMergedReference() && !IsUnresolvedSuperClass() &&
-        GetDescriptor()[0] == '[') {
-      // Super class of all arrays is Object.
-      return cache->JavaLangObject();
-    } else {
-      return cache->FromUnresolvedSuperClass(*this);
-    }
-  }
-}
-
 bool RegType::IsJavaLangObject() const REQUIRES_SHARED(Locks::mutator_lock_) {
   return IsReference() && GetClass()->IsObjectClass();
 }
@@ -267,13 +241,6 @@ bool RegType::IsJavaLangObject() const REQUIRES_SHARED(Locks::mutator_lock_) {
 bool RegType::IsObjectArrayTypes() const REQUIRES_SHARED(Locks::mutator_lock_) {
   if (IsUnresolvedTypes()) {
     DCHECK(!IsUnresolvedMergedReference());
-
-    if (IsUnresolvedSuperClass()) {
-      // Cannot be an array, as the superclass of arrays is java.lang.Object (which cannot be
-      // unresolved).
-      return false;
-    }
-
     // Primitive arrays will always resolve.
     DCHECK(descriptor_[1] == 'L' || descriptor_[1] == '[');
     return descriptor_[0] == '[';
@@ -288,12 +255,6 @@ bool RegType::IsObjectArrayTypes() const REQUIRES_SHARED(Locks::mutator_lock_) {
 bool RegType::IsArrayTypes() const REQUIRES_SHARED(Locks::mutator_lock_) {
   if (IsUnresolvedTypes()) {
     DCHECK(!IsUnresolvedMergedReference());
-
-    if (IsUnresolvedSuperClass()) {
-      // Cannot be an array, as the superclass of arrays is java.lang.Object (which cannot be
-      // unresolved).
-      return false;
-    }
     return descriptor_[0] == '[';
   } else if (HasClass()) {
     return GetClass()->IsArrayClass();
@@ -662,17 +623,6 @@ void RegType::CheckClassDescriptor() const {
   CHECK(!descriptor_.empty()) << *this;
   std::string temp;
   CHECK_EQ(descriptor_, klass_->GetDescriptor(&temp)) << *this;
-}
-
-UnresolvedSuperClassType::UnresolvedSuperClassType(uint16_t child_id,
-                                                   RegTypeCache* reg_type_cache,
-                                                   uint16_t cache_id)
-    REQUIRES_SHARED(Locks::mutator_lock_)
-    : UnresolvedType("", cache_id, Kind::kUnresolvedSuperClass),
-      unresolved_child_id_(child_id),
-      reg_type_cache_(reg_type_cache) {
-  CheckConstructorInvariants(this);
-  DCHECK_NE(unresolved_child_id_, 0U) << *this;
 }
 
 UnresolvedMergedReferenceType::UnresolvedMergedReferenceType(const RegType& resolved,

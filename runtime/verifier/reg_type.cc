@@ -428,7 +428,6 @@ class RegTypeMergeImpl final : public RegType {
       : RegType(Handle<mirror::Class>(), "", /* unused cache id */ 0, kind) {}
 
   std::string Dump() const override { UNREACHABLE(); }
-  AssignmentType GetAssignmentTypeImpl() const override { UNREACHABLE(); }
 
   constexpr RegType::Kind MergeKind(RegType::Kind incoming_kind) const;
 };
@@ -519,8 +518,6 @@ constexpr RegType::Kind RegTypeMergeImpl::MergeKind(RegType::Kind incoming_kind)
   }
 }
 
-
-
 }  // namespace
 
 const RegType& RegType::Merge(const RegType& incoming_type,
@@ -528,12 +525,10 @@ const RegType& RegType::Merge(const RegType& incoming_type,
                               MethodVerifier* verifier) const {
   DCHECK(!Equals(incoming_type));  // Trivial equality handled by caller
 
-#define ADD_ONE_FOR_CONCRETE_REG_TYPE(name) + 1
-  constexpr size_t kNumKinds = 0 FOR_EACH_CONCRETE_REG_TYPE(ADD_ONE_FOR_CONCRETE_REG_TYPE);
-#undef ADD_ONE_FOR_CONCRETE_REG_TYPE
-  static constexpr std::array<std::array<RegType::Kind, kNumKinds>, kNumKinds> kMergeTable =
-      []() constexpr {
-    std::array<std::array<RegType::Kind, kNumKinds>, kNumKinds> result;
+  static constexpr size_t kNumKinds = NumberOfKinds();
+  using MergeTable = std::array<std::array<Kind, kNumKinds>, kNumKinds>;
+  static constexpr MergeTable kMergeTable = []() constexpr {
+    MergeTable result;
     for (size_t lhs = 0u; lhs != kNumKinds; ++lhs) {
       for (size_t rhs = 0u; rhs != kNumKinds; ++rhs) {
         RegTypeMergeImpl lhs_impl(enum_cast<RegType::Kind>(lhs));

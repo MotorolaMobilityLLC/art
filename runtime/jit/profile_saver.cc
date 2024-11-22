@@ -898,7 +898,7 @@ bool ProfileSaver::ProcessProfilingInfo(bool force_save, /*out*/uint16_t* number
         uint64_t bytes_written;
         // Force the save. In case the profile data is corrupted or the profile
         // has the wrong version this will "fix" the file to the correct format.
-        if (info.Save(filename, &bytes_written)) {
+        if (info.Save(filename, &bytes_written, force_save)) {
           // We managed to save the profile. Clear the cache stored during startup.
           if (profile_cache_it != profile_cache_.end()) {
             ProfileCompilationInfo *cached_info = profile_cache_it->second;

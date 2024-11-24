@@ -38,98 +38,141 @@ inline const art::verifier::RegType& RegTypeCache::GetFromId(uint16_t id) const 
   return *result;
 }
 
-inline const ConstantType& RegTypeCache::FromCat1Const(int32_t value, bool precise) {
-  // We only expect 0 to be a precise constant.
-  DCHECK_IMPLIES(value == 0, precise);
-  if (precise && (value >= kMinSmallConstant) && (value <= kMaxSmallConstant)) {
-    return *down_cast<const ConstantType*>(entries_[value - kMinSmallConstant]);
+namespace detail {
+
+struct RegKindToCacheId : RegTypeCache {
+  // Inherit fixed cache ids from `RegTypeCache` and add fake non-fixed cache ids so that
+  // we can use `FOR_EACH_CONCRETE_REG_TYPE` to check the fixed cache ids.
+#define DEFINE_FAKE_CACHE_ID(name)                                    \
+  static_assert(RegType::Kind::k##name >= kNumberOfRegKindCacheIds);  \
+  static constexpr uint32_t k##name##CacheId = RegType::Kind::k##name;
+  DEFINE_FAKE_CACHE_ID(UnresolvedReference)
+  DEFINE_FAKE_CACHE_ID(UninitializedReference)
+  DEFINE_FAKE_CACHE_ID(UninitializedThisReference)
+  DEFINE_FAKE_CACHE_ID(UnresolvedUninitializedReference)
+  DEFINE_FAKE_CACHE_ID(UnresolvedUninitializedThisReference)
+  DEFINE_FAKE_CACHE_ID(UnresolvedMergedReference)
+  DEFINE_FAKE_CACHE_ID(Reference)
+#undef DEFINE_FAKE_CACHE_ID
+
+#define ASSERT_CACHE_ID_EQUALS_KIND(name) \
+  static_assert(k##name##CacheId == RegType::Kind::k##name);
+  FOR_EACH_CONCRETE_REG_TYPE(ASSERT_CACHE_ID_EQUALS_KIND);
+#undef ASSERT_CACHE_ID_EQUALS_KIND
+
+  static constexpr uint16_t Translate(RegType::Kind kind) {
+    DCHECK_LT(kind, kNumberOfRegKindCacheIds);
+    return kind;
   }
-  return FromCat1NonSmallConstant(value, precise);
+};
+
+}  // namespace detail
+
+// Note: To avoid including `reg_types.h` from `reg_type_cache.h`, we define this as
+// a free function because we cannot forward-declare the nested enum `RegType::Kind`.
+inline const art::verifier::RegType& RegTypeFromKind(const RegTypeCache* reg_types,
+                                                     RegType::Kind kind) {
+  return reg_types->GetFromId(detail::RegKindToCacheId::Translate(kind));
 }
 
 inline const RegType& RegTypeCache::FromTypeIndex(dex::TypeIndex type_index) {
   DCHECK_LT(type_index.index_, dex_file_->NumTypeIds());
-  if (entries_for_type_index_[type_index.index_] != nullptr) {
-    return *entries_for_type_index_[type_index.index_];
+  if (ids_for_type_index_[type_index.index_] != kNoIdForTypeIndex) {
+    return GetFromId(ids_for_type_index_[type_index.index_]);
   }
   return FromTypeIndexUncached(type_index);
 }
 
-inline const BooleanType& RegTypeCache::Boolean() {
+inline const BooleanType& RegTypeCache::Boolean() const {
   return *down_cast<const BooleanType*>(entries_[kBooleanCacheId]);
 }
-inline const ByteType& RegTypeCache::Byte() {
+
+inline const ByteType& RegTypeCache::Byte() const {
   return *down_cast<const ByteType*>(entries_[kByteCacheId]);
 }
-inline const CharType& RegTypeCache::Char() {
+
+inline const CharType& RegTypeCache::Char() const {
   return *down_cast<const CharType*>(entries_[kCharCacheId]);
 }
-inline const ShortType& RegTypeCache::Short() {
+
+inline const ShortType& RegTypeCache::Short() const {
   return *down_cast<const ShortType*>(entries_[kShortCacheId]);
 }
-inline const IntegerType& RegTypeCache::Integer() {
-  return *down_cast<const IntegerType*>(entries_[kIntCacheId]);
+
+inline const IntegerType& RegTypeCache::Integer() const {
+  return *down_cast<const IntegerType*>(entries_[kIntegerCacheId]);
 }
-inline const FloatType& RegTypeCache::Float() {
+
+inline const FloatType& RegTypeCache::Float() const {
   return *down_cast<const FloatType*>(entries_[kFloatCacheId]);
 }
-inline const LongLoType& RegTypeCache::LongLo() {
+
+inline const LongLoType& RegTypeCache::LongLo() const {
   return *down_cast<const LongLoType*>(entries_[kLongLoCacheId]);
 }
-inline const LongHiType& RegTypeCache::LongHi() {
+
+inline const LongHiType& RegTypeCache::LongHi() const {
   return *down_cast<const LongHiType*>(entries_[kLongHiCacheId]);
 }
-inline const DoubleLoType& RegTypeCache::DoubleLo() {
+
+inline const DoubleLoType& RegTypeCache::DoubleLo() const {
   return *down_cast<const DoubleLoType*>(entries_[kDoubleLoCacheId]);
 }
-inline const DoubleHiType& RegTypeCache::DoubleHi() {
+
+inline const DoubleHiType& RegTypeCache::DoubleHi() const {
   return *down_cast<const DoubleHiType*>(entries_[kDoubleHiCacheId]);
 }
-inline const UndefinedType& RegTypeCache::Undefined() {
+
+inline const UndefinedType& RegTypeCache::Undefined() const {
   return *down_cast<const UndefinedType*>(entries_[kUndefinedCacheId]);
 }
-inline const ConflictType& RegTypeCache::Conflict() {
+
+inline const ConflictType& RegTypeCache::Conflict() const {
   return *down_cast<const ConflictType*>(entries_[kConflictCacheId]);
 }
-inline const NullType& RegTypeCache::Null() {
+
+inline const NullType& RegTypeCache::Null() const {
   return *down_cast<const NullType*>(entries_[kNullCacheId]);
 }
 
-inline const ImpreciseConstantType& RegTypeCache::ByteConstant() {
-  const ConstantType& result = FromCat1Const(std::numeric_limits<jbyte>::min(), false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstantType*>(&result);
+inline const ZeroType& RegTypeCache::Zero() const {
+  return *down_cast<const ZeroType*>(entries_[kZeroCacheId]);
 }
 
-inline const ImpreciseConstantType& RegTypeCache::CharConstant() {
-  int32_t jchar_max = static_cast<int32_t>(std::numeric_limits<jchar>::max());
-  const ConstantType& result =  FromCat1Const(jchar_max, false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstantType*>(&result);
+inline const BooleanConstantType& RegTypeCache::BooleanConstant() const {
+  return *down_cast<const BooleanConstantType*>(entries_[kBooleanConstantCacheId]);
 }
 
-inline const ImpreciseConstantType& RegTypeCache::ShortConstant() {
-  const ConstantType& result =  FromCat1Const(std::numeric_limits<jshort>::min(), false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstantType*>(&result);
+inline const ByteConstantType& RegTypeCache::ByteConstant() const {
+  return *down_cast<const ByteConstantType*>(entries_[kByteConstantCacheId]);
 }
 
-inline const ImpreciseConstantType& RegTypeCache::IntConstant() {
-  const ConstantType& result = FromCat1Const(std::numeric_limits<jint>::max(), false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstantType*>(&result);
+inline const CharConstantType& RegTypeCache::CharConstant() const {
+  return *down_cast<const CharConstantType*>(entries_[kCharConstantCacheId]);
 }
 
-inline const ImpreciseConstantType& RegTypeCache::PosByteConstant() {
-  const ConstantType& result = FromCat1Const(std::numeric_limits<jbyte>::max(), false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstantType*>(&result);
+inline const ShortConstantType& RegTypeCache::ShortConstant() const {
+  return *down_cast<const ShortConstantType*>(entries_[kShortConstantCacheId]);
 }
 
-inline const ImpreciseConstantType& RegTypeCache::PosShortConstant() {
-  const ConstantType& result =  FromCat1Const(std::numeric_limits<jshort>::max(), false);
-  DCHECK(result.IsImpreciseConstant());
-  return *down_cast<const ImpreciseConstantType*>(&result);
+inline const IntegerConstantType& RegTypeCache::IntegerConstant() const {
+  return *down_cast<const IntegerConstantType*>(entries_[kIntegerConstantCacheId]);
+}
+
+inline const PositiveByteConstantType& RegTypeCache::PositiveByteConstant() const {
+  return *down_cast<const PositiveByteConstantType*>(entries_[kPositiveByteConstantCacheId]);
+}
+
+inline const PositiveShortConstantType& RegTypeCache::PositiveShortConstant() const {
+  return *down_cast<const PositiveShortConstantType*>(entries_[kPositiveShortConstantCacheId]);
+}
+
+inline const ConstantLoType& RegTypeCache::ConstantLo() const {
+  return *down_cast<const ConstantLoType*>(entries_[kConstantLoCacheId]);
+}
+
+inline const ConstantHiType& RegTypeCache::ConstantHi() const {
+  return *down_cast<const ConstantHiType*>(entries_[kConstantHiCacheId]);
 }
 
 inline const ReferenceType& RegTypeCache::JavaLangClass() {
@@ -167,11 +210,11 @@ inline const ReferenceType& RegTypeCache::JavaLangThrowable() {
   return *down_cast<const ReferenceType*>(result);
 }
 
-inline const ReferenceType& RegTypeCache::JavaLangObject() {
-  const RegType* result = &FromClass(GetClassRoot<mirror::Object>());
-  DCHECK(result->GetClass()->DescriptorEquals("Ljava/lang/Object;"));
-  DCHECK(result->IsReference());
-  return *down_cast<const ReferenceType*>(result);
+inline const JavaLangObjectType& RegTypeCache::JavaLangObject() {
+  const RegType& result = GetFromId(kJavaLangObjectCacheId);
+  DCHECK_EQ(result.GetDescriptor(), "Ljava/lang/Object;");
+  DCHECK(result.IsJavaLangObject());
+  return down_cast<const JavaLangObjectType&>(result);
 }
 
 template <class RegTypeType>

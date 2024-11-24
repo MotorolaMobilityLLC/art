@@ -19,6 +19,7 @@
 #include "common_runtime_test.h"
 #include "method_verifier.h"
 #include "reg_type_cache-inl.h"
+#include "reg_type_test_utils.h"
 
 namespace art HIDDEN {
 namespace verifier {
@@ -46,24 +47,10 @@ class RegisterLineTest : public CommonRuntimeTest {
         /*api_level=*/ 0u);
   }
 
-  ScopedArenaAllocator& GetScopedArenaAllocator(MethodVerifier* verifier) {
+  ArenaAllocator& GetArenaAllocator(MethodVerifier* verifier) {
     return verifier->allocator_;
   }
 };
-
-// Helper class to avoid thread safety analysis errors from gtest's `operator<<`
-// instantiation for `RegType` not being marked as holding the mutator lock.
-class RegTypeWrapper {
- public:
-  explicit RegTypeWrapper(const RegType& reg_type) : reg_type_(reg_type) {}
- private:
-  const RegType& reg_type_;
-  friend std::ostream& operator<<(std::ostream& os, const RegTypeWrapper& rtw);
-};
-
-std::ostream& operator<<(std::ostream& os, const RegTypeWrapper& rtw) NO_THREAD_SAFETY_ANALYSIS {
-  return os << rtw.reg_type_;
-}
 
 TEST_F(RegisterLineTest, NewInstanceDexPcsMerging) {
   ArenaPool* arena_pool = Runtime::Current()->GetArenaPool();
@@ -132,7 +119,7 @@ TEST_F(RegisterLineTest, NewInstanceDexPcsMerging) {
 
   constexpr size_t kNumRegs = 1u;
   constexpr uint32_t kVReg = 0u;
-  ScopedArenaAllocator& allocator = GetScopedArenaAllocator(verifier.get());
+  ArenaAllocator& allocator = GetArenaAllocator(verifier.get());
   RegisterLineArenaUniquePtr line1(RegisterLine::Create(kNumRegs, allocator, &reg_types));
   RegisterLineArenaUniquePtr line2(RegisterLine::Create(kNumRegs, allocator, &reg_types));
   for (const TestCase& test_case : test_cases) {

@@ -474,13 +474,13 @@ class ProfileCompilationInfo {
   bool MergeWith(const std::string& filename);
 
   // Save the profile data to the given file descriptor.
-  bool Save(int fd);
+  bool Save(int fd, bool flush = false);
 
   // Save the current profile into the given file. Overwrites any existing data.
-  bool Save(const std::string& filename, uint64_t* bytes_written);
+  bool Save(const std::string& filename, uint64_t* bytes_written, bool flush = false);
 
   // A fallback implementation of `Save` that uses a flock.
-  bool SaveFallback(const std::string& filename, uint64_t* bytes_written);
+  bool SaveFallback(const std::string& filename, uint64_t* bytes_written, bool flush = false);
 
   // Return the number of dex files referenced in the profile.
   size_t GetNumberOfDexFiles() const {

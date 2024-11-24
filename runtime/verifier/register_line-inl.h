@@ -139,42 +139,6 @@ inline bool RegisterLine::NeedsAllocationDexPc(const RegType& reg_type) {
   return reg_type.IsUninitializedReference() || reg_type.IsUnresolvedUninitializedReference();
 }
 
-inline bool RegisterLine::VerifyRegisterType(MethodVerifier* verifier, uint32_t vsrc,
-                                             const RegType& check_type) {
-  // Verify the src register type against the check type refining the type of the register
-  const RegType& src_type = GetRegisterType(verifier, vsrc);
-  if (UNLIKELY(!check_type.IsAssignableFrom(src_type, verifier))) {
-    enum VerifyError fail_type;
-    if (!check_type.IsNonZeroReferenceTypes() || !src_type.IsNonZeroReferenceTypes()) {
-      // Hard fail if one of the types is primitive, since they are concretely known.
-      fail_type = VERIFY_ERROR_BAD_CLASS_HARD;
-    } else if (check_type.IsUninitializedTypes() || src_type.IsUninitializedTypes()) {
-      // Hard fail for uninitialized types, which don't match anything but themselves.
-      fail_type = VERIFY_ERROR_BAD_CLASS_HARD;
-    } else if (check_type.IsUnresolvedTypes() || src_type.IsUnresolvedTypes()) {
-      fail_type = VERIFY_ERROR_UNRESOLVED_TYPE_CHECK;
-    } else {
-      fail_type = VERIFY_ERROR_BAD_CLASS_HARD;
-    }
-    verifier->Fail(fail_type) << "register v" << vsrc << " has type "
-                               << src_type << " but expected " << check_type;
-    return false;
-  }
-  if (check_type.IsLowHalf()) {
-    const RegType& src_type_h = GetRegisterType(verifier, vsrc + 1);
-    if (UNLIKELY(!src_type.CheckWidePair(src_type_h))) {
-      verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "wide register v" << vsrc << " has type "
-                                                   << src_type << "/" << src_type_h;
-      return false;
-    }
-  }
-  // The register at vsrc has a defined type, we know the lower-upper-bound, but this is less
-  // precise than the subtype in vsrc so leave it for reference types. For primitive types
-  // if they are a defined type then they are as precise as we can get, however, for constant
-  // types we may wish to refine them. Unfortunately constant propagation has rendered this useless.
-  return true;
-}
-
 inline void RegisterLine::DCheckUniqueNewInstanceDexPc(MethodVerifier* verifier, uint32_t dex_pc) {
   if (kIsDebugBuild && allocation_dex_pcs_ != nullptr) {
     // Note: We do not clear the `allocation_dex_pcs_` entries when copying data from
@@ -193,7 +157,7 @@ inline void RegisterLine::DCheckUniqueNewInstanceDexPc(MethodVerifier* verifier,
 inline void RegisterLine::EnsureAllocationDexPcsAvailable() {
   DCHECK_NE(num_regs_, 0u);
   if (allocation_dex_pcs_ == nullptr) {
-    ScopedArenaAllocatorAdapter<uint32_t> allocator(monitors_.get_allocator());
+    ArenaAllocatorAdapter<uint32_t> allocator(monitors_.get_allocator());
     allocation_dex_pcs_ = allocator.allocate(num_regs_);
     std::fill_n(allocation_dex_pcs_, num_regs_, kNoDexPc);
   }
@@ -214,14 +178,14 @@ inline size_t RegisterLine::ComputeSize(size_t num_regs) {
 }
 
 inline RegisterLine* RegisterLine::Create(size_t num_regs,
-                                          ScopedArenaAllocator& allocator,
+                                          ArenaAllocator& allocator,
                                           RegTypeCache* reg_types) {
   void* memory = allocator.Alloc(ComputeSize(num_regs));
   return new (memory) RegisterLine(num_regs, allocator, reg_types);
 }
 
 inline RegisterLine::RegisterLine(size_t num_regs,
-                                  ScopedArenaAllocator& allocator,
+                                  ArenaAllocator& allocator,
                                   RegTypeCache* reg_types)
     : num_regs_(num_regs),
       allocation_dex_pcs_(nullptr),
@@ -229,7 +193,11 @@ inline RegisterLine::RegisterLine(size_t num_regs,
       reg_to_lock_depths_(std::less<uint32_t>(),
                           allocator.Adapter(kArenaAllocVerifier)),
       this_initialized_(false) {
-  std::uninitialized_fill_n(line_, num_regs_, RegTypeCache::kUndefinedCacheId);
+  // `ArenaAllocator` guarantees zero-initialization.
+  static_assert(RegTypeCache::kUndefinedCacheId == 0u);
+  DCHECK(std::all_of(line_,
+                     line_ + num_regs_,
+                     [](auto id) { return id == RegTypeCache::kUndefinedCacheId;}));
   SetResultTypeToUnknown(reg_types);
 }
 

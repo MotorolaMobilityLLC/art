@@ -2920,7 +2920,10 @@ void Runtime::RegisterAppInfo(const std::string& package_name,
     return;
   }
 
-  jit_->StartProfileSaver(profile_output_filename, code_paths, ref_profile_filename);
+  jit_->StartProfileSaver(profile_output_filename,
+                          code_paths,
+                          ref_profile_filename,
+                          AppInfo::FromVMRuntimeConstants(code_type));
 }
 
 void Runtime::SetFaultMessage(const std::string& message) {
@@ -3499,6 +3502,12 @@ void Runtime::DCheckNoTransactionCheckAllowed() {
       self->AssertNoTransactionCheckAllowed();
     }
   }
+}
+
+NO_INLINE void Runtime::AllowPageSizeAccess() {
+#ifdef ART_PAGE_SIZE_AGNOSTIC
+  gPageSize.AllowAccess();
+#endif
 }
 
 }  // namespace art

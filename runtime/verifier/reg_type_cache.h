@@ -40,26 +40,34 @@ class DexFile;
 
 namespace verifier {
 
+class BooleanConstantType;
 class BooleanType;
+class ByteConstantType;
 class ByteType;
+class CharConstantType;
 class CharType;
 class ConflictType;
-class ConstantType;
+class ConstantHiType;
+class ConstantLoType;
 class DoubleHiType;
 class DoubleLoType;
 class FloatType;
-class ImpreciseConstantType;
+class IntegerConstantType;
 class IntegerType;
+class JavaLangObjectType;
 class LongHiType;
 class LongLoType;
 class MethodVerifier;
 class NullType;
-class PreciseConstantType;
+class PositiveByteConstantType;
+class PositiveShortConstantType;
 class ReferenceType;
 class RegType;
+class ShortConstantType;
 class ShortType;
 class UndefinedType;
 class UninitializedType;
+class ZeroType;
 
 // Use 8 bytes since that is the default arena allocator alignment.
 static constexpr size_t kDefaultArenaBitVectorBytes = 8;
@@ -94,19 +102,11 @@ class RegTypeCache {
   // Get or insert a reg type for a klass.
   const RegType& FromClass(ObjPtr<mirror::Class> klass)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  const ConstantType& FromCat1Const(int32_t value, bool precise)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  const ConstantType& FromCat2ConstLo(int32_t value, bool precise)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  const ConstantType& FromCat2ConstHi(int32_t value, bool precise)
-      REQUIRES_SHARED(Locks::mutator_lock_);
   const RegType& FromDescriptor(const char* descriptor)
       REQUIRES_SHARED(Locks::mutator_lock_);
   const RegType& FromUnresolvedMerge(const RegType& left,
                                      const RegType& right,
                                      MethodVerifier* verifier)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  const RegType& FromUnresolvedSuperClass(const RegType& child)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   const RegType& FromTypeIndex(dex::TypeIndex type_index) REQUIRES_SHARED(Locks::mutator_lock_);
@@ -114,35 +114,44 @@ class RegTypeCache {
   // Note: this should not be used outside of RegType::ClassJoin!
   const RegType& MakeUnresolvedReference() REQUIRES_SHARED(Locks::mutator_lock_);
 
-  const ConstantType& Zero() REQUIRES_SHARED(Locks::mutator_lock_) {
-    return FromCat1Const(0, true);
-  }
-  const ConstantType& One() REQUIRES_SHARED(Locks::mutator_lock_) {
-    return FromCat1Const(1, true);
-  }
   size_t GetCacheSize() {
     return entries_.size();
   }
-  const BooleanType& Boolean() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ByteType& Byte() REQUIRES_SHARED(Locks::mutator_lock_);
-  const CharType& Char() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ShortType& Short() REQUIRES_SHARED(Locks::mutator_lock_);
-  const IntegerType& Integer() REQUIRES_SHARED(Locks::mutator_lock_);
-  const FloatType& Float() REQUIRES_SHARED(Locks::mutator_lock_);
-  const LongLoType& LongLo() REQUIRES_SHARED(Locks::mutator_lock_);
-  const LongHiType& LongHi() REQUIRES_SHARED(Locks::mutator_lock_);
-  const DoubleLoType& DoubleLo() REQUIRES_SHARED(Locks::mutator_lock_);
-  const DoubleHiType& DoubleHi() REQUIRES_SHARED(Locks::mutator_lock_);
-  const UndefinedType& Undefined() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ConflictType& Conflict();
-  const NullType& Null();
+
+  const UndefinedType& Undefined() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const ConflictType& Conflict() const;
+  const NullType& Null() const;
+
+  const BooleanType& Boolean() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const ByteType& Byte() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const CharType& Char() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const ShortType& Short() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const IntegerType& Integer() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const FloatType& Float() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const LongLoType& LongLo() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const LongHiType& LongHi() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const DoubleLoType& DoubleLo() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const DoubleHiType& DoubleHi() const REQUIRES_SHARED(Locks::mutator_lock_);
+
+  const ZeroType& Zero() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const BooleanConstantType& BooleanConstant() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const ByteConstantType& ByteConstant() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const CharConstantType& CharConstant() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const ShortConstantType& ShortConstant() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const IntegerConstantType& IntegerConstant() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const PositiveByteConstantType& PositiveByteConstant() const
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  const PositiveShortConstantType& PositiveShortConstant() const
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  const ConstantLoType& ConstantLo() const REQUIRES_SHARED(Locks::mutator_lock_);
+  const ConstantHiType& ConstantHi() const REQUIRES_SHARED(Locks::mutator_lock_);
 
   const ReferenceType& JavaLangClass() REQUIRES_SHARED(Locks::mutator_lock_);
   const ReferenceType& JavaLangString() REQUIRES_SHARED(Locks::mutator_lock_);
   const ReferenceType& JavaLangInvokeMethodHandle() REQUIRES_SHARED(Locks::mutator_lock_);
   const ReferenceType& JavaLangInvokeMethodType() REQUIRES_SHARED(Locks::mutator_lock_);
   const ReferenceType& JavaLangThrowable() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ReferenceType& JavaLangObject() REQUIRES_SHARED(Locks::mutator_lock_);
+  const JavaLangObjectType& JavaLangObject() REQUIRES_SHARED(Locks::mutator_lock_);
 
   const UninitializedType& Uninitialized(const RegType& type)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -151,45 +160,56 @@ class RegTypeCache {
       REQUIRES_SHARED(Locks::mutator_lock_);
   const RegType& FromUninitialized(const RegType& uninit_type)
       REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstantType& ByteConstant() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstantType& CharConstant() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstantType& ShortConstant() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstantType& IntConstant() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstantType& PosByteConstant() REQUIRES_SHARED(Locks::mutator_lock_);
-  const ImpreciseConstantType& PosShortConstant() REQUIRES_SHARED(Locks::mutator_lock_);
+
   const RegType& GetComponentType(const RegType& array) REQUIRES_SHARED(Locks::mutator_lock_);
   void Dump(std::ostream& os) REQUIRES_SHARED(Locks::mutator_lock_);
-  const RegType& RegTypeFromPrimitiveType(Primitive::Type) const;
+  const RegType& RegTypeFromPrimitiveType(Primitive::Type) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   ClassLinker* GetClassLinker() const {
     return class_linker_;
   }
 
-  static constexpr int32_t kMinSmallConstant = -1;
-  static constexpr int32_t kMaxSmallConstant = 4;
-  static constexpr int32_t kNumSmallConstants = kMaxSmallConstant - kMinSmallConstant + 1;
-  static constexpr size_t kNumPrimitivesAndSmallConstants = 13 + kNumSmallConstants;
-  static constexpr int32_t kBooleanCacheId = kNumSmallConstants;
-  static constexpr int32_t kByteCacheId = kNumSmallConstants + 1;
-  static constexpr int32_t kShortCacheId = kNumSmallConstants + 2;
-  static constexpr int32_t kCharCacheId = kNumSmallConstants + 3;
-  static constexpr int32_t kIntCacheId = kNumSmallConstants + 4;
-  static constexpr int32_t kLongLoCacheId = kNumSmallConstants + 5;
-  static constexpr int32_t kLongHiCacheId = kNumSmallConstants + 6;
-  static constexpr int32_t kFloatCacheId = kNumSmallConstants + 7;
-  static constexpr int32_t kDoubleLoCacheId = kNumSmallConstants + 8;
-  static constexpr int32_t kDoubleHiCacheId = kNumSmallConstants + 9;
-  static constexpr int32_t kUndefinedCacheId = kNumSmallConstants + 10;
-  static constexpr int32_t kConflictCacheId = kNumSmallConstants + 11;
-  static constexpr int32_t kNullCacheId = kNumSmallConstants + 12;
+  static constexpr uint32_t kUndefinedCacheId = 0;
+  static constexpr uint32_t kConflictCacheId = kUndefinedCacheId + 1u;
+  static constexpr uint32_t kBooleanCacheId = kConflictCacheId + 1u;
+  static constexpr uint32_t kByteCacheId = kBooleanCacheId + 1u;
+  static constexpr uint32_t kCharCacheId = kByteCacheId + 1u;
+  static constexpr uint32_t kShortCacheId = kCharCacheId + 1u;
+  static constexpr uint32_t kIntegerCacheId = kShortCacheId + 1u;
+  static constexpr uint32_t kLongLoCacheId = kIntegerCacheId + 1u;
+  static constexpr uint32_t kLongHiCacheId = kLongLoCacheId + 1u;
+  static constexpr uint32_t kFloatCacheId = kLongHiCacheId + 1u;
+  static constexpr uint32_t kDoubleLoCacheId = kFloatCacheId + 1u;
+  static constexpr uint32_t kDoubleHiCacheId = kDoubleLoCacheId + 1u;
+  static constexpr uint32_t kZeroCacheId = kDoubleHiCacheId + 1u;
+  static constexpr uint32_t kBooleanConstantCacheId = kZeroCacheId + 1u;
+  static constexpr uint32_t kPositiveByteConstantCacheId = kBooleanConstantCacheId + 1u;
+  static constexpr uint32_t kPositiveShortConstantCacheId = kPositiveByteConstantCacheId + 1u;
+  static constexpr uint32_t kCharConstantCacheId = kPositiveShortConstantCacheId + 1u;
+  static constexpr uint32_t kByteConstantCacheId = kCharConstantCacheId + 1u;
+  static constexpr uint32_t kShortConstantCacheId = kByteConstantCacheId + 1u;
+  static constexpr uint32_t kIntegerConstantCacheId = kShortConstantCacheId + 1u;
+  static constexpr uint32_t kConstantLoCacheId = kIntegerConstantCacheId + 1u;
+  static constexpr uint32_t kConstantHiCacheId = kConstantLoCacheId + 1u;
+  static constexpr uint32_t kNullCacheId = kConstantHiCacheId + 1u;
+  static constexpr uint32_t kJavaLangObjectCacheId = kNullCacheId + 1u;
+  static constexpr uint32_t kNumberOfRegKindCacheIds = kJavaLangObjectCacheId + 1u;
+
+  static constexpr uint32_t kUninitializedJavaLangObjectCacheId = kNumberOfRegKindCacheIds;
+  static constexpr uint32_t kNumberOfFixedCacheIds = kUninitializedJavaLangObjectCacheId + 1u;
 
  private:
-  void FillPrimitiveAndSmallConstantTypes() REQUIRES_SHARED(Locks::mutator_lock_);
+  // We want 0 to mean an empty slot in `ids_for_type_index_`, so that we do not need to fill
+  // the array after allocaing zero-initialized storage. This needs to correspond to a fixed
+  // cache id that cannot be returned for a type index, such as `kUndefinedCacheId`.
+  static constexpr uint32_t kNoIdForTypeIndex = 0u;
+  static_assert(kNoIdForTypeIndex == kUndefinedCacheId);
+
+  void FillPrimitiveAndConstantTypes() REQUIRES_SHARED(Locks::mutator_lock_);
   ObjPtr<mirror::Class> ResolveClass(const char* descriptor, size_t descriptor_length)
       REQUIRES_SHARED(Locks::mutator_lock_);
   bool MatchDescriptor(size_t idx, const std::string_view& descriptor)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-  const ConstantType& FromCat1NonSmallConstant(int32_t value, bool precise)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   const RegType& From(const char* descriptor)
@@ -223,7 +243,7 @@ class RegTypeCache {
   const DexFile* const dex_file_;
 
   // Fast lookup by type index.
-  const RegType** const entries_for_type_index_;
+  uint16_t* const ids_for_type_index_;
 
   // Cache last uninitialized "this" type used for constructors.
   const UninitializedType* last_uninitialized_this_type_;

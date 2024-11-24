@@ -75,6 +75,9 @@ art_cc_binary {
 art_cc_defaults {
     name: "art_artd_tests_defaults",
     defaults: ["artd_defaults"],
+    header_libs: [
+        "libarttools_testing",
+    ],
     static_libs: [
         "libgmock",
     ],

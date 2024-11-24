@@ -165,29 +165,23 @@ static void VMDebug_stopLowOverheadTraceImpl(JNIEnv*, jclass) {
 static void VMDebug_dumpLowOverheadTraceImpl(JNIEnv* env, jclass, jstring javaProfileFileName) {
   ScopedUtfChars profileFileName(env, javaProfileFileName);
   if (profileFileName.c_str() == nullptr) {
-    LOG(ERROR) << "Filename not provided, ignoring the request to dump profile";
+    LOG(ERROR) << "Filename not provided, ignoring the request to dump low-overhead trace";
     return;
   }
   TraceProfiler::Dump(profileFileName.c_str());
 }
 
-static void VMDebug_dumpLowOverheadTraceFdImpl(JNIEnv* env, jclass, jint originalFd) {
+static void VMDebug_dumpLowOverheadTraceFdImpl(JNIEnv*, jclass, jint originalFd) {
   if (originalFd < 0) {
-    ScopedObjectAccess soa(env);
-    soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;",
-                                   "Trace fd is invalid: %d",
-                                   originalFd);
+    LOG(ERROR) << "Invalid file descriptor, ignoring the request to dump low-overhead trace";
     return;
   }
 
   // Set the O_CLOEXEC flag atomically here, so the file gets closed when a new process is forked.
   int fd = DupCloexec(originalFd);
   if (fd < 0) {
-    ScopedObjectAccess soa(env);
-    soa.Self()->ThrowNewExceptionF("Ljava/lang/RuntimeException;",
-                                   "dup(%d) failed: %s",
-                                   originalFd,
-                                   strerror(errno));
+    LOG(ERROR)
+        << "Unable to dup the file descriptor, ignoring the request to dump low-overhead trace";
     return;
   }
 

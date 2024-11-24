@@ -427,6 +427,10 @@ def default_run(ctx, args, **kwargs):
   if HOST or ON_VM:
     TIME_OUT = "timeout"
 
+# Give extra 60 min for tests on QEMU (to avoid timeouts in debuggable mode).
+  if ON_VM:
+    TIME_OUT_EXTRA = 6000
+
 # If you change this, update the timeout in testrunner.py as well.
   if not TIME_OUT_VALUE:
     # 10 minutes is the default.

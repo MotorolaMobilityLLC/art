@@ -68,11 +68,19 @@ struct RegKindToCacheId : RegTypeCache {
 
 }  // namespace detail
 
-// Note: To avoid including `reg_types.h` from `reg_type_cache.h`, we define this as
-// a free function because we cannot forward-declare the nested enum `RegType::Kind`.
-inline const art::verifier::RegType& RegTypeFromKind(const RegTypeCache* reg_types,
-                                                     RegType::Kind kind) {
-  return reg_types->GetFromId(detail::RegKindToCacheId::Translate(kind));
+constexpr uint16_t RegTypeCache::IdForRegKind(RegType::Kind kind) {
+  return detail::RegKindToCacheId::Translate(kind);
+}
+
+constexpr RegType::Kind RegTypeCache::RegKindForId(uint16_t id) {
+  DCHECK_LT(id, NumberOfRegKindCacheIds());
+  RegType::Kind kind = enum_cast<RegType::Kind>(id);
+  DCHECK_EQ(id, IdForRegKind(kind));
+  return kind;
+}
+
+inline const RegType& RegTypeCache::GetFromRegKind(RegType::Kind kind) const {
+  return GetFromId(IdForRegKind(kind));
 }
 
 inline const RegType& RegTypeCache::FromTypeIndex(dex::TypeIndex type_index) {

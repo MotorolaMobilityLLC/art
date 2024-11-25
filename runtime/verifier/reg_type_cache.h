@@ -27,6 +27,7 @@
 #include "dex/primitive.h"
 #include "gc_root.h"
 #include "handle_scope.h"
+#include "reg_type.h"
 
 namespace art HIDDEN {
 
@@ -40,34 +41,7 @@ class DexFile;
 
 namespace verifier {
 
-class BooleanConstantType;
-class BooleanType;
-class ByteConstantType;
-class ByteType;
-class CharConstantType;
-class CharType;
-class ConflictType;
-class ConstantHiType;
-class ConstantLoType;
-class DoubleHiType;
-class DoubleLoType;
-class FloatType;
-class IntegerConstantType;
-class IntegerType;
-class JavaLangObjectType;
-class LongHiType;
-class LongLoType;
 class MethodVerifier;
-class NullType;
-class PositiveByteConstantType;
-class PositiveShortConstantType;
-class ReferenceType;
-class RegType;
-class ShortConstantType;
-class ShortType;
-class UndefinedType;
-class UninitializedType;
-class ZeroType;
 
 // Use 8 bytes since that is the default arena allocator alignment.
 static constexpr size_t kDefaultArenaBitVectorBytes = 8;
@@ -98,7 +72,21 @@ class RegTypeCache {
     return can_suspend_;
   }
 
-  const art::verifier::RegType& GetFromId(uint16_t id) const;
+  static constexpr uint32_t NumberOfRegKindCacheIds() { return kNumberOfRegKindCacheIds; }
+
+  // Translate `RegType::Kind` to id for a pre-initialized register type.
+  // Cannot be used for non-zero reference kinds other than `JavaLangObject()`; all other
+  // kinds (undefined, conflict, primitive and constant kinds) have pre-initialized types.
+  static constexpr uint16_t IdForRegKind(RegType::Kind kind);
+
+  // Translate `id` to `RegType::Kind`.
+  // The `id` must be lower than `NumberOfRegKindCacheIds()`.
+  static constexpr RegType::Kind RegKindForId(uint16_t id);
+
+  // Get register type for a `RegType::Kind` with the same restrictions as `IdForRegKind()`.
+  const RegType& GetFromRegKind(RegType::Kind kind) const;
+
+  const RegType& GetFromId(uint16_t id) const;
   // Get or insert a reg type for a klass.
   const RegType& FromClass(ObjPtr<mirror::Class> klass)
       REQUIRES_SHARED(Locks::mutator_lock_);

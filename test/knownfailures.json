@@ -1,11 +1,5 @@
 [
     {
-        "tests": "597-deopt-new-string",
-        "description": ["Disable 597-deopt-new-string temporarily until a fix",
-                        "arrives."],
-        "bug": "http://b/378026679"
-    },
-    {
         "tests": "626-checker-arm64-scratch-register",
         "description": ["Disable 626-checker until we assses whether to keep it"]
     },

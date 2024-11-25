@@ -295,8 +295,7 @@ class LinkerPatch {
            patch_type_ == Type::kPublicTypeBssEntry ||
            patch_type_ == Type::kPackageTypeBssEntry ||
            patch_type_ == Type::kStringRelative ||
-           patch_type_ == Type::kStringBssEntry ||
-           patch_type_ == Type::kMethodTypeBssEntry);
+           patch_type_ == Type::kStringBssEntry);
     return pc_insn_offset_;
   }
 

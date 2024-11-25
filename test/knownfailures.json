@@ -1298,6 +1298,12 @@
         "description": ["Timing out for ASAN."]
     },
     {
+        "tests": ["153-reference-stress"],
+        "env_vars": {"ART_HEAP_POISONING": "true"},
+        "variant": "debuggable",
+        "description": ["Timing out for debuggable + poison."]
+    },
+    {
         "tests": ["021-string2"],
         "variant": "jit & debuggable",
         "bug": "b/109791792",

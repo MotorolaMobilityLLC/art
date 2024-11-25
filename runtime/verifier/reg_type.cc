@@ -55,6 +55,30 @@ std::ostream& operator<<(std::ostream& os, RegType::Kind kind) {
   return os << kind_name;
 }
 
+std::ostream& operator<<(std::ostream& os, RegType::Assignability assignability) {
+  const char* assignability_name;
+  switch (assignability) {
+    case RegType::Assignability::kAssignable:
+      assignability_name = "Assignable";
+      break;
+    case RegType::Assignability::kNotAssignable:
+      assignability_name = "NotAssignable";
+      break;
+    case RegType::Assignability::kNarrowingConversion:
+      assignability_name = "NarrowingConversion";
+      break;
+    case RegType::Assignability::kReference:
+      assignability_name = "Reference";
+      break;
+    case RegType::Assignability::kInvalid:
+      assignability_name = "Invalid";
+      break;
+    default:
+      return os << "Corrupted RegType::Assignability: " << static_cast<uint32_t>(assignability);
+  }
+  return os << assignability_name;
+}
+
 std::string RegType::Dump() const {
   std::string_view reference_tag;
   switch (GetKind()) {
@@ -469,7 +493,7 @@ const RegType& RegType::Merge(const RegType& incoming_type,
 
   Kind merge_kind = kMergeTable[GetKind()][incoming_type.GetKind()];
   if (merge_kind != Kind::kUnresolvedMergedReference) {
-    return RegTypeFromKind(reg_types, merge_kind);
+    return reg_types->GetFromRegKind(merge_kind);
   } else {
     // The `UnresolvedMergedReference` tells us to do non-trivial reference merging which
     // requires more information than the two kinds used for the lookup in `kMergeTable`.

@@ -27,6 +27,7 @@
 #include "base/locks.h"
 #include "base/macros.h"
 #include "base/safe_map.h"
+#include "reg_type.h"
 
 namespace art HIDDEN {
 
@@ -110,13 +111,15 @@ class RegisterLine {
   // is typical when the underlying value did not change, but we have "different" type information
   // available now. An example is sharpening types after a check-cast. Note that when given kKeep,
   // the new_type is dchecked to be a reference type.
+  ALWAYS_INLINE void SetRegisterType(uint32_t vdst, RegType::Kind new_kind)
+      REQUIRES_SHARED(Locks::mutator_lock_);
   template <LockOp kLockOp>
   ALWAYS_INLINE void SetRegisterType(uint32_t vdst, const RegType& new_type)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  void SetRegisterTypeWide(uint32_t vdst,
-                           const RegType& new_type1,
-                           const RegType& new_type2)
+  void SetRegisterTypeWide(uint32_t vdst, RegType::Kind new_kind1, RegType::Kind new_kind2)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  void SetRegisterTypeWide(uint32_t vdst, const RegType& new_type1, const RegType& new_type2)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   /* Set the type of the "result" register. */
@@ -134,6 +137,9 @@ class RegisterLine {
    */
   void SetRegisterTypeForNewInstance(uint32_t vdst, const RegType& uninit_type, uint32_t dex_pc)
       REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Get the id of the register tyoe of register vsrc.
+  uint16_t GetRegisterTypeId(uint32_t vsrc) const;
 
   // Get the type of register vsrc.
   const RegType& GetRegisterType(MethodVerifier* verifier, uint32_t vsrc) const;
@@ -256,6 +262,12 @@ class RegisterLine {
   static bool NeedsAllocationDexPc(const RegType& reg_type);
 
   void EnsureAllocationDexPcsAvailable();
+
+  template <LockOp kLockOp>
+  ALWAYS_INLINE void SetRegisterTypeImpl(uint32_t vdst, uint16_t new_id)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+  void SetRegisterTypeWideImpl(uint32_t vdst, uint16_t new_id1, uint16_t new_id2)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   void CopyRegToLockDepth(size_t dst, size_t src) {
     auto it = reg_to_lock_depths_.find(src);

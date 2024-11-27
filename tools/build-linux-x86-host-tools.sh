@@ -36,10 +36,9 @@ HOST_BINARIES=(
   ${OUT_DIR}/host/linux-x86/bin/oatdump
 )
 
-# Build statically linked musl binaries (with asan) for linux-x86 hosts without the
+# Build statically linked musl binaries for linux-x86 hosts without the
 # standard glibc implementation.
-build/soong/soong_ui.bash --make-mode USE_HOST_MUSL=true BUILD_HOST_static=true \
-  SANITIZE_HOST=address ASAN_OPTIONS="detect_leaks=0" ${HOST_BINARIES[*]}
+build/soong/soong_ui.bash --make-mode USE_HOST_MUSL=true BUILD_HOST_static=true ${HOST_BINARIES[*]}
 # Zip these binaries in a temporary file
 prebuilts/build-tools/linux-x86/bin/soong_zip -o "${DIST_DIR}/temp-host-tools.zip" \
   -j ${HOST_BINARIES[*]/#/-f }

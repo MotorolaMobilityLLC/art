@@ -25,6 +25,12 @@ mkdir $1
 # Transform intermediate classes.
 transformer_args="-cp ${ASM_JAR}:$PWD/transformer.jar transformer.ConstantTransformer"
 for class in $1-intermediate-classes/*.class ; do
+  if [[ $class == */FooConflict.class ]]
+  then
+    javap -c -v -p $class >> /tmp/2277-javac-output
+  fi
   transformed_class=$1/$(basename ${class})
   ${JAVA:-java} ${transformer_args} ${class} ${transformed_class}
 done
+
+rm -fr $1-intermediate-classes

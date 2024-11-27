@@ -239,7 +239,7 @@ static constexpr StackType kQuickStackType = StackType::kHardware;
 
 // See Thread.tlsPtr_.active_suspend1_barriers below for explanation.
 struct WrappedSuspend1Barrier {
-  // TODO(b/23668816): At least weaken CHECKs to DCHECKs once the bug is fixed.
+  // TODO(b/323668816): At least weaken CHECKs to DCHECKs once the bug is fixed.
   static constexpr int kMagic = 0xba8;
   WrappedSuspend1Barrier() : magic_(kMagic), barrier_(1), next_(nullptr) {}
   int magic_;

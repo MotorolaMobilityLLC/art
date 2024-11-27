@@ -241,8 +241,6 @@ public abstract class AbstractInvokeExactTest {
     // invokeExact does not break "equivalent ..." part of the javadoc.
     // Need to check what the spec says about the error thrown when a conflicting default method is
     // attempted to be called.
-    // These tests fail in interpreter. Will be enabled later.
-    /*
     try {
       String ignored = (String) fooAndFooConflictDefault().invokeExact(fooAndFooConflict);
       unreachable("Non-overridden default conflict method");
@@ -257,7 +255,7 @@ public abstract class AbstractInvokeExactTest {
     try {
       String ignored = (String) baseInterface().invokeExact(baseClassImpl);
       unreachable("Calling unimplemented interface method");
-    } catch (AbstractMethodError expected) {} */
+    } catch (AbstractMethodError expected) {}
   }
 
   private void $noinline$abstractClass() throws Throwable {

@@ -1247,7 +1247,8 @@
     },
     {
         "tests": ["990-field-trace",
-                  "991-field-trace-2"],
+                  "991-field-trace-2",
+                  "710-varhandle-creation"],
         "variant": "gcstress & debug & target",
         "description": ["Test can time out on gcstress with debug"]
     },

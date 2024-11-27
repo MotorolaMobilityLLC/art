@@ -597,6 +597,7 @@ class ArtdTest : public CommonArtTest {
 TEST_F(ArtdTest, ConstantsAreInSync) {
   EXPECT_STREQ(ArtConstants::REASON_VDEX, kReasonVdex);
   EXPECT_STREQ(ArtConstants::DEX_METADATA_FILE_EXT, kDmExtension);
+  EXPECT_STREQ(ArtConstants::SECURE_DEX_METADATA_FILE_EXT, kSdmExtension);
   EXPECT_STREQ(ArtConstants::DEX_METADATA_PROFILE_ENTRY,
                ProfileCompilationInfo::kDexMetadataProfileEntry);
   EXPECT_STREQ(ArtConstants::DEX_METADATA_VDEX_ENTRY, VdexFile::kVdexNameInDmFile);

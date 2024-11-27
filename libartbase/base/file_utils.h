@@ -38,6 +38,7 @@ static constexpr const char* kOdexExtension = ".odex";
 static constexpr const char* kVdexExtension = ".vdex";
 static constexpr const char* kArtExtension = ".art";
 static constexpr const char* kDmExtension = ".dm";
+static constexpr const char* kSdmExtension = ".sdm";
 
 // These methods return the Android Root, which is the historical location of
 // the Android "system" directory, containing the built Android artifacts. On

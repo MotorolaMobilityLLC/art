@@ -996,8 +996,19 @@ public final class ArtManagerLocal {
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public void dump(
             @NonNull PrintWriter pw, @NonNull PackageManagerLocal.FilteredSnapshot snapshot) {
+        dump(pw, snapshot, false /* verifySdmSignatures */);
+    }
+
+    /**
+     * Same as above, but allows to specify options.
+     *
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    public void dump(@NonNull PrintWriter pw,
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot, boolean verifySdmSignatures) {
         try (var pin = mInjector.createArtdPin()) {
-            new DumpHelper(this).dump(pw, snapshot);
+            new DumpHelper(this).dump(pw, snapshot, verifySdmSignatures);
         }
     }
 
@@ -1013,9 +1024,21 @@ public final class ArtManagerLocal {
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     public void dumpPackage(@NonNull PrintWriter pw,
             @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull String packageName) {
+        dumpPackage(pw, snapshot, packageName, false /* verifySdmSignatures */);
+    }
+
+    /**
+     * Same as above, but allows to specify options.
+     *
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    public void dumpPackage(@NonNull PrintWriter pw,
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull String packageName,
+            boolean verifySdmSignatures) {
         try (var pin = mInjector.createArtdPin()) {
-            new DumpHelper(this).dumpPackage(
-                    pw, snapshot, Utils.getPackageStateOrThrow(snapshot, packageName));
+            new DumpHelper(this).dumpPackage(pw, snapshot,
+                    Utils.getPackageStateOrThrow(snapshot, packageName), verifySdmSignatures);
         }
     }
 

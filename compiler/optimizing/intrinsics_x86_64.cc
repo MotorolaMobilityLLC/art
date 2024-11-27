@@ -4254,6 +4254,7 @@ void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke)
       locations->InAt(invoke->GetNumberOfArguments()).AsRegister<CpuRegister>();
 
   // Call site should match with MethodHandle's type.
+  __ MaybePoisonHeapReference(call_site_type);
   __ cmpl(call_site_type, Address(method_handle, mirror::MethodHandle::MethodTypeOffset()));
   __ j(kNotEqual, slow_path->GetEntryLabel());
 
@@ -4297,6 +4298,7 @@ void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke)
     constexpr uint32_t class_offset = mirror::Object::ClassOffset().Int32Value();
     // Re-using method register for receiver class.
     __ movl(method, Address(receiver, class_offset));
+    __ MaybeUnpoisonHeapReference(method);
 
     constexpr uint32_t vtable_offset =
         mirror::Class::EmbeddedVTableOffset(art::PointerSize::k64).Int32Value();
@@ -4338,6 +4340,7 @@ void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke)
     __ Bind(&do_imt_dispatch);
     // Re-using `method` to store receiver class and ImTableEntry.
     __ movl(method, Address(receiver, mirror::Object::ClassOffset()));
+    __ MaybeUnpoisonHeapReference(method);
 
     __ movq(method, Address(method, mirror::Class::ImtPtrOffset(kX86_64PointerSize).Uint32Value()));
     // method = receiver->GetClass()->embedded_imtable_->Get(method_offset);

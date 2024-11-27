@@ -176,6 +176,88 @@ public abstract class AbstractInvokeExactTest {
 
     result = (String) barNonOverriddenDefault().invokeExact((Bar) instance);
     assertEquals("Foo.nonOverriddenDefault", result);
+
+    ToStringable toStringable = new ToStringableImpl();
+    result = (String) toStringDefinedInAnInterface().invokeExact(toStringable);
+    assertEquals("ToStringableImpl", result);
+
+    try {
+      String ignored = (String) toStringDefinedInAnInterface().invokeExact(instance);
+      unreachable("Should throw WMTE");
+    } catch (WrongMethodTypeException expected) {}
+
+    Impl1 impl1 = new Impl1();
+
+    result = (String) interfaceOneMethod().invokeExact((Interface1) impl1);
+    assertEquals("Impl1.methodOne", result);
+
+    Impl2 impl2 = new Impl2();
+
+    result = (String) interfaceTwoMethod().invokeExact((Interface2) impl2);
+    assertEquals("Impl2.methodTwo", result);
+
+    result = (String) interfaceOneMethod().invokeExact((Interface1) impl2);
+    assertEquals("Impl2.methodOne", result);
+
+    Impl3 impl3 = new Impl3();
+
+    result = (String) interfaceThreeMethod().invokeExact((Interface3) impl3);
+    assertEquals("Impl3.methodThree", result);
+
+    result = (String) interfaceTwoMethod().invokeExact((Interface2) impl3);
+    assertEquals("Impl3.methodTwo", result);
+
+    result = (String) interfaceOneMethod().invokeExact((Interface1) impl3);
+    assertEquals("Impl3.methodOne", result);
+
+    Impl4 impl4 = new Impl4();
+
+    result = (String) interfaceFourMethod().invokeExact((Interface4) impl4);
+    assertEquals("Impl4.methodFour", result);
+
+    result = (String) interfaceThreeMethod().invokeExact((Interface3) impl4);
+    assertEquals("Impl4.methodThree", result);
+
+    result = (String) interfaceTwoMethod().invokeExact((Interface2) impl4);
+    assertEquals("Impl4.methodTwo", result);
+
+    result = (String) interfaceOneMethod().invokeExact((Interface1) impl4);
+    assertEquals("Impl4.methodOne", result);
+
+    FooAndFooConflictImpl conflictImpl = new FooAndFooConflictImpl();
+
+    result = (String) fooDefault().invokeExact((Foo) conflictImpl);
+    assertEquals("DefaultMethodConflictImpl.defaultToOverride", result);
+
+    FooAndFooConflict fooAndFooConflict = new FooAndFooConflict() {
+      public String nonDefault() {
+        throw new UnsupportedOperationException();
+      }
+    };
+
+    // TODO(b/297147201): The RI throws AbsractMethodError in these cases, just like plain
+    // fooAndFooConflict.defaultToOverride() call. So RI's invokeExact follows "equivalent of a
+    // particular bytecode behavior". ART throws ICCE in both cases, so current implementation of
+    // invokeExact does not break "equivalent ..." part of the javadoc.
+    // Need to check what the spec says about the error thrown when a conflicting default method is
+    // attempted to be called.
+    // These tests fail in interpreter. Will be enabled later.
+    /*
+    try {
+      String ignored = (String) fooAndFooConflictDefault().invokeExact(fooAndFooConflict);
+      unreachable("Non-overridden default conflict method");
+    } catch (IncompatibleClassChangeError expected) {}
+
+    try {
+      String ignored = (String) fooDefault().invokeExact((Foo) fooAndFooConflict);
+      unreachable("Non-overridden default conflict method");
+    } catch (IncompatibleClassChangeError expected) {}
+
+    BaseInterface baseClassImpl = new BaseClassImpl();
+    try {
+      String ignored = (String) baseInterface().invokeExact(baseClassImpl);
+      unreachable("Calling unimplemented interface method");
+    } catch (AbstractMethodError expected) {} */
   }
 
   private void $noinline$abstractClass() throws Throwable {
@@ -263,8 +345,16 @@ public abstract class AbstractInvokeExactTest {
   public abstract MethodHandle fooBarImplDefault();
   public abstract MethodHandle fooNonOverriddenDefault();
   public abstract MethodHandle barNonOverriddenDefault();
+  public abstract MethodHandle toStringDefinedInAnInterface();
+
+  public abstract MethodHandle interfaceOneMethod();
+  public abstract MethodHandle interfaceTwoMethod();
+  public abstract MethodHandle interfaceThreeMethod();
+  public abstract MethodHandle interfaceFourMethod();
 
   public abstract MethodHandle fooBarDefinedInAbstract();
   public abstract MethodHandle fooBarImplDefinedInAbstract();
   public abstract MethodHandle fooBarNonDefault();
+  public abstract MethodHandle fooAndFooConflictDefault();
+  public abstract MethodHandle baseInterface();
 }

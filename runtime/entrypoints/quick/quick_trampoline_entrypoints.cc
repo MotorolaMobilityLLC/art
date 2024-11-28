@@ -1297,8 +1297,7 @@ extern "C" const void* artQuickResolutionTrampoline(
     HandleWrapper<mirror::Object> h_receiver(
         hs.NewHandleWrapper(virtual_or_interface ? &receiver : &fake_receiver));
     DCHECK_EQ(caller->GetDexFile(), called_method.dex_file);
-    called = linker->ResolveMethod<ClassLinker::ResolveMode::kCheckICCEAndIAE>(
-        self, called_method.index, caller, invoke_type);
+    called = linker->ResolveMethodWithChecks(called_method.index, caller, invoke_type);
   }
   const void* code = nullptr;
   if (LIKELY(!self->IsExceptionPending())) {
@@ -2314,8 +2313,7 @@ extern "C" TwoWordReturn artInvokeInterfaceTrampoline(ArtMethod* interface_metho
       RememberForGcArgumentVisitor visitor(sp, false, shorty, &soa);
       visitor.VisitArguments();
       ClassLinker* class_linker = runtime->GetClassLinker();
-      interface_method = class_linker->ResolveMethod<ClassLinker::ResolveMode::kNoChecks>(
-          self, dex_method_idx, caller_method, kInterface);
+      interface_method = class_linker->ResolveMethodId(dex_method_idx, caller_method);
       visitor.FixupReferences();
     }
 
@@ -2429,8 +2427,8 @@ extern "C" uint64_t artInvokePolymorphic(mirror::Object* raw_receiver, Thread* s
 
   // Resolve method.
   ClassLinker* linker = Runtime::Current()->GetClassLinker();
-  ArtMethod* resolved_method = linker->ResolveMethod<ClassLinker::ResolveMode::kCheckICCEAndIAE>(
-      self, inst.VRegB(), caller_method, kVirtual);
+  ArtMethod* resolved_method = linker->ResolveMethodWithChecks(
+      inst.VRegB(), caller_method, kVirtual);
 
   DCHECK_EQ(ArtMethod::NumArgRegisters(shorty) + 1u, (uint32_t)inst.VRegA());
   DCHECK_EQ(resolved_method->IsStatic(), kMethodIsStatic);
@@ -2559,8 +2557,8 @@ extern "C" uint64_t artInvokePolymorphicWithHiddenReceiver(mirror::Object* raw_r
   ClassLinker* linker = Runtime::Current()->GetClassLinker();
   ArtMethod* invoke_exact = WellKnownClasses::java_lang_invoke_MethodHandle_invokeExact;
   if (kIsDebugBuild) {
-    ArtMethod* resolved_method = linker->ResolveMethod<ClassLinker::ResolveMode::kCheckICCEAndIAE>(
-        self, inst.VRegB(), caller_method, kVirtual);
+    ArtMethod* resolved_method = linker->ResolveMethodWithChecks(
+        inst.VRegB(), caller_method, kVirtual);
     CHECK_EQ(resolved_method, invoke_exact);
   }
 

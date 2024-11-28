@@ -2186,7 +2186,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyMethod() {
       if (register_line != nullptr) {
         if (work_line_->CompareLine(register_line) != 0) {
           Dump(LOG_STREAM(FATAL_WITHOUT_ABORT));
-          LOG(FATAL_WITHOUT_ABORT) << info_messages_.str();
+          LOG(FATAL_WITHOUT_ABORT) << InfoMessages().str();
           LOG(FATAL) << "work_line diverged in " << dex_file_->PrettyMethod(dex_method_idx_)
                      << "@" << reinterpret_cast<void*>(work_insn_idx_) << "\n"
                      << " work_line=" << work_line_->Dump(this) << "\n"
@@ -2259,7 +2259,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyMethod() {
     // To dump the state of the verify after a method, do something like:
     // if (dex_file_->PrettyMethod(dex_method_idx_) ==
     //     "boolean java.lang.String.equals(java.lang.Object)") {
-    //   LOG(INFO) << info_messages_.str();
+    //   LOG(INFO) << InfoMessages().str();
     // }
   }
   return true;
@@ -3570,7 +3570,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       }
     }
     /* immediate failure, reject class */
-    info_messages_ << "Rejecting opcode " << inst->DumpString(dex_file_);
+    InfoMessages() << "Rejecting opcode " << inst->DumpString(dex_file_);
     return false;
   } else if (flags_.have_pending_runtime_throw_failure_) {
     LogVerifyInfo() << "Elevating opcode flags from " << opcode_flags << " to Throw";
@@ -5127,6 +5127,7 @@ MethodVerifier::MethodVerifier(Thread* self,
       flags_{ .have_pending_hard_failure_ = false, .have_pending_runtime_throw_failure_ = false },
       const_flags_{ .aot_mode_ = aot_mode, .can_load_classes_ = reg_types->CanLoadClasses() },
       encountered_failure_types_(0),
+      info_messages_(std::nullopt),
       verifier_deps_(verifier_deps),
       link_(nullptr) {
 }
@@ -5237,7 +5238,7 @@ MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
             << reg_types->GetDexFile()->PrettyMethod(method_idx) << "\n");
       }
       if (kVerifierDebug) {
-        LOG(INFO) << verifier.info_messages_.str();
+        LOG(INFO) << verifier.InfoMessages().str();
         verifier.Dump(LOG_STREAM(INFO));
       }
       if (CanRuntimeHandleVerificationFailure(verifier.encountered_failure_types_)) {
@@ -5285,13 +5286,13 @@ MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
     result.kind = FailureKind::kHardFailure;
 
     if (kVerifierDebug || VLOG_IS_ON(verifier)) {
-      LOG(ERROR) << verifier.info_messages_.str();
+      LOG(ERROR) << verifier.InfoMessages().str();
       verifier.Dump(LOG_STREAM(ERROR));
     }
     // Under verifier-debug, dump the complete log into the error message.
     if (kVerifierDebug && hard_failure_msg != nullptr) {
       hard_failure_msg->append("\n");
-      hard_failure_msg->append(verifier.info_messages_.str());
+      hard_failure_msg->append(verifier.InfoMessages().str());
       hard_failure_msg->append("\n");
       std::ostringstream oss;
       verifier.Dump(oss);
@@ -5341,7 +5342,7 @@ MethodVerifier* MethodVerifier::CalculateVerificationInfo(
   verifier->Verify();
   if (VLOG_IS_ON(verifier)) {
     verifier->DumpFailures(VLOG_STREAM(verifier));
-    VLOG(verifier) << verifier->info_messages_.str();
+    VLOG(verifier) << verifier->InfoMessages().str();
     verifier->Dump(VLOG_STREAM(verifier));
   }
   if (verifier->flags_.have_pending_hard_failure_) {
@@ -5380,7 +5381,7 @@ void MethodVerifier::VerifyMethodAndDump(Thread* self,
       api_level);
   verifier.Verify();
   verifier.DumpFailures(vios->Stream());
-  vios->Stream() << verifier.info_messages_.str();
+  vios->Stream() << verifier.InfoMessages().str();
   // Only dump if no hard failures. Otherwise the verifier may be not fully initialized
   // and querying any info is dangerous/can abort.
   if (!verifier.flags_.have_pending_hard_failure_) {
@@ -5495,7 +5496,7 @@ std::ostream& MethodVerifier::Fail(VerifyError error, bool pending_exc) {
 }
 
 ScopedNewLine MethodVerifier::LogVerifyInfo() {
-  ScopedNewLine ret{info_messages_};
+  ScopedNewLine ret{InfoMessages()};
   ret << "VFY: " << dex_file_->PrettyMethod(dex_method_idx_)
       << '[' << reinterpret_cast<void*>(work_insn_idx_) << "] : ";
   return ret;

@@ -238,8 +238,6 @@ known_failing_tests = frozenset([
 # removing them from this set (in order to promote them to
 # presubmits).
 postsubmit_only_tests = frozenset([
-    "2282-checker-always-throws-try-catch",
-    "2283-checker-remove-null-check",
 ])
 
 known_failing_on_hwasan_tests = frozenset([

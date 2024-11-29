@@ -430,6 +430,9 @@ constexpr RegType::Kind RegTypeMergeImpl::MergeKind(RegType::Kind incoming_kind)
     } else {
       return Kind::kIntegerConstant;
     }
+  } else if ((IsConstantLo() && incoming_type.IsConstantLo()) ||
+             (IsConstantHi() && incoming_type.IsConstantHi())) {
+    return GetKind();
   } else if (IsIntegralTypes() && incoming_type.IsIntegralTypes()) {
     if (IsBooleanTypes() && incoming_type.IsBooleanTypes()) {
       return Kind::kBoolean;  // boolean MERGE boolean => boolean

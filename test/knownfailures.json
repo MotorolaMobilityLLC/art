@@ -1290,19 +1290,13 @@
     },
     {
         "tests": ["153-reference-stress"],
-        "variant": "gcstress",
-        "description": ["Timing out for gcstress"]
+        "variant": "gcstress | debuggable",
+        "description": ["Timing out."]
     },
     {
         "tests": ["153-reference-stress"],
         "env_vars": {"SANITIZE_HOST": "address"},
         "description": ["Timing out for ASAN."]
-    },
-    {
-        "tests": ["153-reference-stress"],
-        "env_vars": {"ART_HEAP_POISONING": "true"},
-        "variant": "debuggable",
-        "description": ["Timing out for debuggable + poison."]
     },
     {
         "tests": ["021-string2"],

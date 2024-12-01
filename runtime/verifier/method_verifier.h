@@ -280,6 +280,13 @@ class MethodVerifier {
 
   virtual bool PotentiallyMarkRuntimeThrow() = 0;
 
+  std::ostringstream& InfoMessages() {
+    if (!info_messages_.has_value()) {
+      info_messages_.emplace();
+    }
+    return info_messages_.value();
+  }
+
   // The thread we're verifying on.
   Thread* const self_;
 
@@ -338,7 +345,7 @@ class MethodVerifier {
   uint32_t encountered_failure_types_;
 
   // Info message log use primarily for verifier diagnostics.
-  std::ostringstream info_messages_;
+  std::optional<std::ostringstream> info_messages_;
 
   // The verifier deps object we are going to report type assigability
   // constraints to. Can be null for runtime verification.

@@ -937,13 +937,20 @@ static ArtMethod* ResolveMethod(uint16_t method_idx,
   ClassLinker* class_linker = dex_compilation_unit.GetClassLinker();
   Handle<mirror::ClassLoader> class_loader = dex_compilation_unit.GetClassLoader();
 
-  ArtMethod* resolved_method =
-      class_linker->ResolveMethod<ClassLinker::ResolveMode::kCheckICCEAndIAE>(
+  ArtMethod* resolved_method = nullptr;
+  if (referrer == nullptr) {
+    // The referrer may be unresolved for AOT if we're compiling a class that cannot be
+    // resolved because, for example, we don't find a superclass in the classpath.
+    resolved_method = class_linker->ResolveMethodId(
+        method_idx, dex_compilation_unit.GetDexCache(), class_loader);
+  } else if (referrer->SkipAccessChecks()) {
+    resolved_method = class_linker->ResolveMethodId(method_idx, referrer);
+  } else {
+    resolved_method = class_linker->ResolveMethodWithChecks(
           method_idx,
-          dex_compilation_unit.GetDexCache(),
-          class_loader,
           referrer,
           *invoke_type);
+  }
 
   if (UNLIKELY(resolved_method == nullptr)) {
     // Clean up any exception left by type resolution.
@@ -952,9 +959,18 @@ static ArtMethod* ResolveMethod(uint16_t method_idx,
   }
   DCHECK(!soa.Self()->IsExceptionPending());
 
-  // The referrer may be unresolved for AOT if we're compiling a class that cannot be
-  // resolved because, for example, we don't find a superclass in the classpath.
   if (referrer == nullptr) {
+    ObjPtr<mirror::Class> referenced_class = class_linker->LookupResolvedType(
+        dex_compilation_unit.GetDexFile()->GetMethodId(method_idx).class_idx_,
+        dex_compilation_unit.GetDexCache().Get(),
+        class_loader.Get());
+    DCHECK(referenced_class != nullptr);  // Must have been resolved when resolving the method.
+    if (class_linker->ThrowIfInvokeClassMismatch(referenced_class,
+                                                 *dex_compilation_unit.GetDexFile(),
+                                                 *invoke_type)) {
+      soa.Self()->ClearException();
+      return nullptr;
+    }
     // The class linker cannot check access without a referrer, so we have to do it.
     // Check if the declaring class or referencing class is accessible.
     SamePackageCompare same_package(dex_compilation_unit);
@@ -963,11 +979,6 @@ static ArtMethod* ResolveMethod(uint16_t method_idx,
     if (!declaring_class_accessible) {
       // It is possible to access members from an inaccessible superclass
       // by referencing them through an accessible subclass.
-      ObjPtr<mirror::Class> referenced_class = class_linker->LookupResolvedType(
-          dex_compilation_unit.GetDexFile()->GetMethodId(method_idx).class_idx_,
-          dex_compilation_unit.GetDexCache().Get(),
-          class_loader.Get());
-      DCHECK(referenced_class != nullptr);  // Must have been resolved when resolving the method.
       if (!referenced_class->IsPublic() && !same_package(referenced_class)) {
         return nullptr;
       }

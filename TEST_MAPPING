@@ -533,6 +533,12 @@
       "name": "art-run-test-2279-second-inner-loop-references-first"
     },
     {
+      "name": "art-run-test-2282-checker-always-throws-try-catch"
+    },
+    {
+      "name": "art-run-test-2283-checker-remove-null-check"
+    },
+    {
       "name": "art-run-test-300-package-override"
     },
     {
@@ -2016,6 +2022,12 @@
     },
     {
       "name": "art-run-test-2279-second-inner-loop-references-first[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2282-checker-always-throws-try-catch[com.google.android.art.apex]"
+    },
+    {
+      "name": "art-run-test-2283-checker-remove-null-check[com.google.android.art.apex]"
     },
     {
       "name": "art-run-test-300-package-override[com.google.android.art.apex]"
@@ -3518,6 +3530,12 @@
       "name": "art-run-test-2279-second-inner-loop-references-first"
     },
     {
+      "name": "art-run-test-2282-checker-always-throws-try-catch"
+    },
+    {
+      "name": "art-run-test-2283-checker-remove-null-check"
+    },
+    {
       "name": "art-run-test-300-package-override"
     },
     {
@@ -5005,6 +5023,12 @@
       "name": "art-run-test-2279-second-inner-loop-references-first"
     },
     {
+      "name": "art-run-test-2282-checker-always-throws-try-catch"
+    },
+    {
+      "name": "art-run-test-2283-checker-remove-null-check"
+    },
+    {
       "name": "art-run-test-300-package-override"
     },
     {
@@ -5947,14 +5971,6 @@
   "avf-presubmit": [
     {
       "name": "ComposHostTestCases"
-    }
-  ],
-  "postsubmit": [
-    {
-      "name": "art-run-test-2282-checker-always-throws-try-catch"
-    },
-    {
-      "name": "art-run-test-2283-checker-remove-null-check"
     }
   ]
 }

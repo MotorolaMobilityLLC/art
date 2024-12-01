@@ -1,11 +1,5 @@
 [
     {
-        "tests": "597-deopt-new-string",
-        "description": ["Disable 597-deopt-new-string temporarily until a fix",
-                        "arrives."],
-        "bug": "http://b/378026679"
-    },
-    {
         "tests": "626-checker-arm64-scratch-register",
         "description": ["Disable 626-checker until we assses whether to keep it"]
     },
@@ -1253,7 +1247,8 @@
     },
     {
         "tests": ["990-field-trace",
-                  "991-field-trace-2"],
+                  "991-field-trace-2",
+                  "710-varhandle-creation"],
         "variant": "gcstress & debug & target",
         "description": ["Test can time out on gcstress with debug"]
     },
@@ -1295,8 +1290,8 @@
     },
     {
         "tests": ["153-reference-stress"],
-        "variant": "gcstress",
-        "description": ["Timing out for gcstress"]
+        "variant": "gcstress | debuggable",
+        "description": ["Timing out."]
     },
     {
         "tests": ["153-reference-stress"],

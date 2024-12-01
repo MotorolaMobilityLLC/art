@@ -131,19 +131,35 @@ class RegType {
   constexpr bool IsUninitializedTypes() const;
   constexpr bool IsUnresolvedTypes() const;
 
-  constexpr bool IsLowHalf() const { return (IsLongLo() || IsDoubleLo() || IsConstantLo()); }
-  constexpr bool IsHighHalf() const { return (IsLongHi() || IsDoubleHi() || IsConstantHi()); }
+  static constexpr bool IsLowHalf(Kind kind) {
+    return kind == Kind::kLongLo || kind == Kind::kDoubleLo || kind == Kind::kConstantLo;
+  }
+  static constexpr bool IsHighHalf(Kind kind) {
+    return kind == Kind::kLongHi || kind == Kind::kDoubleHi || kind == Kind::kConstantHi;
+  }
+
+  constexpr bool IsLowHalf() const { return IsLowHalf(GetKind()); }
+  constexpr bool IsHighHalf() const { return IsHighHalf(GetKind()); }
   constexpr bool IsLongOrDoubleTypes() const { return IsLowHalf(); }
 
+  static constexpr Kind ToHighHalf(Kind low) {
+    static_assert(Kind::kConstantLo + 1 == Kind::kConstantHi);
+    static_assert(Kind::kDoubleLo + 1 == Kind::kDoubleHi);
+    static_assert(Kind::kLongLo + 1 == Kind::kLongHi);
+    DCHECK(low == Kind::kConstantLo || low == Kind::kDoubleLo || low == Kind::kLongLo);
+    return enum_cast<Kind>(low + 1);
+  }
+
+  // Check that `low` is the low half, and that `high` is its matching high-half.
+  static inline bool CheckWidePair(Kind low, Kind high) {
+    return (low == Kind::kConstantLo || low == Kind::kDoubleLo || low == Kind::kLongLo) &&
+           high == ToHighHalf(low);
+  }
   // Check this is the low half, and that type_h is its matching high-half.
   inline bool CheckWidePair(const RegType& type_h) const {
-    if (IsLowHalf()) {
-      return ((IsConstantLo() && type_h.IsConstantHi()) ||
-              (IsDoubleLo() && type_h.IsDoubleHi()) ||
-              (IsLongLo() && type_h.IsLongHi()));
-    }
-    return false;
+    return CheckWidePair(GetKind(), type_h.GetKind());
   }
+
   // The high half that corresponds to this low half
   const RegType& HighHalf(RegTypeCache* cache) const
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -160,7 +176,10 @@ class RegType {
   bool IsCategory2Types() const {
     return IsLowHalf();  // Don't expect explicit testing of high halves
   }
-  constexpr bool IsBooleanTypes() const { return IsBoolean() || IsZero() || IsBooleanConstant(); }
+  static constexpr bool IsBooleanTypes(Kind kind) {
+    return kind == Kind::kBoolean || kind == Kind::kZero || kind == Kind::kBooleanConstant;
+  }
+  constexpr bool IsBooleanTypes() const { return IsBooleanTypes(GetKind()); }
   constexpr bool IsByteTypes() const {
     return IsByte() || IsPositiveByteConstant() || IsByteConstant() || IsBooleanTypes();
   }
@@ -211,6 +230,16 @@ class RegType {
 
   std::string Dump() const REQUIRES_SHARED(Locks::mutator_lock_);
 
+  enum class Assignability : uint8_t {
+    kAssignable,
+    kNotAssignable,
+    kNarrowingConversion,
+    kReference,
+    kInvalid,
+  };
+
+  ALWAYS_INLINE static inline Assignability AssignabilityFrom(Kind lhs, Kind rhs);
+
   // Can this type be assigned by src?
   // Note: Object and interface types may always be assigned to one another, see
   // comment on
@@ -253,14 +282,6 @@ class RegType {
   static void* operator new(size_t size, ArenaAllocator* allocator);
   static void* operator new(size_t size, ScopedArenaAllocator* allocator) = delete;
 
-  enum class Assignability : uint8_t {
-    kAssignable,
-    kNotAssignable,
-    kNarrowingConversion,
-    kReference,
-    kInvalid,
-  };
-
  protected:
   constexpr RegType(const std::string_view& descriptor, uint16_t cache_id, Kind kind)
       REQUIRES_SHARED(Locks::mutator_lock_)
@@ -289,6 +310,7 @@ class RegType {
 };
 
 std::ostream& operator<<(std::ostream& os, RegType::Kind kind);
+std::ostream& operator<<(std::ostream& os, RegType::Assignability assignability);
 
 // Bottom type.
 class ConflictType final : public RegType {

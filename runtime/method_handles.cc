@@ -774,11 +774,17 @@ static bool DoMethodHandleInvokeMethod(Thread* self,
     first_dest_reg = num_regs - accessor.InsSize();
     // Parameter registers go at the end of the shadow frame.
     DCHECK_NE(first_dest_reg, (size_t)-1);
-  } else {
+  } else if (called_method->IsNative() || called_method->IsProxyMethod()) {
     // No local regs for proxy and native methods.
-    DCHECK(called_method->IsNative() || called_method->IsProxyMethod());
     num_regs = GetInsForProxyOrNativeMethod(called_method);
     first_dest_reg = 0;
+  } else {
+    if (called_method->IsDefaultConflicting()) {
+      ThrowIncompatibleClassChangeErrorForMethodConflict(called_method);
+    } else {
+      ThrowAbstractMethodError(called_method);
+    }
+    return false;
   }
 
   const char* old_cause = self->StartAssertNoThreadSuspension("DoMethodHandleInvokeMethod");

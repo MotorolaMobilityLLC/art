@@ -54,11 +54,6 @@ if [[ $action = create ]]; then
             u/u-boot/u-boot-qemu_2024.01+dfsg-5ubuntu2_all.deb \
             usr/lib/u-boot/qemu-riscv64_smode/uboot.elf
 
-        # Get OpenSBI for Ubuntu 22.04 (Jammy)
-        get_stable_binary \
-            o/opensbi/opensbi_1.3-1ubuntu0.23.04.2_all.deb \
-            usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.elf
-
     elif [[ "$TARGET_ARCH" = "arm64" ]]; then
         # Get EFI (ARM64)
         get_stable_binary \
@@ -110,7 +105,6 @@ elif [[ $action = boot ]]; then
             -m 16G \
             -smp 8 \
             -cpu rv64,v=true,elen=64,vlen=128,zba=true,zbb=true,zbs=true \
-            -bios fw_jump.elf \
             -kernel uboot.elf \
             -drive file="$ART_TEST_VM_IMG",if=virtio \
             -drive file=user-data.img,format=raw,if=virtio \

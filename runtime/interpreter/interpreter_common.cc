@@ -513,8 +513,8 @@ bool DoInvokePolymorphic(Thread* self,
   const int invoke_method_idx = inst->VRegB();
   ClassLinker* class_linker = Runtime::Current()->GetClassLinker();
   ArtMethod* invoke_method =
-      class_linker->ResolveMethod<ClassLinker::ResolveMode::kCheckICCEAndIAE>(
-          self, invoke_method_idx, shadow_frame.GetMethod(), kPolymorphic);
+      class_linker->ResolveMethodWithChecks(
+          invoke_method_idx, shadow_frame.GetMethod(), kPolymorphic);
 
   // Ensure intrinsic identifiers are initialized.
   DCHECK(invoke_method->IsIntrinsic());

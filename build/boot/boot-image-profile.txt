@@ -3680,7 +3680,9 @@ HSPLjava/nio/HeapByteBuffer;->put(Ljava/nio/ByteBuffer;)Ljava/nio/ByteBuffer;
 HSPLjava/nio/HeapByteBuffer;->put([BII)Ljava/nio/ByteBuffer;
 HSPLjava/nio/HeapByteBuffer;->putChar(C)Ljava/nio/ByteBuffer;
 HSPLjava/nio/HeapByteBuffer;->putCharUnchecked(IC)V
+HSPLjava/nio/HeapByteBuffer;->putDoubleUnchecked(ID)V
 HSPLjava/nio/HeapByteBuffer;->putFloat(F)Ljava/nio/ByteBuffer;
+HSPLjava/nio/HeapByteBuffer;->putFloatUnchecked(IF)V
 HSPLjava/nio/HeapByteBuffer;->putInt(I)Ljava/nio/ByteBuffer;
 HSPLjava/nio/HeapByteBuffer;->putInt(II)Ljava/nio/ByteBuffer;
 HSPLjava/nio/HeapByteBuffer;->putIntUnchecked(II)V
@@ -3689,6 +3691,7 @@ HSPLjava/nio/HeapByteBuffer;->putLong(J)Ljava/nio/ByteBuffer;
 HSPLjava/nio/HeapByteBuffer;->putLongUnchecked(IJ)V
 HSPLjava/nio/HeapByteBuffer;->putShort(IS)Ljava/nio/ByteBuffer;
 HSPLjava/nio/HeapByteBuffer;->putShort(S)Ljava/nio/ByteBuffer;
+HSPLjava/nio/HeapByteBuffer;->putShortUnchecked(IS)V
 HSPLjava/nio/HeapByteBuffer;->slice()Ljava/nio/ByteBuffer;
 HSPLjava/nio/HeapByteBuffer;->throwIfReadOnly()V
 HSPLjava/nio/HeapCharBuffer;-><init>(II)V

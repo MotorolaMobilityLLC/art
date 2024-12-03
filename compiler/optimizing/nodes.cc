@@ -2476,7 +2476,6 @@ void HBasicBlock::DisconnectAndDelete() {
 
   // (7) Delete from the graph, update reverse post order.
   graph_->DeleteDeadEmptyBlock(this);
-  SetGraph(nullptr);
 }
 
 void HBasicBlock::DisconnectFromSuccessors(const ArenaBitVector* visited) {
@@ -2593,7 +2592,6 @@ void HBasicBlock::MergeWith(HBasicBlock* other) {
 
   // Delete `other` from the graph. The function updates reverse post order.
   graph_->DeleteDeadEmptyBlock(other);
-  other->SetGraph(nullptr);
 }
 
 void HBasicBlock::MergeWithInlined(HBasicBlock* other) {

@@ -132,8 +132,6 @@ class Instruction {
     kIndexStringRef,          // string reference index
     kIndexMethodRef,          // method reference index
     kIndexFieldRef,           // field reference index
-    kIndexFieldOffset,        // field offset (for static linked fields)
-    kIndexVtableOffset,       // vtable offset (for static linked methods)
     kIndexMethodAndProtoRef,  // method and a proto reference index (for invoke-polymorphic)
     kIndexCallSiteRef,        // call site reference index
     kIndexMethodHandleRef,    // constant method handle reference index
@@ -195,12 +193,11 @@ class Instruction {
     kVerifyVarArgNonZero      = 0x0040000,
     kVerifyVarArgRange        = 0x0080000,
     kVerifyVarArgRangeNonZero = 0x0100000,
-    kVerifyRuntimeOnly        = 0x0200000,
-    kVerifyError              = 0x0400000,
-    kVerifyRegHPrototype      = 0x0800000,
-    kVerifyRegBCallSite       = 0x1000000,
-    kVerifyRegBMethodHandle   = 0x2000000,
-    kVerifyRegBPrototype      = 0x4000000,
+    kVerifyError              = 0x0200000,
+    kVerifyRegHPrototype      = 0x0400000,
+    kVerifyRegBCallSite       = 0x0800000,
+    kVerifyRegBMethodHandle   = 0x1000000,
+    kVerifyRegBPrototype      = 0x2000000,
   };
 
   // Collect the enums in a struct for better locality.
@@ -563,12 +560,6 @@ class Instruction {
   // Returns true if the instruction allows control flow to go to the following instruction.
   bool CanFlowThrough() const;
 
-  // Returns true if the instruction is a quickened instruction.
-  bool IsQuickened() const {
-    return (kInstructionDescriptors[Opcode()].index_type == kIndexFieldOffset) ||
-        (kInstructionDescriptors[Opcode()].index_type == kIndexVtableOffset);
-  }
-
   // Returns true if this instruction is a switch.
   bool IsSwitch() const {
     return (kInstructionDescriptors[Opcode()].flags & kSwitch) != 0;
@@ -622,10 +613,6 @@ class Instruction {
     return (kInstructionDescriptors[Opcode()].verify_flags & (kVerifyArrayData |
         kVerifyBranchTarget | kVerifySwitchTargets | kVerifyVarArg | kVerifyVarArgNonZero |
         kVerifyVarArgRange | kVerifyVarArgRangeNonZero | kVerifyError));
-  }
-
-  bool GetVerifyIsRuntimeOnly() const {
-    return (kInstructionDescriptors[Opcode()].verify_flags & kVerifyRuntimeOnly) != 0;
   }
 
   // Get the dex PC of this instruction as a offset in code units from the beginning of insns.

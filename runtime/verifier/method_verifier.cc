@@ -40,6 +40,7 @@
 #include "dex/dex_file-inl.h"
 #include "dex/dex_file_exception_helpers.h"
 #include "dex/dex_instruction-inl.h"
+#include "dex/dex_instruction_list.h"
 #include "dex/dex_instruction_utils.h"
 #include "experimental_flags.h"
 #include "gc/accounting/card_table-inl.h"
@@ -284,7 +285,10 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
    * - (earlier) for each exception handler, the handler must start at a valid
    *   instruction
    */
-  bool VerifyInstruction(const Instruction* inst, uint32_t code_offset);
+  template <Instruction::Code kDispatchOpcode>
+  ALWAYS_INLINE bool VerifyInstruction(const Instruction* inst,
+                                       uint32_t code_offset,
+                                       uint16_t inst_data);
 
   /* Ensure that the register index is valid for this code item. */
   bool CheckRegisterIndex(uint32_t idx) {
@@ -320,10 +324,9 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
 
   // Perform static checks on a field Get or set instruction. All we do here is ensure that the
   // field index is in the valid range.
-  bool CheckFieldIndex(uint32_t idx) {
-    if (UNLIKELY(idx >= dex_file_->GetHeader().field_ids_size_)) {
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "bad field index " << idx << " (max "
-                                        << dex_file_->GetHeader().field_ids_size_ << ")";
+  ALWAYS_INLINE bool CheckFieldIndex(uint32_t field_idx) {
+    if (UNLIKELY(field_idx >= dex_file_->NumFieldIds())) {
+      FailBadFieldIndex(field_idx);
       return false;
     }
     return true;
@@ -331,10 +334,9 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
 
   // Perform static checks on a method invocation instruction. All we do here is ensure that the
   // method index is in the valid range.
-  bool CheckMethodIndex(uint32_t idx) {
-    if (UNLIKELY(idx >= dex_file_->GetHeader().method_ids_size_)) {
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "bad method index " << idx << " (max "
-                                        << dex_file_->GetHeader().method_ids_size_ << ")";
+  ALWAYS_INLINE bool CheckMethodIndex(uint32_t method_idx) {
+    if (UNLIKELY(method_idx >= dex_file_->NumMethodIds())) {
+      FailBadMethodIndex(method_idx);
       return false;
     }
     return true;
@@ -408,20 +410,29 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
 
   // Check the register indices used in a "vararg" instruction, such as invoke-virtual or
   // filled-new-array.
-  // - vA holds word count (0-5), args[] have values.
+  // - inst is the instruction from which we retrieve the arguments
+  // - vA holds the argument count (0-5)
   // There are some tests we don't do here, e.g. we don't try to verify that invoking a method that
   // takes a double is done with consecutive registers. This requires parsing the target method
   // signature, which we will be doing later on during the code flow analysis.
-  bool CheckVarArgRegs(uint32_t vA, uint32_t arg[]) {
+  bool CheckVarArgRegs(const Instruction* inst, uint32_t vA) {
     uint16_t registers_size = code_item_accessor_.RegistersSize();
-    for (uint32_t idx = 0; idx < vA; idx++) {
-      if (UNLIKELY(arg[idx] >= registers_size)) {
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid reg index (" << arg[idx]
-                                          << ") in non-range invoke (>= " << registers_size << ")";
-        return false;
+    // All args are 4-bit and therefore under 16. We do not need to check args for
+    // `registers_size >= 16u` but let's check them anyway in debug builds.
+    if (registers_size < 16u || kIsDebugBuild) {
+      uint32_t args[Instruction::kMaxVarArgRegs];
+      inst->GetVarArgs(args);
+      for (uint32_t idx = 0; idx < vA; idx++) {
+        DCHECK_LT(args[idx], 16u);
+        if (UNLIKELY(args[idx] >= registers_size)) {
+          DCHECK_LT(registers_size, 16u);
+          Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+              << "invalid reg index (" << args[idx]
+              << ") in non-range invoke (>= " << registers_size << ")";
+          return false;
+        }
       }
     }
-
     return true;
   }
 
@@ -707,6 +718,25 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
     } else {
       return GetRegTypeClass(declaring_class)->CanAccessMember(klass, access_flags);
     }
+  }
+
+  NO_INLINE void FailInvalidArgCount(const Instruction* inst, uint32_t arg_count) {
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "invalid arg count (" << arg_count << ") in " << inst->Name();
+  }
+
+  NO_INLINE void FailUnexpectedOpcode(const Instruction* inst) {
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unexpected opcode " << inst->Name();
+  }
+
+  NO_INLINE void FailBadFieldIndex(uint32_t field_idx) {
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "bad field index " << field_idx << " (max " << dex_file_->NumFieldIds() << ")";
+  }
+
+  NO_INLINE void FailBadMethodIndex(uint32_t method_idx) {
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "bad method index " << method_idx << " (max " << dex_file_->NumMethodIds() << ")";
   }
 
   NO_INLINE void FailForRegisterType(uint32_t vsrc,
@@ -1460,90 +1490,178 @@ template <bool kVerifierDebug>
 bool MethodVerifier<kVerifierDebug>::VerifyInstructions() {
   // Flag the start of the method as a branch target.
   GetModifiableInstructionFlags(0).SetBranchTarget();
-  for (const DexInstructionPcPair& inst : code_item_accessor_) {
-    const uint32_t dex_pc = inst.DexPc();
-    if (!VerifyInstruction(&inst.Inst(), dex_pc)) {
-      DCHECK_NE(failures_.size(), 0U);
-      return false;
+  const Instruction* inst = Instruction::At(code_item_accessor_.Insns());
+  uint32_t dex_pc = 0u;
+  const uint32_t end_dex_pc = code_item_accessor_.InsnsSizeInCodeUnits();
+  while (dex_pc != end_dex_pc) {
+    auto find_dispatch_opcode = [](Instruction::Code opcode) constexpr {
+      // NOP needs its own dipatch because it needs special code for instruction size.
+      // CHECK_CAST needs its own dipatch because we need to update instruction flags.
+      if (opcode == Instruction::NOP || opcode == Instruction::CHECK_CAST) {
+        return opcode;
+      }
+      DCHECK_GT(Instruction::SizeInCodeUnits(Instruction::FormatOf(opcode)), 0u);
+      for (uint32_t raw_other = 0; raw_other != opcode; ++raw_other) {
+        Instruction::Code other = enum_cast<Instruction::Code>(raw_other);
+        if (other == Instruction::NOP || other == Instruction::CHECK_CAST) {
+          continue;
+        }
+        // We dispatch to `VerifyInstruction()` based on the format and verify flags but
+        // we also treat return instructions separately to update instruction flags.
+        if (Instruction::FormatOf(opcode) == Instruction::FormatOf(other) &&
+            Instruction::VerifyFlagsOf(opcode) == Instruction::VerifyFlagsOf(other) &&
+            Instruction::IsReturn(opcode) == Instruction::IsReturn(other)) {
+          return other;
+        }
+      }
+      return opcode;
+    };
+
+    uint16_t inst_data = inst->Fetch16(0);
+    Instruction::Code dispatch_opcode = Instruction::NOP;
+    switch (inst->Opcode(inst_data)) {
+#define DEFINE_CASE(opcode, c, p, format, index, flags, eflags, vflags) \
+      case opcode: {                                                    \
+        /* Enforce compile-time evaluation. */                          \
+        constexpr Instruction::Code kDispatchOpcode =                   \
+            find_dispatch_opcode(enum_cast<Instruction::Code>(opcode)); \
+        dispatch_opcode = kDispatchOpcode;                              \
+        break;                                                          \
+      }
+      DEX_INSTRUCTION_LIST(DEFINE_CASE)
+#undef DEFINE_CASE
+    }
+    bool is_return = false;
+    bool is_check_cast = false;
+    uint32_t instruction_size = 0u;
+    switch (dispatch_opcode) {
+#define DEFINE_CASE(opcode, c, p, format, index, flags, eflags, vflags)             \
+      case opcode: {                                                                \
+        constexpr Instruction::Code kOpcode = enum_cast<Instruction::Code>(opcode); \
+        if (!VerifyInstruction<kOpcode>(inst, dex_pc, inst_data)) {                 \
+          DCHECK_NE(failures_.size(), 0U);                                          \
+          return false;                                                             \
+        }                                                                           \
+        is_return = Instruction::IsReturn(kOpcode);                                 \
+        is_check_cast = (opcode == Instruction::CHECK_CAST);                        \
+        instruction_size = (opcode == Instruction::NOP)                             \
+            ? inst->SizeInCodeUnitsComplexOpcode()                                  \
+            : Instruction::SizeInCodeUnits(Instruction::FormatOf(kOpcode));         \
+        DCHECK_EQ(instruction_size, inst->SizeInCodeUnits());                       \
+        break;                                                                      \
+      }
+      DEX_INSTRUCTION_LIST(DEFINE_CASE)
+#undef DEFINE_CASE
     }
     // Flag some interesting instructions.
-    if (inst->IsReturn()) {
+    if (is_return) {
       GetModifiableInstructionFlags(dex_pc).SetReturn();
-    } else if (inst->Opcode() == Instruction::CHECK_CAST) {
+      DCHECK(!is_check_cast);
+    } else if (is_check_cast) {
       // The dex-to-dex compiler wants type information to elide check-casts.
       GetModifiableInstructionFlags(dex_pc).SetCompileTimeInfoPoint();
     }
+    DCHECK_NE(instruction_size, 0u);
+    DCHECK_LE(instruction_size, end_dex_pc - dex_pc);
+    dex_pc += instruction_size;
+    inst = inst->RelativeAt(instruction_size);
   }
   return true;
 }
 
 template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::VerifyInstruction(const Instruction* inst,
-                                                       uint32_t code_offset) {
+template <Instruction::Code kDispatchOpcode>
+inline bool MethodVerifier<kVerifierDebug>::VerifyInstruction(const Instruction* inst,
+                                                              uint32_t code_offset,
+                                                              uint16_t inst_data) {
+  // The `kDispatchOpcode` may differ from the actual opcode but it shall have the
+  // same verification flags and format. We explicitly `DCHECK` these below and
+  // the format is also `DCHECK`ed in VReg getters that take it as an argument.
+  constexpr Instruction::Format kFormat = Instruction::FormatOf(kDispatchOpcode);
+  DCHECK_EQ(kFormat, Instruction::FormatOf(inst->Opcode()));
+
   bool result = true;
-  switch (inst->GetVerifyTypeArgumentA()) {
+  constexpr uint32_t kVerifyA = Instruction::GetVerifyTypeArgumentAOf(kDispatchOpcode);
+  DCHECK_EQ(kVerifyA, inst->GetVerifyTypeArgumentA());
+  switch (kVerifyA) {
     case Instruction::kVerifyRegA:
-      result = result && CheckRegisterIndex(inst->VRegA());
+      result = result && CheckRegisterIndex(inst->VRegA(kFormat, inst_data));
       break;
     case Instruction::kVerifyRegAWide:
-      result = result && CheckWideRegisterIndex(inst->VRegA());
+      result = result && CheckWideRegisterIndex(inst->VRegA(kFormat, inst_data));
+      break;
+    case Instruction::kVerifyNothing:
       break;
   }
-  switch (inst->GetVerifyTypeArgumentB()) {
+  constexpr uint32_t kVerifyB = Instruction::GetVerifyTypeArgumentBOf(kDispatchOpcode);
+  DCHECK_EQ(kVerifyB, inst->GetVerifyTypeArgumentB());
+  switch (kVerifyB) {
     case Instruction::kVerifyRegB:
-      result = result && CheckRegisterIndex(inst->VRegB());
+      result = result && CheckRegisterIndex(inst->VRegB(kFormat, inst_data));
       break;
     case Instruction::kVerifyRegBField:
-      result = result && CheckFieldIndex(inst->VRegB());
+      result = result && CheckFieldIndex(inst->VRegB(kFormat, inst_data));
       break;
     case Instruction::kVerifyRegBMethod:
-      result = result && CheckMethodIndex(inst->VRegB());
+      result = result && CheckMethodIndex(inst->VRegB(kFormat, inst_data));
       break;
     case Instruction::kVerifyRegBNewInstance:
-      result = result && CheckNewInstance(dex::TypeIndex(inst->VRegB()));
+      result = result && CheckNewInstance(dex::TypeIndex(inst->VRegB(kFormat, inst_data)));
       break;
     case Instruction::kVerifyRegBString:
-      result = result && CheckStringIndex(inst->VRegB());
+      result = result && CheckStringIndex(inst->VRegB(kFormat, inst_data));
       break;
     case Instruction::kVerifyRegBType:
-      result = result && CheckTypeIndex(dex::TypeIndex(inst->VRegB()));
+      result = result && CheckTypeIndex(dex::TypeIndex(inst->VRegB(kFormat, inst_data)));
       break;
     case Instruction::kVerifyRegBWide:
-      result = result && CheckWideRegisterIndex(inst->VRegB());
+      result = result && CheckWideRegisterIndex(inst->VRegB(kFormat, inst_data));
       break;
     case Instruction::kVerifyRegBCallSite:
-      result = result && CheckCallSiteIndex(inst->VRegB());
+      result = result && CheckCallSiteIndex(inst->VRegB(kFormat, inst_data));
       break;
     case Instruction::kVerifyRegBMethodHandle:
-      result = result && CheckMethodHandleIndex(inst->VRegB());
+      result = result && CheckMethodHandleIndex(inst->VRegB(kFormat, inst_data));
       break;
     case Instruction::kVerifyRegBPrototype:
-      result = result && CheckPrototypeIndex(inst->VRegB());
+      result = result && CheckPrototypeIndex(inst->VRegB(kFormat, inst_data));
+      break;
+    case Instruction::kVerifyNothing:
       break;
   }
-  switch (inst->GetVerifyTypeArgumentC()) {
+  constexpr uint32_t kVerifyC = Instruction::GetVerifyTypeArgumentCOf(kDispatchOpcode);
+  DCHECK_EQ(kVerifyC, inst->GetVerifyTypeArgumentC());
+  switch (kVerifyC) {
     case Instruction::kVerifyRegC:
-      result = result && CheckRegisterIndex(inst->VRegC());
+      result = result && CheckRegisterIndex(inst->VRegC(kFormat));
       break;
     case Instruction::kVerifyRegCField:
-      result = result && CheckFieldIndex(inst->VRegC());
+      result = result && CheckFieldIndex(inst->VRegC(kFormat));
       break;
     case Instruction::kVerifyRegCNewArray:
-      result = result && CheckNewArray(dex::TypeIndex(inst->VRegC()));
+      result = result && CheckNewArray(dex::TypeIndex(inst->VRegC(kFormat)));
       break;
     case Instruction::kVerifyRegCType:
-      result = result && CheckTypeIndex(dex::TypeIndex(inst->VRegC()));
+      result = result && CheckTypeIndex(dex::TypeIndex(inst->VRegC(kFormat)));
       break;
     case Instruction::kVerifyRegCWide:
-      result = result && CheckWideRegisterIndex(inst->VRegC());
+      result = result && CheckWideRegisterIndex(inst->VRegC(kFormat));
+      break;
+    case Instruction::kVerifyNothing:
       break;
   }
-  switch (inst->GetVerifyTypeArgumentH()) {
+  constexpr uint32_t kVerifyH = Instruction::GetVerifyTypeArgumentHOf(kDispatchOpcode);
+  DCHECK_EQ(kVerifyH, inst->GetVerifyTypeArgumentH());
+  switch (kVerifyH) {
     case Instruction::kVerifyRegHPrototype:
-      result = result && CheckPrototypeIndex(inst->VRegH());
+      result = result && CheckPrototypeIndex(inst->VRegH(kFormat));
+      break;
+    case Instruction::kVerifyNothing:
       break;
   }
-  switch (inst->GetVerifyExtraFlags()) {
+  constexpr uint32_t kVerifyExtra = Instruction::GetVerifyExtraFlagsOf(kDispatchOpcode);
+  DCHECK_EQ(kVerifyExtra, inst->GetVerifyExtraFlags());
+  switch (kVerifyExtra) {
     case Instruction::kVerifyArrayData:
       result = result && CheckArrayData(code_offset);
       break;
@@ -1557,33 +1675,32 @@ bool MethodVerifier<kVerifierDebug>::VerifyInstruction(const Instruction* inst,
       // Fall-through.
     case Instruction::kVerifyVarArg: {
       // Instructions that can actually return a negative value shouldn't have this flag.
-      uint32_t v_a = dchecked_integral_cast<uint32_t>(inst->VRegA());
-      if ((inst->GetVerifyExtraFlags() == Instruction::kVerifyVarArgNonZero && v_a == 0) ||
+      uint32_t v_a = dchecked_integral_cast<uint32_t>(inst->VRegA(kFormat, inst_data));
+      if ((kVerifyExtra == Instruction::kVerifyVarArgNonZero && v_a == 0) ||
           v_a > Instruction::kMaxVarArgRegs) {
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid arg count (" << v_a << ") in "
-                                             "non-range invoke";
+        FailInvalidArgCount(inst, v_a);
         return false;
       }
 
-      uint32_t args[Instruction::kMaxVarArgRegs];
-      inst->GetVarArgs(args);
-      result = result && CheckVarArgRegs(v_a, args);
+      result = result && CheckVarArgRegs(inst, v_a);
       break;
     }
     case Instruction::kVerifyVarArgRangeNonZero:
       // Fall-through.
-    case Instruction::kVerifyVarArgRange:
-      if (inst->GetVerifyExtraFlags() == Instruction::kVerifyVarArgRangeNonZero &&
-          inst->VRegA() <= 0) {
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid arg count (" << inst->VRegA() << ") in "
-                                             "range invoke";
+    case Instruction::kVerifyVarArgRange: {
+      uint32_t v_a = inst->VRegA(kFormat, inst_data);
+      if (inst->GetVerifyExtraFlags() == Instruction::kVerifyVarArgRangeNonZero && v_a == 0) {
+        FailInvalidArgCount(inst, v_a);
         return false;
       }
-      result = result && CheckVarArgRangeRegs(inst->VRegA(), inst->VRegC());
+      result = result && CheckVarArgRangeRegs(v_a, inst->VRegC(kFormat));
       break;
+    }
     case Instruction::kVerifyError:
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unexpected opcode " << inst->Name();
+      FailUnexpectedOpcode(inst);
       result = false;
+      break;
+    case Instruction::kVerifyNothing:
       break;
   }
   return result;

@@ -95,6 +95,10 @@ class InstructionFlags final {
 
   std::string ToString() const;
 
+  bool Equals(const InstructionFlags& other) const {
+    return flags_ == other.flags_;
+  }
+
  private:
   enum {
     // The instruction has been visited and unless IsChanged() verified.

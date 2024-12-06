@@ -1381,9 +1381,12 @@ bool MethodVerifier<kVerifierDebug>::Verify() {
   insn_flags_.reset(allocator_.AllocArray<InstructionFlags>(
       code_item_accessor_.InsnsSizeInCodeUnits()));
   DCHECK(insn_flags_ != nullptr);
-  std::uninitialized_fill_n(insn_flags_.get(),
-                            code_item_accessor_.InsnsSizeInCodeUnits(),
-                            InstructionFlags());
+  // `ArenaAllocator` guarantees zero-initialization.
+  static_assert(std::is_same_v<decltype(allocator_), ArenaAllocator>);
+  DCHECK(std::all_of(
+      insn_flags_.get(),
+      insn_flags_.get() + code_item_accessor_.InsnsSizeInCodeUnits(),
+      [](const InstructionFlags& flags) { return flags.Equals(InstructionFlags()); }));
   // Run through the instructions and see if the width checks out.
   bool result = ComputeWidthsAndCountOps();
   // Flag instructions guarded by a "try" block and check exception handlers.

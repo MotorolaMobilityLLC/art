@@ -1496,14 +1496,13 @@ bool MethodVerifier<kVerifierDebug>::VerifyInstructions() {
   while (dex_pc != end_dex_pc) {
     auto find_dispatch_opcode = [](Instruction::Code opcode) constexpr {
       // NOP needs its own dipatch because it needs special code for instruction size.
-      // CHECK_CAST needs its own dipatch because we need to update instruction flags.
-      if (opcode == Instruction::NOP || opcode == Instruction::CHECK_CAST) {
+      if (opcode == Instruction::NOP) {
         return opcode;
       }
       DCHECK_GT(Instruction::SizeInCodeUnits(Instruction::FormatOf(opcode)), 0u);
       for (uint32_t raw_other = 0; raw_other != opcode; ++raw_other) {
         Instruction::Code other = enum_cast<Instruction::Code>(raw_other);
-        if (other == Instruction::NOP || other == Instruction::CHECK_CAST) {
+        if (other == Instruction::NOP) {
           continue;
         }
         // We dispatch to `VerifyInstruction()` based on the format and verify flags but
@@ -1532,7 +1531,6 @@ bool MethodVerifier<kVerifierDebug>::VerifyInstructions() {
 #undef DEFINE_CASE
     }
     bool is_return = false;
-    bool is_check_cast = false;
     uint32_t instruction_size = 0u;
     switch (dispatch_opcode) {
 #define DEFINE_CASE(opcode, c, p, format, index, flags, eflags, vflags)             \
@@ -1543,7 +1541,6 @@ bool MethodVerifier<kVerifierDebug>::VerifyInstructions() {
           return false;                                                             \
         }                                                                           \
         is_return = Instruction::IsReturn(kOpcode);                                 \
-        is_check_cast = (opcode == Instruction::CHECK_CAST);                        \
         instruction_size = (opcode == Instruction::NOP)                             \
             ? inst->SizeInCodeUnitsComplexOpcode()                                  \
             : Instruction::SizeInCodeUnits(Instruction::FormatOf(kOpcode));         \
@@ -1556,10 +1553,6 @@ bool MethodVerifier<kVerifierDebug>::VerifyInstructions() {
     // Flag some interesting instructions.
     if (is_return) {
       GetModifiableInstructionFlags(dex_pc).SetReturn();
-      DCHECK(!is_check_cast);
-    } else if (is_check_cast) {
-      // The dex-to-dex compiler wants type information to elide check-casts.
-      GetModifiableInstructionFlags(dex_pc).SetCompileTimeInfoPoint();
     }
     DCHECK_NE(instruction_size, 0u);
     DCHECK_LE(instruction_size, end_dex_pc - dex_pc);

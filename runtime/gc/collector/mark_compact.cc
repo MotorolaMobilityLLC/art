@@ -787,6 +787,7 @@ void MarkCompact::RunPhases() {
     }
   }
   FinishPhase();
+  GetHeap()->PostGcVerification(this);
   thread_running_gc_ = nullptr;
 }
 
@@ -1061,6 +1062,7 @@ bool MarkCompact::PrepareForCompaction() {
   // We shouldn't be consuming more space after compaction than pre-compaction.
   CHECK_GE(black_objs_slide_diff_, 0);
   if (black_objs_slide_diff_ == 0) {
+    black_dense_end_ = black_allocations_begin_;
     return false;
   }
   for (size_t i = vector_len; i < vector_length_; i++) {

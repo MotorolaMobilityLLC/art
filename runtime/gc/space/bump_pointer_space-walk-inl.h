@@ -115,7 +115,7 @@ inline void BumpPointerSpace::Walk(Visitor&& visitor) {
       if (ptr > pos) {
         // Adjust block-size in case 'pos' is in the middle of the block.
         if (static_cast<ssize_t>(block_size) > ptr - pos) {
-          (*block_sizes_copy)[iter] -= ptr - pos;
+          (*block_sizes_copy)[iter] = ptr - pos;
         }
         break;
       }

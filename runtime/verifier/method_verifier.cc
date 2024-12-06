@@ -543,7 +543,10 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Lookup static field and fail for resolution violations
-  ArtField* GetStaticField(uint32_t field_idx) REQUIRES_SHARED(Locks::mutator_lock_);
+  ArtField* GetStaticField(uint32_t field_idx, bool is_put) REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Common checks for `GetInstanceField()` and `GetStaticField()`.
+  ArtField* GetISFieldCommon(ArtField* field, bool is_put) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Perform verification of an iget/sget/iput/sput instruction.
   template <FieldAccessType kAccType>
@@ -4711,7 +4714,7 @@ void MethodVerifier<kVerifierDebug>::VerifyAPut(const Instruction* inst,
 }
 
 template <bool kVerifierDebug>
-ArtField* MethodVerifier<kVerifierDebug>::GetStaticField(uint32_t field_idx) {
+ArtField* MethodVerifier<kVerifierDebug>::GetStaticField(uint32_t field_idx, bool is_put) {
   const dex::FieldId& field_id = dex_file_->GetFieldId(field_idx);
   // Check access to class
   const RegType& klass_type = ResolveClass<CheckAccess::kYes>(field_id.class_idx_);
@@ -4724,28 +4727,26 @@ ArtField* MethodVerifier<kVerifierDebug>::GetStaticField(uint32_t field_idx) {
     DCHECK(klass_type.Equals(GetDeclaringClass()) ||
            !failures_.empty() ||
            IsSdkVersionSetAndLessThan(api_level_, SdkVersion::kP));
-
     return nullptr;  // Can't resolve Class so no more to do here, will do checking at runtime.
   }
   ClassLinker* class_linker = GetClassLinker();
   ArtField* field = class_linker->ResolveFieldJLS(field_idx, dex_cache_, class_loader_);
-
   if (field == nullptr) {
     VLOG(verifier) << "Unable to resolve static field " << field_idx << " ("
               << dex_file_->GetFieldName(field_id) << ") in "
               << dex_file_->GetFieldDeclaringClassDescriptor(field_id);
     DCHECK(self_->IsExceptionPending());
     self_->ClearException();
-    return nullptr;
-  } else if (!CanAccessMember(field->GetDeclaringClass(), field->GetAccessFlags())) {
-    Fail(VERIFY_ERROR_ACCESS_FIELD) << "cannot access static field " << field->PrettyField()
-                                    << " from " << GetDeclaringClass();
+    Fail(VERIFY_ERROR_NO_FIELD)
+        << "field " << dex_file_->PrettyField(field_idx)
+        << " not found in the resolved type " << klass_type;
     return nullptr;
   } else if (!field->IsStatic()) {
     Fail(VERIFY_ERROR_CLASS_CHANGE) << "expected field " << field->PrettyField() << " to be static";
     return nullptr;
   }
-  return field;
+
+  return GetISFieldCommon(field, is_put);
 }
 
 template <bool kVerifierDebug>
@@ -4767,12 +4768,7 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(uint32_t vregB,
          klass_type.IsReference() ||
          klass_type.IsUnresolvedReference());
   ArtField* field = nullptr;
-  if (klass_type.IsUnresolvedReference()) {
-    // Accessibility checks depend on resolved fields.
-    DCHECK(klass_type.Equals(GetDeclaringClass()) ||
-           !failures_.empty() ||
-           IsSdkVersionSetAndLessThan(api_level_, SdkVersion::kP));
-  } else {
+  if (!klass_type.IsUnresolvedReference()) {
     ClassLinker* class_linker = GetClassLinker();
     field = class_linker->ResolveFieldJLS(field_idx, dex_cache_, class_loader_);
     if (field == nullptr) {
@@ -4828,9 +4824,17 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(uint32_t vregB,
     return nullptr;
   }
 
-  DCHECK_IMPLIES(klass_type.IsUnresolvedReference(), field == nullptr);
-  if (field == nullptr) {
-    return nullptr;  // Can't resolve class or field, so no more to do here.
+  if (klass_type.IsUnresolvedReference()) {
+    // Accessibility checks depend on resolved fields.
+    DCHECK(klass_type.Equals(GetDeclaringClass()) ||
+           !failures_.empty() ||
+           IsSdkVersionSetAndLessThan(api_level_, SdkVersion::kP));
+    return nullptr;  // Can't resolve Class so no more to do here, will do checking at runtime.
+  } else if (field == nullptr) {
+    Fail(VERIFY_ERROR_NO_FIELD)
+        << "field " << dex_file_->PrettyField(field_idx)
+        << " not found in the resolved type " << klass_type;
+    return nullptr;
   } else if (obj_type.IsZeroOrNull()) {
     // Cannot infer and check type, however, access will cause null pointer exception.
     // Fall through into a few last soft failure checks below.
@@ -4857,16 +4861,31 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(uint32_t vregB,
   }
 
   // Few last soft failure checks.
-  if (!CanAccessMember(field->GetDeclaringClass(), field->GetAccessFlags())) {
-    Fail(VERIFY_ERROR_ACCESS_FIELD) << "cannot access instance field " << field->PrettyField()
-                                    << " from " << GetDeclaringClass();
-    return nullptr;
-  } else if (field->IsStatic()) {
+  if (field->IsStatic()) {
     Fail(VERIFY_ERROR_CLASS_CHANGE) << "expected field " << field->PrettyField()
                                     << " to not be static";
     return nullptr;
   }
 
+  return GetISFieldCommon(field, is_put);
+}
+
+template <bool kVerifierDebug>
+ArtField* MethodVerifier<kVerifierDebug>::GetISFieldCommon(ArtField* field, bool is_put) {
+  DCHECK(field != nullptr);
+  if (!CanAccessMember(field->GetDeclaringClass(), field->GetAccessFlags())) {
+    Fail(VERIFY_ERROR_ACCESS_FIELD)
+        << "cannot access " << (field->IsStatic() ? "static" : "instance") << " field "
+        << field->PrettyField() << " from " << GetDeclaringClass();
+    return nullptr;
+  }
+  if (is_put && field->IsFinal() && field->GetDeclaringClass() != GetDeclaringClass().GetClass()) {
+    Fail(VERIFY_ERROR_ACCESS_FIELD)
+        << "cannot modify final field " << field->PrettyField()
+        << " from other class " << GetDeclaringClass();
+    return nullptr;
+  }
+  CheckForFinalAbstractClass(field->GetDeclaringClass());
   return field;
 }
 
@@ -4880,7 +4899,7 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
   DCHECK(!flags_.have_pending_hard_failure_);
   ArtField* field;
   if (is_static) {
-    field = GetStaticField(field_idx);
+    field = GetStaticField(field_idx, kAccType == FieldAccessType::kAccPut);
   } else {
     field = GetInstanceField(inst->VRegB_22c(), field_idx, kAccType == FieldAccessType::kAccPut);
     if (UNLIKELY(flags_.have_pending_hard_failure_)) {
@@ -4888,39 +4907,9 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
     }
   }
   DCHECK(!flags_.have_pending_hard_failure_);
-  if (field != nullptr) {
-    CheckForFinalAbstractClass(field->GetDeclaringClass());
-    if (kAccType == FieldAccessType::kAccPut) {
-      if (field->IsFinal() && field->GetDeclaringClass() != GetDeclaringClass().GetClass()) {
-        Fail(VERIFY_ERROR_ACCESS_FIELD) << "cannot modify final field " << field->PrettyField()
-                                        << " from other class " << GetDeclaringClass();
-        // Keep hunting for possible hard fails.
-      }
-    }
-  } else if (IsSdkVersionSetAndAtLeast(api_level_, SdkVersion::kP)) {
-    // If we don't have the field (it seems we failed resolution) and this is a PUT, we need to
-    // redo verification at runtime as the field may be final, unless the field id shows it's in
-    // the same class.
-    //
-    // For simplicity, it is OK to not distinguish compile-time vs runtime, and post this an
-    // ACCESS_FIELD failure at runtime. This has the same effect as NO_FIELD - punting the class
-    // to the access-checks interpreter.
-    //
-    // Note: see b/34966607. This and above may be changed in the future.
-    if (kAccType == FieldAccessType::kAccPut) {
-      const dex::FieldId& field_id = dex_file_->GetFieldId(field_idx);
-      const RegType& field_class_type = reg_types_.FromTypeIndex(field_id.class_idx_);
-      if (!field_class_type.Equals(GetDeclaringClass())) {
-        Fail(VERIFY_ERROR_ACCESS_FIELD) << "could not check field put for final field modify of "
-                                        << dex_file_->GetFieldDeclaringClassDescriptor(field_id)
-                                        << "."
-                                        << dex_file_->GetFieldName(field_id)
-                                        << " from other class "
-                                        << GetDeclaringClass();
-      }
-    }
-  }
   const dex::FieldId& field_id = dex_file_->GetFieldId(field_idx);
+  DCHECK_IMPLIES(field == nullptr && IsSdkVersionSetAndAtLeast(api_level_, SdkVersion::kP),
+                 field_id.class_idx_ == class_def_.class_idx_ || !failures_.empty());
   const RegType& field_type = reg_types_.FromTypeIndex(field_id.type_idx_);
   const uint32_t vregA = (is_static) ? inst->VRegA_21c() : inst->VRegA_22c();
   static_assert(kAccType == FieldAccessType::kAccPut || kAccType == FieldAccessType::kAccGet,
@@ -5195,6 +5184,7 @@ static inline bool CanRuntimeHandleVerificationFailure(uint32_t encountered_fail
       verifier::VerifyError::VERIFY_ERROR_ACCESS_CLASS |
       verifier::VerifyError::VERIFY_ERROR_ACCESS_FIELD |
       verifier::VerifyError::VERIFY_ERROR_NO_METHOD |
+      verifier::VerifyError::VERIFY_ERROR_NO_FIELD |
       verifier::VerifyError::VERIFY_ERROR_ACCESS_METHOD |
       verifier::VerifyError::VERIFY_ERROR_RUNTIME_THROW;
   return (encountered_failure_types & (~unresolved_mask)) == 0;
@@ -5461,6 +5451,7 @@ std::ostream& MethodVerifier::Fail(VerifyError error, bool pending_exc) {
       case VERIFY_ERROR_NO_CLASS:
       case VERIFY_ERROR_UNRESOLVED_TYPE_CHECK:
       case VERIFY_ERROR_NO_METHOD:
+      case VERIFY_ERROR_NO_FIELD:
       case VERIFY_ERROR_ACCESS_CLASS:
       case VERIFY_ERROR_ACCESS_FIELD:
       case VERIFY_ERROR_ACCESS_METHOD:

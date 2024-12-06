@@ -240,19 +240,6 @@ class RegType {
 
   ALWAYS_INLINE static inline Assignability AssignabilityFrom(Kind lhs, Kind rhs);
 
-  // Can this type be assigned by src?
-  // Note: Object and interface types may always be assigned to one another, see
-  // comment on
-  // ClassJoin.
-  bool IsAssignableFrom(const RegType& src, MethodVerifier* verifier) const
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // Can this type be assigned by src? Variant of IsAssignableFrom that doesn't
-  // allow assignment to
-  // an interface from an Object.
-  bool IsStrictlyAssignableFrom(const RegType& src, MethodVerifier* verifier) const
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
   // Are these RegTypes the same?
   bool Equals(const RegType& other) const { return GetId() == other.GetId(); }
 
@@ -300,12 +287,6 @@ class RegType {
   friend class RegTypeCache;
 
  private:
-  static bool AssignableFrom(const RegType& lhs,
-                             const RegType& rhs,
-                             bool strict,
-                             MethodVerifier* verifier)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
   DISALLOW_COPY_AND_ASSIGN(RegType);
 };
 

@@ -2046,22 +2046,6 @@ void MethodVerifier<kVerifierDebug>::Dump(VariableIndentationOutputStream* vios)
   }
 }
 
-static bool IsPrimitiveDescriptor(char descriptor) {
-  switch (descriptor) {
-    case 'I':
-    case 'C':
-    case 'S':
-    case 'B':
-    case 'Z':
-    case 'F':
-    case 'D':
-    case 'J':
-      return true;
-    default:
-      return false;
-  }
-}
-
 template <bool kVerifierDebug>
 bool MethodVerifier<kVerifierDebug>::SetTypesFromSignature() {
   RegisterLine* reg_line = reg_table_.GetLine(0);
@@ -2184,40 +2168,9 @@ bool MethodVerifier<kVerifierDebug>::SetTypesFromSignature() {
                                       << " arguments, found " << cur_arg;
     return false;
   }
-  const char* descriptor = dex_file_->GetReturnTypeDescriptor(proto_id);
-  // Validate return type. We don't do the type lookup; just want to make sure that it has the right
-  // format. Only major difference from the method argument format is that 'V' is supported.
-  bool result;
-  if (IsPrimitiveDescriptor(descriptor[0]) || descriptor[0] == 'V') {
-    result = descriptor[1] == '\0';
-  } else if (descriptor[0] == '[') {  // single/multi-dimensional array of object/primitive
-    size_t i = 0;
-    do {
-      i++;
-    } while (descriptor[i] == '[');  // process leading [
-    if (descriptor[i] == 'L') {  // object array
-      do {
-        i++;  // find closing ;
-      } while (descriptor[i] != ';' && descriptor[i] != '\0');
-      result = descriptor[i] == ';';
-    } else {  // primitive array
-      result = IsPrimitiveDescriptor(descriptor[i]) && descriptor[i + 1] == '\0';
-    }
-  } else if (descriptor[0] == 'L') {
-    // could be more thorough here, but shouldn't be required
-    size_t i = 0;
-    do {
-      i++;
-    } while (descriptor[i] != ';' && descriptor[i] != '\0');
-    result = descriptor[i] == ';';
-  } else {
-    result = false;
-  }
-  if (!result) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unexpected char in return type descriptor '"
-                                      << descriptor << "'";
-  }
-  return result;
+  // Dex file verifier ensures that all valid type indexes reference valid descriptors.
+  DCHECK(IsValidDescriptor(dex_file_->GetReturnTypeDescriptor(proto_id)));
+  return true;
 }
 
 COLD_ATTR

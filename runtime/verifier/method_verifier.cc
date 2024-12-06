@@ -1186,50 +1186,32 @@ void MethodVerifier<kVerifierDebug>::FindLocksAtDexPc() {
 
 template <bool kVerifierDebug>
 bool MethodVerifier<kVerifierDebug>::Verify() {
-  // Some older code doesn't correctly mark constructors as such. Test for this case by looking at
-  // the name.
-  const dex::MethodId& method_id = dex_file_->GetMethodId(dex_method_idx_);
-  const std::string_view method_name = dex_file_->GetStringView(method_id.name_idx_);
-  bool instance_constructor_by_name = method_name == "<init>";
-  bool static_constructor_by_name = method_name == "<clinit>";
-  bool constructor_by_name = instance_constructor_by_name || static_constructor_by_name;
-  // Check that only constructors are tagged, and check for bad code that doesn't tag constructors.
+  // Some older code doesn't correctly mark constructors as such, so we need look
+  // at the name if the constructor flag is not present.
   if ((method_access_flags_ & kAccConstructor) != 0) {
-    if (!constructor_by_name) {
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD)
-            << "method is marked as constructor, but not named accordingly";
-      return false;
-    }
+    // `DexFileVerifier` rejects methods with the constructor flag without a constructor name.
+    DCHECK(dex_file_->GetMethodNameView(dex_method_idx_) == "<init>" ||
+           dex_file_->GetMethodNameView(dex_method_idx_) == "<clinit>");
     is_constructor_ = true;
-  } else if (constructor_by_name) {
+  } else if (dex_file_->GetMethodName(dex_method_idx_)[0] == '<') {
+    // `DexFileVerifier` rejects method names starting with '<' other than constructors.
+    DCHECK(dex_file_->GetMethodNameView(dex_method_idx_) == "<init>" ||
+           dex_file_->GetMethodNameView(dex_method_idx_) == "<clinit>");
     LOG(WARNING) << "Method " << dex_file_->PrettyMethod(dex_method_idx_)
                  << " not marked as constructor.";
     is_constructor_ = true;
   }
-  // If it's a constructor, check whether IsStatic() matches the name.
-  // This should have been rejected by the dex file verifier. Only do in debug build.
-  if (kIsDebugBuild) {
-    if (IsConstructor()) {
-      if (IsStatic() ^ static_constructor_by_name) {
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD)
-              << "constructor name doesn't match static flag";
-        return false;
-      }
-    }
+  // If it's a constructor, check whether IsStatic() matches the name for newer dex files.
+  // This should be rejected by the `DexFileVerifier` but it's  accepted for older dex files.
+  if (kIsDebugBuild && IsConstructor() && dex_file_->SupportsDefaultMethods()) {
+    CHECK_EQ(IsStatic(), dex_file_->GetMethodNameView(dex_method_idx_) == "<clinit>");
   }
 
   // Methods may only have one of public/protected/private.
   // This should have been rejected by the dex file verifier. Only do in debug build.
-  if (kIsDebugBuild) {
-    size_t access_mod_count =
-        (((method_access_flags_ & kAccPublic) == 0) ? 0 : 1) +
-        (((method_access_flags_ & kAccProtected) == 0) ? 0 : 1) +
-        (((method_access_flags_ & kAccPrivate) == 0) ? 0 : 1);
-    if (access_mod_count > 1) {
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "method has more than one of public/protected/private";
-      return false;
-    }
-  }
+  constexpr uint32_t kAccPublicProtectedPrivate = kAccPublic | kAccProtected | kAccPrivate;
+  DCHECK_IMPLIES((method_access_flags_ & kAccPublicProtectedPrivate) != 0u,
+                 IsPowerOfTwo(method_access_flags_ & kAccPublicProtectedPrivate));
 
   // If there aren't any instructions, make sure that's expected, then exit successfully.
   if (!code_item_accessor_.HasCodeItem()) {
@@ -1261,7 +1243,7 @@ bool MethodVerifier<kVerifierDebug>::Verify() {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "critical native methods must be static";
           return false;
         }
-        const char* shorty = dex_file_->GetMethodShorty(method_id);
+        const char* shorty = dex_file_->GetMethodShorty(dex_method_idx_);
         for (size_t i = 0, len = strlen(shorty); i < len; ++i) {
           if (Primitive::GetType(shorty[i]) == Primitive::kPrimNot) {
             Fail(VERIFY_ERROR_BAD_CLASS_HARD) <<

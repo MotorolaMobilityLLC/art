@@ -45,11 +45,11 @@ class RegTypeAssignabilityImpl final : RegType {
   explicit constexpr RegTypeAssignabilityImpl(RegType::Kind kind)
       : RegType("", /* unused cache id */ 0, kind) {}
 
-  static constexpr Assignability AssignableFrom(RegType::Kind lhs_kind, RegType::Kind rhs_kind);
+  static constexpr Assignability AssignabilityFrom(RegType::Kind lhs_kind, RegType::Kind rhs_kind);
 };
 
-constexpr RegType::Assignability RegTypeAssignabilityImpl::AssignableFrom(RegType::Kind lhs_kind,
-                                                                          RegType::Kind rhs_kind) {
+constexpr RegType::Assignability RegTypeAssignabilityImpl::AssignabilityFrom(
+    RegType::Kind lhs_kind, RegType::Kind rhs_kind) {
   RegTypeAssignabilityImpl lhs(lhs_kind);
   RegTypeAssignabilityImpl rhs(rhs_kind);
   auto maybe_narrowing_conversion = [&rhs]() constexpr {
@@ -112,7 +112,7 @@ inline RegType::Assignability RegType::AssignabilityFrom(Kind lhs, Kind rhs) {
     AssignabilityTable result;
     for (size_t lhs = 0u; lhs != kNumKinds; ++lhs) {
       for (size_t rhs = 0u; rhs != kNumKinds; ++rhs) {
-        result[lhs][rhs] = detail::RegTypeAssignabilityImpl::AssignableFrom(
+        result[lhs][rhs] = detail::RegTypeAssignabilityImpl::AssignabilityFrom(
             enum_cast<RegType::Kind>(lhs), enum_cast<RegType::Kind>(rhs));
       }
     }
@@ -120,85 +120,6 @@ inline RegType::Assignability RegType::AssignabilityFrom(Kind lhs, Kind rhs) {
   }();
 
   return kAssignabilityTable[lhs][rhs];
-}
-
-inline bool RegType::AssignableFrom(const RegType& lhs,
-                                    const RegType& rhs,
-                                    bool strict,
-                                    MethodVerifier* verifier) {
-  if (lhs.Equals(rhs)) {
-    return true;
-  }
-
-  Assignability assignable = AssignabilityFrom(lhs.GetKind(), rhs.GetKind());
-  DCHECK(assignable != Assignability::kInvalid)
-      << "Unexpected register type in IsAssignableFrom: '" << lhs << "' := '" << rhs << "'";
-  if (assignable == Assignability::kAssignable) {
-    return true;
-  } else if (assignable == Assignability::kNotAssignable) {
-    return false;
-  } else if (assignable == Assignability::kNarrowingConversion) {
-    // FIXME: The `MethodVerifier` is mostly doing a category check and avoiding
-    // assignability checks that would expose narrowing conversions. However, for
-    // the `return` instruction, it explicitly allows certain narrowing conversions
-    // and prohibits others by doing a modified assignability check. Without strict
-    // enforcement in all cases, this can compromise compiler optimizations that
-    // rely on knowing the range of the values. Bug: 270660613
-    return false;
-  } else {
-    DCHECK(assignable == Assignability::kReference);
-    DCHECK(lhs.IsNonZeroReferenceTypes());
-    DCHECK(rhs.IsNonZeroReferenceTypes());
-    DCHECK(!lhs.IsUninitializedTypes());
-    DCHECK(!rhs.IsUninitializedTypes());
-    DCHECK(!lhs.IsJavaLangObject());
-    if (!strict && !lhs.IsUnresolvedTypes() && lhs.GetClass()->IsInterface()) {
-      // If we're not strict allow assignment to any interface, see comment in ClassJoin.
-      return true;
-    } else if (lhs.IsJavaLangObjectArray()) {
-      return rhs.IsObjectArrayTypes();  // All reference arrays may be assigned to Object[]
-    } else if (lhs.HasClass() && rhs.IsJavaLangObject()) {
-      return false;  // Note: Non-strict check for interface `lhs` is handled above.
-    } else if (lhs.HasClass() && rhs.HasClass()) {
-      // Test assignability from the Class point-of-view.
-      bool result = lhs.GetClass()->IsAssignableFrom(rhs.GetClass());
-      // Record assignability dependency. The `verifier` is null during unit tests and
-      // VerifiedMethod::GenerateSafeCastSet.
-      if (verifier != nullptr && result) {
-        VerifierDeps::MaybeRecordAssignability(verifier->GetVerifierDeps(),
-                                               verifier->GetDexFile(),
-                                               verifier->GetClassDef(),
-                                               lhs.GetClass(),
-                                               rhs.GetClass());
-      }
-      return result;
-    } else {
-      // For unresolved types, we don't know if they are assignable, and the
-      // verifier will continue assuming they are. We need to record that.
-      if (verifier != nullptr) {
-        // Note that if `rhs` is an interface type, `lhs` may be j.l.Object
-        // and if the assignability check is not strict, then this should be
-        // OK. However we don't encode strictness in the verifier deps, and
-        // such a situation will force a full verification.
-        VerifierDeps::MaybeRecordAssignability(verifier->GetVerifierDeps(),
-                                               verifier->GetDexFile(),
-                                               verifier->GetClassDef(),
-                                               lhs,
-                                               rhs);
-      }
-      // Unresolved types are only assignable for null and equality.
-      // Null cannot be the left-hand side.
-      return false;
-    }
-  }
-}
-
-inline bool RegType::IsAssignableFrom(const RegType& src, MethodVerifier* verifier) const {
-  return AssignableFrom(*this, src, false, verifier);
-}
-
-inline bool RegType::IsStrictlyAssignableFrom(const RegType& src, MethodVerifier* verifier) const {
-  return AssignableFrom(*this, src, true, verifier);
 }
 
 inline void* RegType::operator new(size_t size, ArenaAllocator* allocator) {

@@ -261,6 +261,21 @@ class MethodVerifier {
   const RegType& GetInvocationThis(const Instruction* inst)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
+  // Can a variable with type `lhs` be assigned a value with type `rhs`?
+  // Note: Object and interface types may always be assigned to one another, see
+  // comment on `ClassJoin()`.
+  bool IsAssignableFrom(const RegType& lhs, const RegType& rhs) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Can a variable with type `lhs` be assigned a value with type `rhs`?
+  // Variant of IsAssignableFrom that doesn't allow assignment to an interface from an Object.
+  bool IsStrictlyAssignableFrom(const RegType& lhs, const RegType& rhs) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Implementation helper for `IsAssignableFrom()` and `IsStrictlyAssignableFrom()`.
+  bool AssignableFrom(const RegType& lhs, const RegType& rhs, bool strict) const
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
   // For VerifierDepsTest. TODO: Refactor.
 
   // Run verification on the method. Returns true if verification completes and false if the input

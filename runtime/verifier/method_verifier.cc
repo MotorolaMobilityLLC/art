@@ -743,7 +743,7 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
       REQUIRES_SHARED(Locks::mutator_lock_) {
     // Verify the src register type against the check type refining the type of the register
     const RegType& src_type = work_line_->GetRegisterType(this, vsrc);
-    if (UNLIKELY(!check_type.IsAssignableFrom(src_type, this))) {
+    if (UNLIKELY(!IsAssignableFrom(check_type, src_type))) {
       enum VerifyError fail_type;
       if (!check_type.IsNonZeroReferenceTypes() || !src_type.IsNonZeroReferenceTypes()) {
         // Hard fail if one of the types is primitive, since they are concretely known.
@@ -2501,7 +2501,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
             // We really do expect a reference here.
             Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-object returns a non-reference type "
                                               << reg_type;
-          } else if (!return_type.IsAssignableFrom(reg_type, this)) {
+          } else if (!IsAssignableFrom(return_type, reg_type)) {
             if (reg_type.IsUnresolvedTypes() || return_type.IsUnresolvedTypes()) {
               Fail(VERIFY_ERROR_UNRESOLVED_TYPE_CHECK)
                   << " can't resolve returned type '" << return_type << "' or '" << reg_type << "'";
@@ -2801,7 +2801,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       break;
     case Instruction::THROW: {
       const RegType& res_type = work_line_->GetRegisterType(this, inst->VRegA_11x());
-      if (!reg_types_.JavaLangThrowable().IsAssignableFrom(res_type, this)) {
+      if (!IsAssignableFrom(reg_types_.JavaLangThrowable(), res_type)) {
         if (res_type.IsUninitializedTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "thrown exception not initialized";
         } else if (!res_type.IsReferenceTypes()) {
@@ -2954,8 +2954,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
             cast_type.HasClass() &&             // Could be conflict type, make sure it has a class.
             !cast_type.GetClass()->IsInterface() &&
             !orig_type.IsZeroOrNull() &&
-            orig_type.IsStrictlyAssignableFrom(
-                cast_type.Merge(orig_type, &reg_types_, this), this)) {
+            IsStrictlyAssignableFrom(orig_type, cast_type.Merge(orig_type, &reg_types_, this))) {
           RegisterLine* update_line = RegisterLine::Create(code_item_accessor_.RegistersSize(),
                                                            allocator_,
                                                            GetRegTypeCache());
@@ -3896,7 +3895,7 @@ bool MethodVerifier<kVerifierDebug>::HandleMoveException(const Instruction* inst
               // Do access checks only on resolved exception classes.
               const RegType& exception =
                   ResolveClass<CheckAccess::kOnResolvedClass>(iterator.GetHandlerTypeIndex());
-              if (!reg_types_.JavaLangThrowable().IsAssignableFrom(exception, this)) {
+              if (!IsAssignableFrom(reg_types_.JavaLangThrowable(), exception)) {
                 DCHECK(!exception.IsUninitializedTypes());  // Comes from dex, shouldn't be uninit.
                 if (exception.IsUnresolvedTypes()) {
                   if (unresolved == nullptr) {
@@ -3915,10 +3914,9 @@ bool MethodVerifier<kVerifierDebug>::HandleMoveException(const Instruction* inst
                 // odd case, but nothing to do
               } else {
                 common_super = &common_super->Merge(exception, &reg_types_, this);
-                if (FailOrAbort(reg_types_.JavaLangThrowable().IsAssignableFrom(
-                    *common_super, this),
-                    "java.lang.Throwable is not assignable-from common_super at ",
-                    work_insn_idx_)) {
+                if (FailOrAbort(IsAssignableFrom(reg_types_.JavaLangThrowable(), *common_super),
+                                "java.lang.Throwable is not assignable-from common_super at ",
+                                work_insn_idx_)) {
                   break;
                 }
               }
@@ -4163,7 +4161,7 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgsFromIterator(
           res_method_class = &reg_types_.FromClass(klass);
         }
       }
-      if (!res_method_class->IsAssignableFrom(adjusted_type, this)) {
+      if (!IsAssignableFrom(*res_method_class, adjusted_type)) {
         Fail(adjusted_type.IsUnresolvedTypes()
                  ? VERIFY_ERROR_UNRESOLVED_TYPE_CHECK
                  : VERIFY_ERROR_BAD_CLASS_HARD)
@@ -4335,7 +4333,7 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgs(
                                     << "interface invoke-super";
         VerifyInvocationArgsUnresolvedMethod(inst, method_type, is_range);
         return nullptr;
-      } else if (!reference_type.IsStrictlyAssignableFrom(GetDeclaringClass(), this)) {
+      } else if (!IsStrictlyAssignableFrom(reference_type, GetDeclaringClass())) {
         Fail(VERIFY_ERROR_CLASS_CHANGE)
             << "invoke-super in " << mirror::Class::PrettyClass(GetDeclaringClass().GetClass())
             << " in method "
@@ -4362,7 +4360,7 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgs(
         VerifyInvocationArgsUnresolvedMethod(inst, method_type, is_range);
         return nullptr;
       }
-      if (!reference_type.IsStrictlyAssignableFrom(GetDeclaringClass(), this) ||
+      if (!IsStrictlyAssignableFrom(reference_type, GetDeclaringClass()) ||
           (res_method->GetMethodIndex() >= GetRegTypeClass(super)->GetVTableLength())) {
         Fail(VERIFY_ERROR_NO_METHOD) << "invalid invoke-super from "
                                     << dex_file_->PrettyMethod(dex_method_idx_)
@@ -4844,7 +4842,7 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(uint32_t vregB,
             ? klass_type
             : reg_types_.FromClass(klass);
     DCHECK(!obj_type.IsUninitializedTypes());
-    if (!field_klass.IsAssignableFrom(obj_type, this)) {
+    if (!IsAssignableFrom(field_klass, obj_type)) {
       // Trying to access C1.field1 using reference of type C2, which is neither C1 or a sub-class
       // of C1. For resolution to occur the declared class of the field must be compatible with
       // obj_type, we've discovered this wasn't so, so report the field didn't exist.
@@ -4933,7 +4931,7 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
       VerifyPrimitivePut(field_type, insn_type, vregA);
     } else {
       DCHECK(insn_type.IsJavaLangObject());
-      if (!insn_type.IsAssignableFrom(field_type, this)) {
+      if (!IsAssignableFrom(insn_type, field_type)) {
         DCHECK(!field_type.IsReferenceTypes());
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "expected field " << ArtField::PrettyField(field)
                                           << " to be compatible with type '" << insn_type
@@ -4962,7 +4960,7 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
       }
     } else {
       DCHECK(insn_type.IsJavaLangObject());
-      if (!insn_type.IsAssignableFrom(field_type, this)) {
+      if (!IsAssignableFrom(insn_type, field_type)) {
         DCHECK(!field_type.IsReferenceTypes());
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "expected field " << ArtField::PrettyField(field)
                                           << " to be compatible with type '" << insn_type
@@ -5535,6 +5533,81 @@ const RegType& MethodVerifier::GetInvocationThis(const Instruction* inst) {
     return reg_types_.Conflict();
   }
   return this_type;
+}
+
+bool MethodVerifier::AssignableFrom(const RegType& lhs, const RegType& rhs, bool strict) const {
+  if (lhs.Equals(rhs)) {
+    return true;
+  }
+
+  RegType::Assignability assignable = RegType::AssignabilityFrom(lhs.GetKind(), rhs.GetKind());
+  DCHECK(assignable != RegType::Assignability::kInvalid)
+      << "Unexpected register type in IsAssignableFrom: '" << lhs << "' := '" << rhs << "'";
+  if (assignable == RegType::Assignability::kAssignable) {
+    return true;
+  } else if (assignable == RegType::Assignability::kNotAssignable) {
+    return false;
+  } else if (assignable == RegType::Assignability::kNarrowingConversion) {
+    // FIXME: The `MethodVerifier` is mostly doing a category check and avoiding
+    // assignability checks that would expose narrowing conversions. However, for
+    // the `return` instruction, it explicitly allows certain narrowing conversions
+    // and prohibits others by doing a modified assignability check. Without strict
+    // enforcement in all cases, this can compromise compiler optimizations that
+    // rely on knowing the range of the values. Bug: 270660613
+    return false;
+  } else {
+    DCHECK(assignable == RegType::Assignability::kReference);
+    DCHECK(lhs.IsNonZeroReferenceTypes());
+    DCHECK(rhs.IsNonZeroReferenceTypes());
+    DCHECK(!lhs.IsUninitializedTypes());
+    DCHECK(!rhs.IsUninitializedTypes());
+    DCHECK(!lhs.IsJavaLangObject());
+    if (!strict && !lhs.IsUnresolvedTypes() && lhs.GetClass()->IsInterface()) {
+      // If we're not strict allow assignment to any interface, see comment in ClassJoin.
+      return true;
+    } else if (lhs.IsJavaLangObjectArray()) {
+      return rhs.IsObjectArrayTypes();  // All reference arrays may be assigned to Object[]
+    } else if (lhs.HasClass() && rhs.IsJavaLangObject()) {
+      return false;  // Note: Non-strict check for interface `lhs` is handled above.
+    } else if (lhs.HasClass() && rhs.HasClass()) {
+      // Test assignability from the Class point-of-view.
+      bool result = lhs.GetClass()->IsAssignableFrom(rhs.GetClass());
+      // Record assignability dependency. The `verifier` is null during unit tests and
+      // VerifiedMethod::GenerateSafeCastSet.
+      if (result) {
+        VerifierDeps::MaybeRecordAssignability(GetVerifierDeps(),
+                                               GetDexFile(),
+                                               GetClassDef(),
+                                               lhs.GetClass(),
+                                               rhs.GetClass());
+      }
+      return result;
+    } else {
+      // For unresolved types, we don't know if they are assignable, and the
+      // verifier will continue assuming they are. We need to record that.
+      //
+      // Note that if `rhs` is an interface type, `lhs` may be j.l.Object
+      // and if the assignability check is not strict, then this should be
+      // OK. However we don't encode strictness in the verifier deps, and
+      // such a situation will force a full verification.
+      VerifierDeps::MaybeRecordAssignability(GetVerifierDeps(),
+                                             GetDexFile(),
+                                             GetClassDef(),
+                                             lhs,
+                                             rhs);
+      // Unresolved types are only assignable for null and equality.
+      // Null cannot be the left-hand side.
+      return false;
+    }
+  }
+}
+
+inline bool MethodVerifier::IsAssignableFrom(const RegType& lhs, const RegType& rhs) const {
+  return AssignableFrom(lhs, rhs, false);
+}
+
+inline bool MethodVerifier::IsStrictlyAssignableFrom(const RegType& lhs, const RegType& rhs) const {
+  return AssignableFrom(lhs, rhs, true);
 }
 
 }  // namespace verifier

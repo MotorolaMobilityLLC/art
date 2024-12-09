@@ -124,14 +124,12 @@ public class DumpHelperTest {
                 + "      [location is /somewhere/app/foo/oat/arm64/base.odex]\n"
                 + "    arm: [status=verify] [reason=install]\n"
                 + "      [location is /somewhere/app/foo/oat/arm/base.odex]\n"
-                + "    sdm: [sdm-status=not-found] [sdm-signature=skipped]\n"
                 + "  path: /somewhere/app/foo/split_0.apk\n"
                 + "    arm64: [status=verify] [reason=vdex] [primary-abi]\n"
                 + "      [location is primary.vdex in /somewhere/app/foo/split_0.dm]\n"
                 + "    arm: [status=verify] [reason=vdex]\n"
                 + "      [location is primary.vdex in /somewhere/app/foo/split_0.dm]\n"
                 + "    used by other apps: [com.example2.bar (isa=arm)]\n"
-                + "    sdm: [sdm-status=not-found] [sdm-signature=skipped]\n"
                 + "  known secondary dex files:\n"
                 + "    /data/user_de/0/foo/1.apk (removed)\n"
                 + "      arm: [status=run-from-apk] [reason=unknown]\n"
@@ -153,14 +151,12 @@ public class DumpHelperTest {
                 + "      [location is /somewhere/app/bar/oat/arm/base.odex]\n"
                 + "    arm64: [status=verify] [reason=install]\n"
                 + "      [location is /somewhere/app/bar/oat/arm64/base.odex]\n"
-                + "    sdm: [sdm-status=not-found] [sdm-signature=skipped]\n"
                 + "[com.example3.sdk]\n"
                 + "  path: /somewhere/app/sdk/base.apk\n"
                 + "    arm: [status=verify] [reason=install] [primary-abi]\n"
                 + "      [location is /somewhere/app/sdk/oat/arm/base.odex]\n"
                 + "    arm64: [status=verify] [reason=install]\n"
                 + "      [location is /somewhere/app/sdk/oat/arm64/base.odex]\n"
-                + "    sdm: [sdm-status=not-found] [sdm-signature=skipped]\n"
                 + "\n"
                 + "Current GC: CollectorTypeCMC\n";
 
@@ -176,7 +172,7 @@ public class DumpHelperTest {
         var stringWriter = new StringWriter();
         mDumpHelper.dumpPackage(new PrintWriter(stringWriter), mSnapshot,
                 getPackageState(PKG_NAME_BAR), true /* verifySdmSignatures */);
-        assertThat(stringWriter.toString()).contains("sdm: [sdm-status=not-found]");
+        assertThat(stringWriter.toString()).doesNotContain("sdm:");
     }
 
     @Test

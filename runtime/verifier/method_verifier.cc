@@ -322,11 +322,96 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
     return true;
   }
 
-  // Perform static checks on a field Get or set instruction. All we do here is ensure that the
-  // field index is in the valid range.
-  ALWAYS_INLINE bool CheckFieldIndex(uint32_t field_idx) {
+  // Perform static checks on a field Get or set instruction. We ensure that the field index
+  // is in the valid range and we check that the field descriptor matches the instruction.
+  ALWAYS_INLINE bool CheckFieldIndex(const Instruction* inst,
+                                     uint16_t inst_data,
+                                     uint32_t field_idx) {
     if (UNLIKELY(field_idx >= dex_file_->NumFieldIds())) {
       FailBadFieldIndex(field_idx);
+      return false;
+    }
+
+    // Prepare a table with permitted descriptors, evaluated at compile time.
+    static constexpr uint32_t kVerifyFieldIndexFlags =
+        Instruction::kVerifyRegBField | Instruction::kVerifyRegCField;
+    static constexpr uint32_t kMinFieldAccessOpcode = []() constexpr {
+      for (uint32_t opcode = 0u; opcode != 256u; ++opcode) {
+        uint32_t verify_flags = Instruction::VerifyFlagsOf(enum_cast<Instruction::Code>(opcode));
+        if ((verify_flags & kVerifyFieldIndexFlags) != 0u) {
+          return opcode;
+        }
+      }
+      LOG(FATAL) << "Compile time error if we reach this.";
+      return 0u;
+    }();
+    static constexpr uint32_t kMaxFieldAccessOpcode = []() constexpr {
+      for (uint32_t opcode = 256u; opcode != 0u; ) {
+        --opcode;
+        uint32_t verify_flags = Instruction::VerifyFlagsOf(enum_cast<Instruction::Code>(opcode));
+        if ((verify_flags & kVerifyFieldIndexFlags) != 0u) {
+          return opcode;
+        }
+      }
+      LOG(FATAL) << "Compile time error if we reach this.";
+      return 0u;
+    }();
+    static constexpr uint32_t kArraySize = kMaxFieldAccessOpcode + 1u - kMinFieldAccessOpcode;
+    using PermittedDescriptorArray = std::array<std::pair<char, char>, kArraySize>;
+    static constexpr PermittedDescriptorArray kPermittedDescriptors = []() constexpr {
+      PermittedDescriptorArray result;
+      for (uint32_t index = 0u; index != kArraySize; ++index) {
+        Instruction::Code opcode = enum_cast<Instruction::Code>(index + kMinFieldAccessOpcode);
+        DexMemAccessType access_type;
+        if (IsInstructionIGet(opcode) || IsInstructionIPut(opcode)) {
+          access_type = IGetOrIPutMemAccessType(opcode);
+        } else {
+          // `iget*`, `iput*`, `sget*` and `sput*` instructions form a contiguous range.
+          CHECK(IsInstructionSGet(opcode) || IsInstructionSPut(opcode));
+          access_type = SGetOrSPutMemAccessType(opcode);
+        }
+        switch (access_type) {
+          case DexMemAccessType::kDexMemAccessWord:
+            result[index] = { 'I', 'F' };
+            break;
+          case DexMemAccessType::kDexMemAccessWide:
+            result[index] = { 'J', 'D' };
+            break;
+          case DexMemAccessType::kDexMemAccessObject:
+            result[index] = { 'L', '[' };
+            break;
+          case DexMemAccessType::kDexMemAccessBoolean:
+            result[index] = { 'Z', 'Z' };  // Only one character is permitted.
+            break;
+          case DexMemAccessType::kDexMemAccessByte:
+            result[index] = { 'B', 'B' };  // Only one character is permitted.
+            break;
+          case DexMemAccessType::kDexMemAccessChar:
+            result[index] = { 'C', 'C' };  // Only one character is permitted.
+            break;
+          case DexMemAccessType::kDexMemAccessShort:
+            result[index] = { 'S', 'S' };  // Only one character is permitted.
+            break;
+          default:
+            LOG(FATAL) << "Compile time error if we reach this.";
+            break;
+        }
+      }
+      return result;
+    }();
+
+    // Check the first character of the field type descriptor.
+    Instruction::Code opcode = inst->Opcode(inst_data);
+    DCHECK_GE(opcode, kMinFieldAccessOpcode);
+    DCHECK_LE(opcode, kMaxFieldAccessOpcode);
+    std::pair<char, char> permitted = kPermittedDescriptors[opcode - kMinFieldAccessOpcode];
+    const char* descriptor = dex_file_->GetFieldTypeDescriptor(field_idx);
+    if (UNLIKELY(descriptor[0] != permitted.first && descriptor[0] != permitted.second)) {
+      Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+          << "expected field " << dex_file_->PrettyField(field_idx)
+          << " to have type descritor starting with '" << permitted.first
+          << (permitted.second != permitted.first ? std::string("' or '") + permitted.second : "")
+          << "' but found '" << descriptor[0] << "' in " << opcode;
       return false;
     }
     return true;
@@ -535,8 +620,8 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Helper to perform verification on puts of primitive type.
-  void VerifyPrimitivePut(const RegType& target_type, const RegType& insn_type,
-                          const uint32_t vregA) REQUIRES_SHARED(Locks::mutator_lock_);
+  void VerifyPrimitivePut(const RegType& target_type, uint32_t vregA)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Perform verification of an aget instruction. The destination register's type will be set to
   // be that of component type of the array unless the array type is unknown, in which case a
@@ -561,8 +646,7 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
 
   // Perform verification of an iget/sget/iput/sput instruction.
   template <FieldAccessType kAccType>
-  void VerifyISFieldAccess(const Instruction* inst, const RegType& insn_type,
-                           bool is_primitive, bool is_static)
+  void VerifyISFieldAccess(const Instruction* inst, bool is_primitive, bool is_static)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Resolves a class based on an index and, if C is kYes, performs access checks to ensure
@@ -1596,7 +1680,7 @@ inline bool MethodVerifier<kVerifierDebug>::VerifyInstruction(const Instruction*
       result = result && CheckRegisterIndex(inst->VRegB(kFormat, inst_data));
       break;
     case Instruction::kVerifyRegBField:
-      result = result && CheckFieldIndex(inst->VRegB(kFormat, inst_data));
+      result = result && CheckFieldIndex(inst, inst_data, inst->VRegB(kFormat, inst_data));
       break;
     case Instruction::kVerifyRegBMethod:
       result = result && CheckMethodIndex(inst->VRegB(kFormat, inst_data));
@@ -1632,7 +1716,7 @@ inline bool MethodVerifier<kVerifierDebug>::VerifyInstruction(const Instruction*
       result = result && CheckRegisterIndex(inst->VRegC(kFormat));
       break;
     case Instruction::kVerifyRegCField:
-      result = result && CheckFieldIndex(inst->VRegC(kFormat));
+      result = result && CheckFieldIndex(inst, inst_data, inst->VRegC(kFormat));
       break;
     case Instruction::kVerifyRegCNewArray:
       result = result && CheckNewArray(dex::TypeIndex(inst->VRegC(kFormat)));
@@ -3111,95 +3195,91 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       break;
 
     case Instruction::IGET_BOOLEAN:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.Boolean(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, false);
       break;
     case Instruction::IGET_BYTE:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.Byte(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, false);
       break;
     case Instruction::IGET_CHAR:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.Char(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, false);
       break;
     case Instruction::IGET_SHORT:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.Short(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, false);
       break;
     case Instruction::IGET:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.Integer(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, false);
       break;
     case Instruction::IGET_WIDE:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.LongLo(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, false);
       break;
     case Instruction::IGET_OBJECT:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(
-          inst, reg_types_.JavaLangObject(), false, false);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, false, false);
       break;
 
     case Instruction::IPUT_BOOLEAN:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.Boolean(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, false);
       break;
     case Instruction::IPUT_BYTE:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.Byte(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, false);
       break;
     case Instruction::IPUT_CHAR:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.Char(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, false);
       break;
     case Instruction::IPUT_SHORT:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.Short(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, false);
       break;
     case Instruction::IPUT:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.Integer(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, false);
       break;
     case Instruction::IPUT_WIDE:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.LongLo(), true, false);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, false);
       break;
     case Instruction::IPUT_OBJECT:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(
-          inst, reg_types_.JavaLangObject(), false, false);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, false, false);
       break;
 
     case Instruction::SGET_BOOLEAN:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.Boolean(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, true);
       break;
     case Instruction::SGET_BYTE:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.Byte(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, true);
       break;
     case Instruction::SGET_CHAR:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.Char(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, true);
       break;
     case Instruction::SGET_SHORT:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.Short(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, true);
       break;
     case Instruction::SGET:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.Integer(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, true);
       break;
     case Instruction::SGET_WIDE:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, reg_types_.LongLo(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, true, true);
       break;
     case Instruction::SGET_OBJECT:
-      VerifyISFieldAccess<FieldAccessType::kAccGet>(
-          inst, reg_types_.JavaLangObject(), false, true);
+      VerifyISFieldAccess<FieldAccessType::kAccGet>(inst, false, true);
       break;
 
     case Instruction::SPUT_BOOLEAN:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.Boolean(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, true);
       break;
     case Instruction::SPUT_BYTE:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.Byte(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, true);
       break;
     case Instruction::SPUT_CHAR:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.Char(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, true);
       break;
     case Instruction::SPUT_SHORT:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.Short(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, true);
       break;
     case Instruction::SPUT:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.Integer(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, true);
       break;
     case Instruction::SPUT_WIDE:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, reg_types_.LongLo(), true, true);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, true, true);
       break;
     case Instruction::SPUT_OBJECT:
-      VerifyISFieldAccess<FieldAccessType::kAccPut>(
-          inst, reg_types_.JavaLangObject(), false, true);
+      VerifyISFieldAccess<FieldAccessType::kAccPut>(inst, false, true);
       break;
 
     case Instruction::INVOKE_VIRTUAL:
@@ -4649,49 +4729,24 @@ void MethodVerifier<kVerifierDebug>::VerifyAGet(const Instruction* inst,
 
 template <bool kVerifierDebug>
 void MethodVerifier<kVerifierDebug>::VerifyPrimitivePut(const RegType& target_type,
-                                                        const RegType& insn_type,
-                                                        const uint32_t vregA) {
+                                                        uint32_t vregA) {
   // Primitive assignability rules are weaker than regular assignability rules.
-  bool instruction_compatible;
   bool value_compatible;
   const RegType& value_type = work_line_->GetRegisterType(this, vregA);
   if (target_type.IsIntegralTypes()) {
-    instruction_compatible = target_type.Equals(insn_type);
     value_compatible = value_type.IsIntegralTypes();
   } else if (target_type.IsFloat()) {
-    instruction_compatible = insn_type.IsInteger();  // no put-float, so expect put-int
     value_compatible = value_type.IsFloatTypes();
   } else if (target_type.IsLongLo()) {
-    instruction_compatible = insn_type.IsLongLo();
-    // Additional register check: this is not checked statically (as part of VerifyInstructions),
-    // as target_type depends on the resolved type of the field.
-    if (instruction_compatible && work_line_->NumRegs() > vregA + 1) {
-      const RegType& value_type_hi = work_line_->GetRegisterType(this, vregA + 1);
-      value_compatible = value_type.IsLongTypes() && value_type.CheckWidePair(value_type_hi);
-    } else {
-      value_compatible = false;
-    }
+    DCHECK_LT(vregA + 1, work_line_->NumRegs());
+    const RegType& value_type_hi = work_line_->GetRegisterType(this, vregA + 1);
+    value_compatible = value_type.IsLongTypes() && value_type.CheckWidePair(value_type_hi);
   } else if (target_type.IsDoubleLo()) {
-    instruction_compatible = insn_type.IsLongLo();  // no put-double, so expect put-long
-    // Additional register check: this is not checked statically (as part of VerifyInstructions),
-    // as target_type depends on the resolved type of the field.
-    if (instruction_compatible && work_line_->NumRegs() > vregA + 1) {
-      const RegType& value_type_hi = work_line_->GetRegisterType(this, vregA + 1);
-      value_compatible = value_type.IsDoubleTypes() && value_type.CheckWidePair(value_type_hi);
-    } else {
-      value_compatible = false;
-    }
+    DCHECK_LT(vregA + 1, work_line_->NumRegs());
+    const RegType& value_type_hi = work_line_->GetRegisterType(this, vregA + 1);
+    value_compatible = value_type.IsDoubleTypes() && value_type.CheckWidePair(value_type_hi);
   } else {
-    instruction_compatible = false;  // reference with primitive store
     value_compatible = false;  // unused
-  }
-  if (!instruction_compatible) {
-    // This is a global failure rather than a class change failure as the instructions and
-    // the descriptors for the type should have been consistent within the same file at
-    // compile time.
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "put insn has type '" << insn_type
-        << "' but expected type '" << target_type << "'";
-    return;
   }
   if (!value_compatible) {
     Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unexpected value in v" << vregA
@@ -4735,7 +4790,7 @@ void MethodVerifier<kVerifierDebug>::VerifyAPut(const Instruction* inst,
     } else if (array_type.IsUnresolvedMergedReference()) {
       // Unresolved array types must be reference array types.
       if (is_primitive) {
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "put insn has type '" << insn_type
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "aput insn has type '" << insn_type
                                           << "' but unresolved type '" << array_type << "'";
       } else {
         Fail(VERIFY_ERROR_NO_CLASS) << "cannot verify aput for " << array_type
@@ -4745,7 +4800,27 @@ void MethodVerifier<kVerifierDebug>::VerifyAPut(const Instruction* inst,
       const RegType& component_type = reg_types_.GetComponentType(array_type);
       const uint32_t vregA = inst->VRegA_23x();
       if (is_primitive) {
-        VerifyPrimitivePut(component_type, insn_type, vregA);
+        bool instruction_compatible;
+        if (component_type.IsIntegralTypes()) {
+          instruction_compatible = component_type.Equals(insn_type);
+        } else if (component_type.IsFloat()) {
+          instruction_compatible = insn_type.IsInteger();  // no put-float, so expect put-int
+        } else if (component_type.IsLongLo()) {
+          instruction_compatible = insn_type.IsLongLo();
+        } else if (component_type.IsDoubleLo()) {
+          instruction_compatible = insn_type.IsLongLo();  // no put-double, so expect put-long
+        } else {
+          instruction_compatible = false;  // reference with primitive store
+        }
+        if (!instruction_compatible) {
+          // This is a global failure rather than a class change failure as the instructions and
+          // the descriptors for the type should have been consistent within the same file at
+          // compile time.
+          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "aput insn has type '" << insn_type
+              << "' but expected type '" << component_type << "'";
+          return;
+        }
+        VerifyPrimitivePut(component_type, vregA);
       } else {
         if (!component_type.IsReferenceTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "primitive array type " << array_type
@@ -4940,7 +5015,6 @@ ArtField* MethodVerifier<kVerifierDebug>::GetISFieldCommon(ArtField* field, bool
 template <bool kVerifierDebug>
 template <FieldAccessType kAccType>
 void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst,
-                                                         const RegType& insn_type,
                                                          bool is_primitive,
                                                          bool is_static) {
   uint32_t field_idx = GetFieldIdxOfFieldAccess(inst, is_static);
@@ -4965,47 +5039,12 @@ void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst
   if (kAccType == FieldAccessType::kAccPut) {
     // sput or iput.
     if (is_primitive) {
-      VerifyPrimitivePut(field_type, insn_type, vregA);
+      VerifyPrimitivePut(field_type, vregA);
     } else {
-      DCHECK(insn_type.IsJavaLangObject());
-      if (!IsAssignableFrom(insn_type, field_type)) {
-        DCHECK(!field_type.IsReferenceTypes());
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "expected field " << ArtField::PrettyField(field)
-                                          << " to be compatible with type '" << insn_type
-                                          << "' but found type '" << field_type
-                                          << "' in put-object";
-        return;
-      }
       VerifyRegisterType(vregA, field_type);
     }
   } else if (kAccType == FieldAccessType::kAccGet) {
     // sget or iget.
-    if (is_primitive) {
-      if (field_type.Equals(insn_type) ||
-          (field_type.IsFloat() && insn_type.IsInteger()) ||
-          (field_type.IsDoubleLo() && insn_type.IsLongLo())) {
-        // expected that read is of the correct primitive type or that int reads are reading
-        // floats or long reads are reading doubles
-      } else {
-        // This is a global failure rather than a class change failure as the instructions and
-        // the descriptors for the type should have been consistent within the same file at
-        // compile time
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "expected field " << ArtField::PrettyField(field)
-                                          << " to be of type '" << insn_type
-                                          << "' but found type '" << field_type << "' in get";
-        return;
-      }
-    } else {
-      DCHECK(insn_type.IsJavaLangObject());
-      if (!IsAssignableFrom(insn_type, field_type)) {
-        DCHECK(!field_type.IsReferenceTypes());
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "expected field " << ArtField::PrettyField(field)
-                                          << " to be compatible with type '" << insn_type
-                                          << "' but found type '" << field_type
-                                          << "' in get-object";
-        return;
-      }
-    }
     if (!field_type.IsLowHalf()) {
       work_line_->SetRegisterType<LockOp::kClear>(vregA, field_type);
     } else {

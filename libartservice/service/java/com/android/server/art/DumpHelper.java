@@ -232,7 +232,7 @@ public class DumpHelper {
         }
 
         String sdmPath = getSdmPath(dexPath);
-        String status = "not-found";
+        String status = "";
         String signature = "skipped";
         if (mInjector.fileExists(sdmPath)) {
             // "Pending" means yet to be picked up by dexopt. For now, "pending" is the only status
@@ -243,7 +243,9 @@ public class DumpHelper {
                 signature = getSdmSignatureStatus(dexPath, sdmPath);
             }
         }
-        ipw.printf("sdm: [sdm-status=%s] [sdm-signature=%s]\n", status, signature);
+        if (!status.isEmpty()) {
+            ipw.printf("sdm: [sdm-status=%s] [sdm-signature=%s]\n", status, signature);
+        }
     }
 
     // The new API usage is safe because it's guarded by a flag. The "NewApi" lint is wrong because

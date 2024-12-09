@@ -900,6 +900,13 @@ class CodeGeneratorARM64 : public CodeGenerator {
                                                dex::StringIndex string_index,
                                                vixl::aarch64::Label* adrp_label = nullptr);
 
+  // Add a new .bss entry MethodType patch for an instruction and return the label
+  // to be bound before the instruction. The instruction will be either the
+  // ADRP (pass `adrp_label = null`) or the ADD (pass `adrp_label` pointing
+  // to the associated ADRP patch label).
+  vixl::aarch64::Label* NewMethodTypeBssEntryPatch(HLoadMethodType* load_method_type,
+                                                   vixl::aarch64::Label* adrp_label = nullptr);
+
   // Add a new boot image JNI entrypoint patch for an instruction and return the label
   // to be bound before the instruction. The instruction will be either the
   // ADRP (pass `adrp_label = null`) or the LDR (pass `adrp_label` pointing
@@ -928,6 +935,13 @@ class CodeGeneratorARM64 : public CodeGenerator {
                                                                Handle<mirror::Class> handle) {
     return jit_patches_.DeduplicateJitClassLiteral(
         dex_file, class_index, handle, GetCodeGenerationData());
+  }
+  vixl::aarch64::Literal<uint32_t>* DeduplicateJitMethodTypeLiteral(
+      const DexFile& dex_file,
+      dex::ProtoIndex proto_index,
+      Handle<mirror::MethodType> handle) {
+    return jit_patches_.DeduplicateJitMethodTypeLiteral(
+        dex_file, proto_index, handle, GetCodeGenerationData());
   }
 
   void EmitAdrpPlaceholder(vixl::aarch64::Label* fixup_label, vixl::aarch64::Register reg);
@@ -1225,6 +1239,8 @@ class CodeGeneratorARM64 : public CodeGenerator {
   ArenaDeque<PcRelativePatchInfo> boot_image_string_patches_;
   // PC-relative String patch info for kBssEntry.
   ArenaDeque<PcRelativePatchInfo> string_bss_entry_patches_;
+  // PC-relative MethodType patch info for kBssEntry.
+  ArenaDeque<PcRelativePatchInfo> method_type_bss_entry_patches_;
   // PC-relative method patch info for kBootImageLinkTimePcRelative+kCallCriticalNative.
   ArenaDeque<PcRelativePatchInfo> boot_image_jni_entrypoint_patches_;
   // PC-relative patch info for IntrinsicObjects for the boot image,

@@ -85,8 +85,8 @@ art_cc_defaults {
         "liblz4",
         "libz",
     ],
-    static_libs: [
-        "libcrypto_for_art", // For SHA-1 checksumming of build ID
+    whole_static_libs: [
+        "libcrypto_static", // Not FIPS tested - for SHA-1 checksumming of build ID only.
     ],
     export_include_dirs: ["."],
 }
@@ -105,14 +105,10 @@ cc_defaults {
     name: "libart-dex2oat_static_base_defaults",
     whole_static_libs: [
         "libbase",
+        "libcrypto_static", // Not FIPS tested - for SHA-1 checksumming of build ID only.
         "liblog",
         "liblz4",
         "libz",
-    ],
-    static_libs: [
-        // Cannot use whole_static_libs for libcrypto_for_art since it's a
-        // subset that contains unused functions that depend on missing symbols.
-        "libcrypto_for_art",
     ],
 }
 
@@ -230,9 +226,6 @@ cc_defaults {
                 "libsigchain",
                 "libz",
             ],
-            static_libs: [
-                "libcrypto_for_art",
-            ],
         },
     },
 }
@@ -274,11 +267,6 @@ art_cc_binary {
         },
         host: {
             static_libs: [
-                // Since libcrypto_for_art cannot be a whole_static_libs in
-                // libart-dex2oat_static_base_defaults, and we cannot use a
-                // defaults directly only for host here, we have to repeat this
-                // dependency.
-                "libcrypto_for_art",
                 // Make the host binary static, except for system libraries.
                 // This avoids having to bundle host dynamic libs in prebuilts.
                 "libdex2oat_static",
@@ -338,7 +326,6 @@ art_cc_binary {
         host: {
             // Comments for host in dex2oat apply here too.
             static_libs: [
-                "libcrypto_for_art",
                 "libdex2oatd_static",
             ],
             stl: "c++_static",
@@ -377,7 +364,6 @@ art_cc_binary {
     name: "dex2oats",
     defaults: ["dex2oats-defaults"],
     static_libs: [
-        "libcrypto_for_art",
         "libdex2oat_static",
     ],
     visibility: ["//tools/vendor/google_prebuilts/arc"],
@@ -390,7 +376,6 @@ art_cc_binary {
         "dex2oats-defaults",
     ],
     static_libs: [
-        "libcrypto_for_art",
         "libdex2oatd_static",
     ],
 }
@@ -522,7 +507,6 @@ art_cc_defaults {
         "liblog",
     ],
     static_libs: [
-        "libcrypto_for_art",
         "libgmock",
         "liblz4", // libart(d)-dex2oat dependency; must be repeated here since it's a static lib.
     ],

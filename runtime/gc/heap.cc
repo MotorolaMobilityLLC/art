@@ -202,15 +202,13 @@ static constexpr bool kLogAllGCs = false;
 static constexpr size_t kPostForkMaxHeapDurationMS = 2000;
 
 #if defined(__LP64__) || !defined(ADDRESS_SANITIZER)
-// 320 MB (0x14000000) - (default non-moving space capacity).
-// The value is picked to ensure it is aligned to the largest supported PMD
+// 32 MB (0x2000000) is picked to ensure it is aligned to the largest supported PMD
 // size, which is 32mb with a 16k page size on AArch64.
 uint8_t* const Heap::kPreferredAllocSpaceBegin = reinterpret_cast<uint8_t*>(([]() constexpr {
-  constexpr size_t kBegin = 320 * MB - Heap::kDefaultNonMovingSpaceCapacity;
+  constexpr size_t kBegin = 32 * MB;
   constexpr int kMaxPMDSize = (kMaxPageSize / sizeof(uint64_t)) * kMaxPageSize;
   static_assert(IsAligned<kMaxPMDSize>(kBegin),
-                "kPreferredAllocSpaceBegin should be aligned to the maximum "
-                "supported PMD size.");
+                "Moving-space's begin should be aligned to the maximum supported PMD size.");
   return kBegin;
 })());
 #else
@@ -590,7 +588,9 @@ Heap::Heap(size_t initial_size,
     CHECK(non_moving_space_mem_map.IsValid()) << error_str;
     DCHECK(!heap_reservation.IsValid());
     // Try to reserve virtual memory at a lower address if we have a separate non moving space.
-    request_begin = kPreferredAllocSpaceBegin + non_moving_space_capacity;
+    request_begin = non_moving_space_mem_map.Begin() == kPreferredAllocSpaceBegin
+                        ? non_moving_space_mem_map.End()
+                        : kPreferredAllocSpaceBegin;
   }
   // Attempt to create 2 mem maps at or after the requested begin.
   if (foreground_collector_type_ != kCollectorTypeCC) {

@@ -281,7 +281,8 @@ void Arm64RelativePatcher::PatchPcRelativeReference(std::vector<uint8_t>* code,
              patch.GetType() == LinkerPatch::Type::kTypeBssEntry ||
              patch.GetType() == LinkerPatch::Type::kPublicTypeBssEntry ||
              patch.GetType() == LinkerPatch::Type::kPackageTypeBssEntry ||
-             patch.GetType() == LinkerPatch::Type::kStringBssEntry) << patch.GetType();
+             patch.GetType() == LinkerPatch::Type::kStringBssEntry ||
+             patch.GetType() == LinkerPatch::Type::kMethodTypeBssEntry) << patch.GetType();
       DCHECK_EQ(insn & 0xbfbffc00, 0xb9000000) << std::hex << insn;
     }
     if (kIsDebugBuild) {

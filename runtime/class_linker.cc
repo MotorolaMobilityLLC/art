@@ -4165,16 +4165,13 @@ void ClassLinker::LoadMethod(const DexFile& dex_file,
     }
   } else if (method_name[0] == '<') {
     // Fix broken access flags for initializers. Bug 11157540.
-    bool is_init = has_ascii_name("<init>", sizeof("<init>") - 1u);
-    bool is_clinit = has_ascii_name("<clinit>", sizeof("<clinit>") - 1u);
-    if (UNLIKELY(!is_init && !is_clinit)) {
-      LOG(WARNING) << "Unexpected '<' at start of method name " << method_name;
-    } else {
-      if (UNLIKELY((access_flags & kAccConstructor) == 0)) {
-        LOG(WARNING) << method_name << " didn't have expected constructor access flag in class "
-            << klass->PrettyDescriptor() << " in dex file " << dex_file.GetLocation();
-        access_flags |= kAccConstructor;
-      }
+    // `DexFileVerifier` rejects method names starting with '<' other than constructors.
+    DCHECK(has_ascii_name("<init>", sizeof("<init>") - 1u) ||
+           has_ascii_name("<clinit>", sizeof("<clinit>") - 1u)) << method_name;
+    if (UNLIKELY((access_flags & kAccConstructor) == 0)) {
+      LOG(WARNING) << method_name << " didn't have expected constructor access flag in class "
+          << klass->PrettyDescriptor() << " in dex file " << dex_file.GetLocation();
+      access_flags |= kAccConstructor;
     }
   }
 

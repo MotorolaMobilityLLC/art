@@ -195,6 +195,11 @@ void InitEntryPoints(JniEntryPoints* jpoints,
 
   // Intrinsics
   qpoints->SetIndexOf(art_quick_indexof);
+
+  // Invoke.
+  qpoints->SetInvokePolymorphicWithHiddenReceiver(
+      art_quick_invoke_polymorphic_with_hidden_receiver);
+
   // The ARM64 StringCompareTo intrinsic does not call the runtime.
   qpoints->SetStringCompareTo(nullptr);
   qpoints->SetMemcpy(memcpy);

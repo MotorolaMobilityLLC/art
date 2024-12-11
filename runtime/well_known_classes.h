@@ -218,6 +218,9 @@ struct EXPORT WellKnownClasses {
   static ArtField* java_lang_Integer_IntegerCache_cache;
   static ArtField* java_lang_Long_LongCache_cache;
 
+  static ArtField* java_lang_Boolean_value;
+  static ArtField* java_lang_Float_value;
+  static ArtField* java_lang_Double_value;
   static ArtField* java_lang_Byte_value;
   static ArtField* java_lang_Character_value;
   static ArtField* java_lang_Short_value;

@@ -172,6 +172,9 @@ ArtField* WellKnownClasses::java_lang_Short_ShortCache_cache;
 ArtField* WellKnownClasses::java_lang_Integer_IntegerCache_cache;
 ArtField* WellKnownClasses::java_lang_Long_LongCache_cache;
 
+ArtField* WellKnownClasses::java_lang_Boolean_value;
+ArtField* WellKnownClasses::java_lang_Float_value;
+ArtField* WellKnownClasses::java_lang_Double_value;
 ArtField* WellKnownClasses::java_lang_Byte_value;
 ArtField* WellKnownClasses::java_lang_Character_value;
 ArtField* WellKnownClasses::java_lang_Short_value;
@@ -407,6 +410,12 @@ void WellKnownClasses::InitFieldsAndMethodsOnly(JNIEnv* env) {
   java_lang_Long_LongCache_cache = CacheBoxingCacheField(
       class_linker, self, "Ljava/lang/Long$LongCache;", "[Ljava/lang/Long;");
 
+  java_lang_Boolean_value = CacheValueInBoxField(
+      class_linker, self, "Ljava/lang/Boolean;", "Z");
+  java_lang_Float_value = CacheValueInBoxField(
+      class_linker, self, "Ljava/lang/Float;", "F");
+  java_lang_Double_value = CacheValueInBoxField(
+      class_linker, self, "Ljava/lang/Double;", "D");
   java_lang_Byte_value = CacheValueInBoxField(
       class_linker, self, "Ljava/lang/Byte;", "B");
   java_lang_Character_value = CacheValueInBoxField(

@@ -23,6 +23,7 @@
 #include "code_generator_arm64.h"
 #include "common_arm64.h"
 #include "data_type-inl.h"
+#include "dex/modifiers.h"
 #include "entrypoints/quick/quick_entrypoints.h"
 #include "heap_poisoning.h"
 #include "intrinsic_objects.h"
@@ -5986,8 +5987,8 @@ void IntrinsicLocationsBuilderARM64::VisitMethodHandleInvokeExact(HInvoke* invok
   // The last input is MethodType object corresponding to the call-site.
   locations->SetInAt(number_of_args, Location::RequiresRegister());
 
-  locations->AddTemp(Location::RequiresRegister());
   locations->AddTemp(calling_convention.GetMethodLocation());
+  locations->AddRegisterTemps(3);
 }
 
 void IntrinsicCodeGeneratorARM64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
@@ -6003,18 +6004,70 @@ void IntrinsicCodeGeneratorARM64::VisitMethodHandleInvokeExact(HInvoke* invoke) 
   Register call_site_type = InputRegisterAt(invoke, invoke->GetNumberOfArguments());
 
   // Call site should match with MethodHandle's type.
-  Register temp = WRegisterFrom(locations->GetTemp(0));
+  Register temp = WRegisterFrom(locations->GetTemp(1));
   __ Ldr(temp, HeapOperand(method_handle.W(), mirror::MethodHandle::MethodTypeOffset()));
   codegen_->GetAssembler()->MaybeUnpoisonHeapReference(temp);
   __ Cmp(call_site_type, temp);
   __ B(ne, slow_path->GetEntryLabel());
 
-  __ Ldr(temp, HeapOperand(method_handle.W(), mirror::MethodHandle::HandleKindOffset()));
-  __ Cmp(temp, Operand(mirror::MethodHandle::Kind::kInvokeStatic));
-  __ B(ne, slow_path->GetEntryLabel());
-
-  Register method = XRegisterFrom(locations->GetTemp(1));
+  Register method = XRegisterFrom(locations->GetTemp(0));
   __ Ldr(method, HeapOperand(method_handle.W(), mirror::MethodHandle::ArtFieldOrMethodOffset()));
+
+  vixl::aarch64::Label execute_target_method;
+
+  Register method_handle_kind = WRegisterFrom(locations->GetTemp(2));
+  __ Ldr(method_handle_kind,
+         HeapOperand(method_handle.W(), mirror::MethodHandle::HandleKindOffset()));
+  __ Cmp(method_handle_kind, Operand(mirror::MethodHandle::Kind::kInvokeStatic));
+  __ B(eq, &execute_target_method);
+
+  if (invoke->AsInvokePolymorphic()->CanTargetInstanceMethod()) {
+    Register receiver = InputRegisterAt(invoke, 1);
+
+    // Receiver shouldn't be null for all the following cases.
+    __ Cbz(receiver, slow_path->GetEntryLabel());
+
+    __ Cmp(method_handle_kind, Operand(mirror::MethodHandle::Kind::kInvokeDirect));
+    // No dispatch is needed for invoke-direct.
+    __ B(eq, &execute_target_method);
+
+    vixl::aarch64::Label non_virtual_dispatch;
+    __ Cmp(method_handle_kind, Operand(mirror::MethodHandle::Kind::kInvokeVirtual));
+    __ B(ne, &non_virtual_dispatch);
+
+    // Skip virtual dispatch if `method` is private.
+    __ Ldr(temp, MemOperand(method, ArtMethod::AccessFlagsOffset().Int32Value()));
+    __ And(temp, temp, Operand(kAccPrivate));
+    __ Cbnz(temp, &execute_target_method);
+
+    Register receiver_class = WRegisterFrom(locations->GetTemp(3));
+    // If method is defined in the receiver's class, execute it as it is.
+    __ Ldr(temp, MemOperand(method, ArtMethod::DeclaringClassOffset().Int32Value()));
+    __ Ldr(receiver_class, HeapOperand(receiver.W(), mirror::Object::ClassOffset().Int32Value()));
+    __ Cmp(temp, receiver_class);
+    __ B(eq, &execute_target_method);
+
+    // MethodIndex is uint16_t.
+    __ Ldrh(temp, MemOperand(method, ArtMethod::MethodIndexOffset().Int32Value()));
+
+    // Re-using method register for receiver class.
+    // /* HeapReference<Class> */ method = receiver->klass
+    __ Ldr(method.W(), HeapOperand(receiver.W(), mirror::Object::ClassOffset()));
+    codegen_->GetAssembler()->MaybeUnpoisonHeapReference(method.W());
+
+    constexpr uint32_t vtable_offset =
+        mirror::Class::EmbeddedVTableOffset(art::PointerSize::k64).Int32Value();
+    __ Add(method, method, vtable_offset);
+    __ Ldr(method, MemOperand(method, temp, Extend::UXTW, 3u));
+    __ B(&execute_target_method);
+    __ Bind(&non_virtual_dispatch);
+  }
+
+  // Checks above are jumping to `execute_target_method` is they succeed. If none match, try to
+  // handle in the slow path.
+  __ B(slow_path->GetEntryLabel());
+
+  __ Bind(&execute_target_method);
   Offset entry_point = ArtMethod::EntryPointFromQuickCompiledCodeOffset(kArm64PointerSize);
   __ Ldr(lr, MemOperand(method, entry_point.SizeValue()));
   __ Blr(lr);

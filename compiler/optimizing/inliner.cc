@@ -1593,6 +1593,8 @@ bool HInliner::TryBuildAndInline(HInvoke* invoke_instruction,
                                  ReferenceTypeInfo receiver_type,
                                  HInstruction** return_replacement,
                                  bool is_speculative) {
+  DCHECK_IMPLIES(method->IsStatic(), !receiver_type.IsValid());
+  DCHECK_IMPLIES(!method->IsStatic(), receiver_type.IsValid());
   // If invoke_instruction is devirtualized to a different method, give intrinsics
   // another chance before we try to inline it.
   if (invoke_instruction->GetResolvedMethod() != method &&

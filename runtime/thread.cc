@@ -1530,7 +1530,7 @@ bool Thread::PassActiveSuspendBarriers() {
   std::vector<AtomicInteger*> pass_barriers{};
   {
     MutexLock mu(this, *Locks::thread_suspend_count_lock_);
-    if (!ReadFlag(ThreadFlag::kActiveSuspendBarrier)) {
+    if (!ReadFlag(ThreadFlag::kActiveSuspendBarrier, std::memory_order_relaxed)) {
       // Quick exit test: The barriers have already been claimed - this is possible as there may
       // be a race to claim and it doesn't matter who wins.  All of the callers of this function
       // (except SuspendAllInternal) will first test the kActiveSuspendBarrier flag without the
@@ -1604,7 +1604,8 @@ void Thread::RunEmptyCheckpoint() {
   // Note: Empty checkpoint does not access the thread's stack,
   // so we do not need to check for the flip function.
   DCHECK_EQ(Thread::Current(), this);
-  AtomicClearFlag(ThreadFlag::kEmptyCheckpointRequest);
+  // See mutator_gc_coord.md and b/382722942 for memory ordering discussion.
+  AtomicClearFlag(ThreadFlag::kEmptyCheckpointRequest, std::memory_order_release);
   Runtime::Current()->GetThreadList()->EmptyCheckpointBarrier()->Pass(this);
 }
 
@@ -1626,7 +1627,7 @@ bool Thread::RequestCheckpoint(Closure* function) {
   } else {
     checkpoint_overflow_.push_back(function);
   }
-  DCHECK(ReadFlag(ThreadFlag::kCheckpointRequest));
+  DCHECK(ReadFlag(ThreadFlag::kCheckpointRequest, std::memory_order_relaxed));
   TriggerSuspend();
   return true;
 }
@@ -1790,7 +1791,8 @@ bool Thread::RequestSynchronousCheckpoint(Closure* function, ThreadState wait_st
     // Since we're runnable, and kPendingFlipFunction is set with all threads suspended, it
     // cannot be set again here. Thus kRunningFlipFunction is either already set after the
     // EnsureFlipFunctionStarted call, or will not be set before we call Run().
-    if (ReadFlag(ThreadFlag::kRunningFlipFunction)) {
+    // See mutator_gc_coord.md for a discussion of memory ordering for thread flags.
+    if (ReadFlag(ThreadFlag::kRunningFlipFunction, std::memory_order_acquire)) {
       WaitForFlipFunction(self);
     }
     function->Run(this);
@@ -1831,7 +1833,8 @@ bool Thread::EnsureFlipFunctionStarted(Thread* self,
   DCHECK(self == Current());
   bool check_exited = (tef != nullptr);
   // Check that the thread can't unexpectedly exit while we are running.
-  DCHECK(self == target || check_exited || target->ReadFlag(ThreadFlag::kSuspendRequest) ||
+  DCHECK(self == target || check_exited ||
+         target->ReadFlag(ThreadFlag::kSuspendRequest, std::memory_order_relaxed) ||
          Locks::thread_list_lock_->IsExclusiveHeld(self))
       << *target;
   bool become_runnable;
@@ -1857,6 +1860,8 @@ bool Thread::EnsureFlipFunctionStarted(Thread* self,
   target->VerifyState();
   if (old_state_and_flags.GetValue() == 0) {
     become_runnable = false;
+    // Memory_order_relaxed is OK here, since we re-check with memory_order_acquire below before
+    // acting on a pending flip function.
     old_state_and_flags = target->GetStateAndFlags(std::memory_order_relaxed);
   } else {
     become_runnable = true;
@@ -1868,8 +1873,12 @@ bool Thread::EnsureFlipFunctionStarted(Thread* self,
   while (true) {
     DCHECK(!check_exited || (Locks::thread_list_lock_->IsExclusiveHeld(self) && !tef->HasExited()));
     if (!old_state_and_flags.IsFlagSet(ThreadFlag::kPendingFlipFunction)) {
+      // Re-read kRunningFlipFunction flag with acquire ordering to ensure that if we claim
+      // flip function has run then its execution happened-before our return.
+      bool running_flip =
+          target->ReadFlag(ThreadFlag::kRunningFlipFunction, std::memory_order_acquire);
       maybe_release();
-      set_finished(!old_state_and_flags.IsFlagSet(ThreadFlag::kRunningFlipFunction));
+      set_finished(!running_flip);
       return false;
     }
     DCHECK(!old_state_and_flags.IsFlagSet(ThreadFlag::kRunningFlipFunction));
@@ -1900,7 +1909,8 @@ bool Thread::EnsureFlipFunctionStarted(Thread* self,
       // Let caller retry.
       return false;
     }
-    old_state_and_flags = target->GetStateAndFlags(std::memory_order_acquire);
+    // Again, we re-read with memory_order_acquire before acting on the flags.
+    old_state_and_flags = target->GetStateAndFlags(std::memory_order_relaxed);
   }
   // Unreachable.
 }
@@ -1908,14 +1918,14 @@ bool Thread::EnsureFlipFunctionStarted(Thread* self,
 void Thread::RunFlipFunction(Thread* self) {
   // This function is called either by the thread running `ThreadList::FlipThreadRoots()` or when
   // a thread becomes runnable, after we've successfully set the kRunningFlipFunction ThreadFlag.
-  DCHECK(ReadFlag(ThreadFlag::kRunningFlipFunction));
+  DCHECK(ReadFlag(ThreadFlag::kRunningFlipFunction, std::memory_order_relaxed));
 
   Closure* flip_function = GetFlipFunction();
   tlsPtr_.flip_function.store(nullptr, std::memory_order_relaxed);
   DCHECK(flip_function != nullptr);
   VerifyState();
   flip_function->Run(this);
-  DCHECK(!ReadFlag(ThreadFlag::kPendingFlipFunction));
+  DCHECK(!ReadFlag(ThreadFlag::kPendingFlipFunction, std::memory_order_relaxed));
   VerifyState();
   AtomicClearFlag(ThreadFlag::kRunningFlipFunction, std::memory_order_release);
   // From here on this thread may go away, and it is no longer safe to access.
@@ -1933,12 +1943,12 @@ void Thread::WaitForFlipFunction(Thread* self) const {
   // Repeat the check after waiting to guard against spurious wakeups (and because
   // we share the `thread_suspend_count_lock_` and `resume_cond_` with other code).
   // Check that the thread can't unexpectedly exit while we are running.
-  DCHECK(self == this || ReadFlag(ThreadFlag::kSuspendRequest) ||
+  DCHECK(self == this || ReadFlag(ThreadFlag::kSuspendRequest, std::memory_order_relaxed) ||
          Locks::thread_list_lock_->IsExclusiveHeld(self));
   MutexLock mu(self, *Locks::thread_suspend_count_lock_);
   while (true) {
-    StateAndFlags old_state_and_flags = GetStateAndFlags(std::memory_order_acquire);
-    if (!old_state_and_flags.IsFlagSet(ThreadFlag::kRunningFlipFunction)) {
+    // See mutator_gc_coord.md for a discussion of memory ordering for thread flags.
+    if (!ReadFlag(ThreadFlag::kRunningFlipFunction, std::memory_order_acquire)) {
       return;
     }
     // We sometimes hold mutator lock here. OK since the flip function must complete quickly.
@@ -1958,9 +1968,10 @@ void Thread::WaitForFlipFunctionTestingExited(Thread* self, ThreadExitFlag* tef)
   // complicated locking dance.
   MutexLock mu(self, *Locks::thread_suspend_count_lock_);
   while (true) {
-    StateAndFlags old_state_and_flags = GetStateAndFlags(std::memory_order_acquire);
+    // See mutator_gc_coord.md for a discussion of memory ordering for thread flags.
+    bool running_flip = ReadFlag(ThreadFlag::kRunningFlipFunction, std::memory_order_acquire);
     Locks::thread_list_lock_->Unlock(self);  // So we can wait or return.
-    if (!old_state_and_flags.IsFlagSet(ThreadFlag::kRunningFlipFunction)) {
+    if (!running_flip) {
       return;
     }
     resume_cond_->WaitHoldingLocks(self);
@@ -1976,7 +1987,7 @@ void Thread::WaitForFlipFunctionTestingExited(Thread* self, ThreadExitFlag* tef)
 
 void Thread::FullSuspendCheck(bool implicit) {
   ScopedTrace trace(__FUNCTION__);
-  DCHECK(!ReadFlag(ThreadFlag::kSuspensionImmune));
+  DCHECK(!ReadFlag(ThreadFlag::kSuspensionImmune, std::memory_order_relaxed));
   DCHECK(this == Thread::Current());
   VLOG(threads) << this << " self-suspending";
   // Make thread appear suspended to other threads, release mutator_lock_.
@@ -2707,9 +2718,9 @@ Thread::~Thread() {
     tlsPtr_.jni_env = nullptr;
   }
   CHECK_NE(GetState(), ThreadState::kRunnable);
-  CHECK(!ReadFlag(ThreadFlag::kCheckpointRequest));
-  CHECK(!ReadFlag(ThreadFlag::kEmptyCheckpointRequest));
-  CHECK(!ReadFlag(ThreadFlag::kSuspensionImmune));
+  CHECK(!ReadFlag(ThreadFlag::kCheckpointRequest, std::memory_order_relaxed));
+  CHECK(!ReadFlag(ThreadFlag::kEmptyCheckpointRequest, std::memory_order_relaxed));
+  CHECK(!ReadFlag(ThreadFlag::kSuspensionImmune, std::memory_order_relaxed));
   CHECK(tlsPtr_.checkpoint_function == nullptr);
   CHECK_EQ(checkpoint_overflow_.size(), 0u);
   // A pending flip function request is OK. FlipThreadRoots will have been notified that we
@@ -4818,11 +4829,11 @@ mirror::Object* Thread::GetPeerFromOtherThread() {
   // mutator lock in exclusive mode, and we should not have a pending flip function.
   if (kIsDebugBuild && Locks::thread_list_lock_->IsExclusiveHeld(self)) {
     Locks::mutator_lock_->AssertExclusiveHeld(self);
-    CHECK(!ReadFlag(ThreadFlag::kPendingFlipFunction));
+    CHECK(!ReadFlag(ThreadFlag::kPendingFlipFunction, std::memory_order_relaxed));
   }
   // Ensure that opeer is not obsolete.
   EnsureFlipFunctionStarted(self, this);
-  if (ReadFlag(ThreadFlag::kRunningFlipFunction)) {
+  if (ReadFlag(ThreadFlag::kRunningFlipFunction, std::memory_order_acquire)) {
     // Does not release mutator lock. Hence no new flip requests can be issued.
     WaitForFlipFunction(self);
   }
@@ -4833,7 +4844,8 @@ mirror::Object* Thread::LockedGetPeerFromOtherThread(ThreadExitFlag* tef) {
   DCHECK(tlsPtr_.jpeer == nullptr);
   Thread* self = Thread::Current();
   Locks::thread_list_lock_->AssertHeld(self);
-  if (ReadFlag(ThreadFlag::kPendingFlipFunction)) {
+  // memory_order_relaxed is OK here, because we recheck it later with acquire order.
+  if (ReadFlag(ThreadFlag::kPendingFlipFunction, std::memory_order_relaxed)) {
     // It is unsafe to call EnsureFlipFunctionStarted with thread_list_lock_. Thus we temporarily
     // release it, taking care to handle the case in which "this" thread disapppears while we no
     // longer hold it.
@@ -4844,7 +4856,7 @@ mirror::Object* Thread::LockedGetPeerFromOtherThread(ThreadExitFlag* tef) {
       return nullptr;
     }
   }
-  if (ReadFlag(ThreadFlag::kRunningFlipFunction)) {
+  if (ReadFlag(ThreadFlag::kRunningFlipFunction, std::memory_order_acquire)) {
     // Does not release mutator lock. Hence no new flip requests can be issued.
     WaitForFlipFunction(self);
   }

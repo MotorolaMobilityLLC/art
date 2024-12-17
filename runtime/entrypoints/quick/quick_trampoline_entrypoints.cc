@@ -2101,7 +2101,7 @@ extern "C" const void* artQuickGenericJniTrampoline(Thread* self,
         return nullptr;  // Report error.
       }
     }
-    if (UNLIKELY(self->ReadFlag(ThreadFlag::kMonitorJniEntryExit))) {
+    if (UNLIKELY(self->ReadFlag(ThreadFlag::kMonitorJniEntryExit, std::memory_order_relaxed))) {
       artJniMonitoredMethodStart(self);
     } else {
       artJniMethodStart(self);

@@ -571,19 +571,24 @@ def create_ci_runner_scripts(out, mode, test_names):
   ]
   run([python, script] + args + test_names, env=envs, check=True)
   tests = {
-    "setup": {
-      "adb push": [[str(setup.relative_to(out)), "/data/local/tmp/art/setup.sh"]],
-      "adb shell": [["sh", "/data/local/tmp/art/setup.sh"]],
+    "setup#compile-boot-image": {
+      "adb push": [
+        [str(setup.relative_to(out)), "/data/local/tmp/art/setup.sh"]
+      ],
+      "adb shell": [
+        ["rm", "-rf", "/data/local/tmp/art/test"],
+        ["sh", "/data/local/tmp/art/setup.sh"],
+      ],
     },
   }
   for runner in Path(out).glob("*/*.sh"):
     test_name = runner.parent.name
     test_hash = runner.stem
     target_dir = f"/data/local/tmp/art/test/{test_hash}"
-    tests[f"{test_name}-{test_hash}"] = {
-      "dependencies": ["setup"],
+    tests[f"{test_name}#{test_hash}"] = {
+      "dependencies": ["setup#compile-boot-image"],
       "adb push": [
-        [f"../{mode}/{test_name}/", f"{target_dir}/"],
+        [f"../{mode}/{test_name}", f"{target_dir}"],
         [str(runner.relative_to(out)), f"{target_dir}/run.sh"]
       ],
       "adb shell": [["sh", f"{target_dir}/run.sh"]],

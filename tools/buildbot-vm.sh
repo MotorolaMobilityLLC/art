@@ -99,6 +99,7 @@ elif [[ $action = boot ]]; then
     cp "$(dirname $0)/user-data.img" "$ART_TEST_VM_DIR/user-data.img"
     cd "$ART_TEST_VM_DIR"
     if [[ "$TARGET_ARCH" = "riscv64" ]]; then
+        echo -n > $SCRIPT_DIR/boot.out
         ($ANDROID_BUILD_TOP/device/google/cuttlefish_vmm/qemu/x86_64-linux-gnu/bin/qemu-system-riscv64 \
             -M virt \
             -nographic \
@@ -109,7 +110,7 @@ elif [[ $action = boot ]]; then
             -drive file="$ART_TEST_VM_IMG",if=virtio \
             -drive file=user-data.img,format=raw,if=virtio \
             -device virtio-net-device,netdev=usernet \
-            -netdev user,id=usernet,hostfwd=tcp::$ART_TEST_SSH_PORT-:22 > $SCRIPT_DIR/boot.out &)
+            -netdev user,id=usernet,hostfwd=tcp::$ART_TEST_SSH_PORT-:22 >> $SCRIPT_DIR/boot.out &)
         echo "Now listening for successful boot"
         finish_str='.*finished at.*'
         while IFS= read -d $'\0' -n 1 a ; do
@@ -126,6 +127,7 @@ elif [[ $action = boot ]]; then
         done < <(tail -f $SCRIPT_DIR/boot.out)
 
     elif [[ "$TARGET_ARCH" = "arm64" ]]; then
+        echo -n > $SCRIPT_DIR/boot.out
         (qemu-system-aarch64 \
             -m 16G \
             -smp 8 \
@@ -138,7 +140,7 @@ elif [[ $action = boot ]]; then
             -drive file=user-data.img,format=raw,id=cloud \
             -device virtio-blk-device,drive=hd0 \
             -device virtio-net-device,netdev=usernet \
-            -netdev user,id=usernet,hostfwd=tcp::$ART_TEST_SSH_PORT-:22 > $SCRIPT_DIR/boot.out &)
+            -netdev user,id=usernet,hostfwd=tcp::$ART_TEST_SSH_PORT-:22 >> $SCRIPT_DIR/boot.out &)
         echo "Now listening for successful boot"
         finish_str='.*finished at.*'
         while IFS= read -d $'\0' -n 1 a ; do

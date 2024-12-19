@@ -992,6 +992,10 @@ static ArtMethod* ResolveMethod(uint16_t method_idx,
         (!resolved_method->IsPublic() && !declaring_class_accessible)) {
       return nullptr;
     }
+
+    if (UNLIKELY(resolved_method->CheckIncompatibleClassChange(*invoke_type))) {
+      return nullptr;
+    }
   }
 
   // We have to special case the invoke-super case, as ClassLinker::ResolveMethod does not.

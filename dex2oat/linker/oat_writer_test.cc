@@ -76,6 +76,8 @@ class OatTest : public CommonCompilerDriverTest {
       const void* quick_oat_code = oat_method.GetQuickCode();
       EXPECT_TRUE(quick_oat_code != nullptr) << method->PrettyMethod();
       uintptr_t oat_code_aligned = RoundDown(reinterpret_cast<uintptr_t>(quick_oat_code), 2);
+      EXPECT_EQ(RoundDown(oat_code_aligned,
+          GetInstructionSetCodeAlignment(compiled_method->GetInstructionSet())), oat_code_aligned);
       quick_oat_code = reinterpret_cast<const void*>(oat_code_aligned);
       ArrayRef<const uint8_t> quick_code = compiled_method->GetQuickCode();
       EXPECT_FALSE(quick_code.empty());
@@ -445,6 +447,12 @@ TEST_F(OatTest, WriteRead) {
   ASSERT_TRUE(oat_file.get() != nullptr) << error_msg;
   const OatHeader& oat_header = oat_file->GetOatHeader();
   ASSERT_TRUE(oat_header.IsValid());
+  // .text section in the ELF program header is specified to be aligned to kElfSegmentAlignment.
+  // However, ART's ELF loader does not adhere to this and only guarantees to align it to the
+  // runtime page size. Therefore, we assert that the executable segment is page-aligned in
+  // virtual memory.
+  const uint8_t* text_section = oat_file->Begin() + oat_header.GetExecutableOffset();
+  ASSERT_TRUE(IsAlignedParam(text_section, GetPageSizeSlow()));
   ASSERT_EQ(class_linker->GetBootClassPath().size(), oat_header.GetDexFileCount());  // core
   ASSERT_TRUE(oat_header.GetStoreValueByKey(OatHeader::kBootClassPathChecksumsKey) != nullptr);
   ASSERT_STREQ("testkey", oat_header.GetStoreValueByKey(OatHeader::kBootClassPathChecksumsKey));
@@ -489,7 +497,7 @@ TEST_F(OatTest, WriteRead) {
 TEST_F(OatTest, OatHeaderSizeCheck) {
   // If this test is failing and you have to update these constants,
   // it is time to update OatHeader::kOatVersion
-  EXPECT_EQ(68U, sizeof(OatHeader));
+  EXPECT_EQ(72U, sizeof(OatHeader));
   EXPECT_EQ(4U, sizeof(OatMethodOffsets));
   EXPECT_EQ(4U, sizeof(OatQuickMethodHeader));
   EXPECT_EQ(173 * static_cast<size_t>(GetInstructionSetPointerSize(kRuntimeISA)),
@@ -873,6 +881,89 @@ void OatTest::TestZipFileInputWithEmptyDex() {
 
 TEST_F(OatTest, ZipFileInputWithEmptyDex) {
   TestZipFileInputWithEmptyDex();
+}
+
+TEST_F(OatTest, AlignmentCheck) {
+  TimingLogger timings("OatTest::AlignmentCheck", false, false);
+
+  // OatWriter sets trampoline offsets to non-zero values only for primary boot oat
+  // file (e.g. boot.oat), so we use it to check trampolines alignment.
+  std::string location = GetCoreOatLocation();
+  std::string filename = GetSystemImageFilename(location.c_str(), kRuntimeISA);
+
+  // Find the absolute path for core-oj.jar and use it to open boot.oat. Otherwise,
+  // OatFile::Open will attempt to open the dex file using its relative location,
+  // which may result in a "file not found" error.
+  ASSERT_TRUE(java_lang_dex_file_ != nullptr);
+  const DexFile& dex_file = *java_lang_dex_file_;
+  std::string dex_location = dex_file.GetLocation();
+  std::vector<std::string> filenames = GetLibCoreDexFileNames();
+  auto it = std::find_if(
+      filenames.cbegin(),
+      filenames.cend(),
+      [&dex_location](const std::string& filename) {
+        return filename.ends_with(dex_location);
+      });
+  ASSERT_NE(it, filenames.cend())
+    << "cannot find: " << dex_location << " in libcore dex filenames";
+
+  std::string dex_filename = *it;
+  std::string error_msg;
+  std::unique_ptr<OatFile> oat_file(OatFile::Open(/*zip_fd=*/ -1,
+                                                  filename,
+                                                  filename,
+                                                  /*executable=*/ false,
+                                                  /*low_4gb=*/ false,
+                                                  dex_filename,
+                                                  &error_msg));
+  ASSERT_NE(oat_file, nullptr) << error_msg;
+  ASSERT_TRUE(IsAligned<alignof(OatHeader)>(oat_file->Begin()))
+      << "oat header: " << reinterpret_cast<const void*>(oat_file->Begin())
+      << ", alignment: " << alignof(OatHeader);
+
+  const OatHeader& oat_header = oat_file->GetOatHeader();
+  ASSERT_TRUE(oat_header.IsValid());
+
+  // Check trampolines alignment.
+  size_t alignment = GetInstructionSetCodeAlignment(instruction_set_);
+  size_t adjustment = GetInstructionSetEntryPointAdjustment(instruction_set_);
+  for (size_t i = 0; i <= static_cast<size_t>(StubType::kLast); i++) {
+    StubType stub_type = static_cast<StubType>(i);
+    const uint8_t* address = oat_header.GetOatAddress(stub_type);
+    ASSERT_NE(address, nullptr);
+    const uint8_t* adjusted_address = address - adjustment;
+    EXPECT_TRUE(IsAlignedParam(adjusted_address, alignment))
+        << "stub: " << stub_type
+        << ", address: " << reinterpret_cast<const void*>(adjusted_address)
+        << ", code alignment: " << alignment;
+  }
+
+  // Check code alignment.
+  const OatDexFile* oat_dex_file = oat_file->GetOatDexFile(dex_file.GetLocation().c_str());
+  for (ClassAccessor accessor : dex_file.GetClasses()) {
+    const OatFile::OatClass oat_class = oat_dex_file->GetOatClass(accessor.GetClassDefIndex());
+    if (oat_class.GetType() == OatClassType::kNoneCompiled) {
+      continue;
+    }
+
+    uint32_t method_index = 0;
+    for (const ClassAccessor::Method& method : accessor.GetMethods()) {
+      const OatFile::OatMethod& oat_method = oat_class.GetOatMethod(method_index++);
+      uintptr_t code = reinterpret_cast<uintptr_t>(oat_method.GetQuickCode());
+      if (code == 0) {
+        continue;
+      }
+      const void* adjusted_address = reinterpret_cast<const void*>(code - adjustment);
+      EXPECT_TRUE(IsAlignedParam(adjusted_address, alignment))
+          << "method: " << method.GetReference().PrettyMethod()
+          << ", code: " << adjusted_address
+          << ", code alignment: " << alignment;
+    }
+    EXPECT_EQ(method_index, accessor.NumMethods());
+  }
+
+  // Check DexLayoutSections alignment.
+  EXPECT_TRUE(IsAligned<alignof(DexLayoutSections)>(oat_dex_file->GetDexLayoutSections()));
 }
 
 }  // namespace linker

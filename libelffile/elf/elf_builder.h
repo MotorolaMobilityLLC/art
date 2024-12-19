@@ -460,7 +460,7 @@ class ElfBuilder final {
   ElfBuilder(InstructionSet isa, OutputStream* output)
       : isa_(isa),
         stream_(output),
-        rodata_(this, ".rodata", SHT_PROGBITS, SHF_ALLOC, nullptr, 0, kElfSegmentAlignment, 0),
+        rodata_(this, ".rodata", SHT_PROGBITS, SHF_ALLOC, nullptr, 0, 4u, 0),
         text_(this, ".text", SHT_PROGBITS, SHF_ALLOC | SHF_EXECINSTR, nullptr, 0,
             kElfSegmentAlignment, 0),
         data_img_rel_ro_(this, ".data.img.rel.ro", SHT_PROGBITS, SHF_ALLOC, nullptr, 0,

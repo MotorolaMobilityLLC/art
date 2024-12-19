@@ -557,7 +557,7 @@ void ThreadList::RunEmptyCheckpoint() {
                 std::find(runnable_thread_ids.begin(), runnable_thread_ids.end(), tid) !=
                 runnable_thread_ids.end();
             if (is_in_runnable_thread_ids &&
-                thread->ReadFlag(ThreadFlag::kEmptyCheckpointRequest)) {
+                thread->ReadFlag(ThreadFlag::kEmptyCheckpointRequest, std::memory_order_relaxed)) {
               // Found a runnable thread that hasn't responded to the empty checkpoint request.
               // Assume it's stuck and safe to dump its stack.
               thread->Dump(LOG_STREAM(FATAL_WITHOUT_ABORT),
@@ -877,8 +877,8 @@ void ThreadList::SuspendAll(const char* cause, bool long_suspend) {
   }
 
   // SuspendAllInternal blocks if we are in the middle of a flip.
-  DCHECK(!self->ReadFlag(ThreadFlag::kPendingFlipFunction));
-  DCHECK(!self->ReadFlag(ThreadFlag::kRunningFlipFunction));
+  DCHECK(!self->ReadFlag(ThreadFlag::kPendingFlipFunction, std::memory_order_relaxed));
+  DCHECK(!self->ReadFlag(ThreadFlag::kRunningFlipFunction, std::memory_order_relaxed));
 
   ATraceBegin((std::string("Mutator threads suspended for ") + cause).c_str());
 

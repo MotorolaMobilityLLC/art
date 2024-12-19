@@ -127,6 +127,7 @@ enum class ThreadFlag : uint32_t {
   kSuspendRequest = 1u << 0,
 
   // Request that the thread do some checkpoint work and then continue.
+  // Only modified while holding thread_suspend_count_lock_ .
   kCheckpointRequest = 1u << 1,
 
   // Request that the thread do empty checkpoint and then continue.
@@ -158,7 +159,7 @@ enum class ThreadFlag : uint32_t {
   // in any case not check for such requests; other clients of SuspendAll might.
   // Prevents a situation in which we are asked to suspend just before we suspend all
   // other threads, and then notice the suspension request and suspend ourselves,
-  // leading to deadlock. Guarded by suspend_count_lock_ .
+  // leading to deadlock. Guarded by thread_suspend_count_lock_ .
   // Should not ever be set when we try to transition to kRunnable.
   // TODO(b/296639267): Generalize use to prevent SuspendAll from blocking
   // in-progress GC.
@@ -1451,8 +1452,10 @@ class EXPORT Thread {
   // Undo the effect of the previous call. Again only invoked by the thread itself.
   void AllowPreMonitorMutexes();
 
-  bool ReadFlag(ThreadFlag flag) const {
-    return GetStateAndFlags(std::memory_order_relaxed).IsFlagSet(flag);
+  // Read a flag with the given memory order. See mutator_gc_coord.md for memory ordering
+  // considerations.
+  bool ReadFlag(ThreadFlag flag, std::memory_order order) const {
+    return GetStateAndFlags(order).IsFlagSet(flag);
   }
 
   void AtomicSetFlag(ThreadFlag flag, std::memory_order order = std::memory_order_seq_cst) {

@@ -32,7 +32,7 @@ action="$1"
 get_stable_binary() {
     mkdir tmp && cd tmp
     wget "http://security.ubuntu.com/ubuntu/pool/main/$1"
-    7z x "$(basename $1)" && zstd -d data.tar.zst && tar -xf data.tar
+    ar x "$(basename $1)" && zstd -d data.tar.zst && tar -xf data.tar
     mv "$2" ..
     cd .. && rm -rf tmp
 }

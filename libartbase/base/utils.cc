@@ -167,12 +167,17 @@ bool FlushCpuCaches(void* begin, void* end) {
 
 #if defined(__linux__)
 bool IsKernelVersionAtLeast(int reqd_major, int reqd_minor) {
-  struct utsname uts;
-  int major, minor;
-  CHECK_EQ(uname(&uts), 0);
-  CHECK_EQ(strcmp(uts.sysname, "Linux"), 0);
-  CHECK_EQ(sscanf(uts.release, "%d.%d:", &major, &minor), 2);
-  return major > reqd_major || (major == reqd_major && minor >= reqd_minor);
+  static auto version = []() -> std::pair<int, int> {
+    struct utsname uts;
+    int res, major, minor;
+    res = uname(&uts);
+    CHECK_EQ(res, 0);
+    CHECK_EQ(strcmp(uts.sysname, "Linux"), 0);
+    res = sscanf(uts.release, "%d.%d:", &major, &minor);
+    CHECK_EQ(res, 2);
+    return std::make_pair(major, minor);
+  }();
+  return version >= std::make_pair(reqd_major, reqd_minor);
 }
 #endif
 

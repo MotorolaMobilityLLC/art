@@ -61,7 +61,7 @@ ZipEntry::~ZipEntry() {
 bool ZipEntry::ExtractToFile(File& file, std::string* error_msg) {
   const int32_t error = ExtractEntryToFile(handle_, zip_entry_, file.Fd());
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg = "Failed to extract '" + entry_name_ + "': " + ErrorCodeString(error);
     return false;
   }
 
@@ -95,7 +95,7 @@ MemMap ZipEntry::ExtractToMemMap(const char* zip_filename,
 bool ZipEntry::ExtractToMemory(/*out*/uint8_t* buffer, /*out*/std::string* error_msg) {
   const int32_t error = ::ExtractToMemory(handle_, zip_entry_, buffer, GetUncompressedLength());
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg = "Failed to extract '" + entry_name_ + "': " + ErrorCodeString(error);
     return false;
   }
   return true;
@@ -236,7 +236,7 @@ ZipArchive* ZipArchive::Open(const char* filename, std::string* error_msg) {
   ZipArchiveHandle handle;
   const int32_t error = OpenArchive(filename, &handle);
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg = StringPrintf("Failed to open '%s': %s", filename, ErrorCodeString(error));
     CloseArchive(handle);
     return nullptr;
   }
@@ -263,7 +263,8 @@ ZipArchive* ZipArchive::OpenFromMemory(const uint8_t* data,
   ZipArchiveHandle handle;
   const int32_t error = OpenArchiveFromMemory(data, size, filename, &handle);
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg =
+        StringPrintf("Failed to open '%s' from memory: %s", filename, ErrorCodeString(error));
     CloseArchive(handle);
     return nullptr;
   }
@@ -281,7 +282,7 @@ ZipArchive* ZipArchive::OpenFromFdInternal(int fd,
   ZipArchiveHandle handle;
   const int32_t error = OpenArchiveFd(fd, filename, &handle, assume_ownership);
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg = StringPrintf("Failed to open '%s' from fd: %s", filename, ErrorCodeString(error));
     CloseArchive(handle);
     return nullptr;
   }
@@ -297,7 +298,7 @@ ZipEntry* ZipArchive::Find(const char* name, std::string* error_msg) const {
   std::unique_ptr< ::ZipEntry> zip_entry(new ::ZipEntry);
   const int32_t error = FindEntry(handle_, name, zip_entry.get());
   if (error != 0) {
-    *error_msg = std::string(ErrorCodeString(error));
+    *error_msg = StringPrintf("Failed to find entry '%s': %s", name, ErrorCodeString(error));
     return nullptr;
   }
 

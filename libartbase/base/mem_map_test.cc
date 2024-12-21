@@ -355,15 +355,16 @@ TEST_F(MemMapTest, MapAnonymousEmpty) {
 
 TEST_F(MemMapTest, MapAnonymousFailNullError) {
   CommonInit();
+  uint8_t* invalid_page[16];  // Use this address as mmap hint address.
   const size_t page_size = MemMap::GetPageSize();
   // Test that we don't crash with a null error_str when mapping at an invalid location.
   MemMap map = MemMap::MapAnonymous("MapAnonymousInvalid",
-                                    reinterpret_cast<uint8_t*>(static_cast<size_t>(page_size)),
+                                    reinterpret_cast<uint8_t*>(AlignDown(invalid_page, page_size)),
                                     0x20000,
                                     PROT_READ | PROT_WRITE,
-                                    /*low_4gb=*/ false,
-                                    /*reuse=*/ false,
-                                    /*reservation=*/ nullptr,
+                                    /*low_4gb=*/false,
+                                    /*reuse=*/false,
+                                    /*reservation=*/nullptr,
                                     nullptr);
   ASSERT_FALSE(map.IsValid());
 }

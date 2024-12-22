@@ -45,11 +45,11 @@ if [[ $action = create ]]; then
 
     # sudo apt install qemu-system-<arch> qemu-efi cloud-image-utils
 
-    # Get the cloud image for Ubunty 23.10 (Mantic Minotaur)
-    wget "http://cloud-images.ubuntu.com/releases/23.10/release/$ART_TEST_VM_IMG"
+    # Get the cloud image for Ubuntu 24.04 LTS (Noble Numbat)
+    wget "http://cloud-images.ubuntu.com/releases/24.04/release/$ART_TEST_VM_IMG"
 
     if [[ "$TARGET_ARCH" = "riscv64" ]]; then
-        # Get U-Boot for Ubuntu 22.04 (Jammy)
+        # Get U-Boot
         get_stable_binary \
             u/u-boot/u-boot-qemu_2024.01+dfsg-5ubuntu2_all.deb \
             usr/lib/u-boot/qemu-riscv64_smode/uboot.elf
@@ -82,10 +82,18 @@ chpasswd:
 users:
   - default
   - name: $ART_TEST_SSH_USER
-    ssh-authorized-keys:
+    ssh_authorized_keys:
       - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCOYmwd9qoYd7rfYI6Q8zzqoZ3BtLC/SQo0WCvBFoJT6JzwU8F7nkN57KBQPLtvX2OBeDnFbtEY8uLtuNEp1Z19VcDbRd3LhyAMYFz6Ox/vWtPfl0hv0kUMQMAne1Bg0tawlNxawP2HXrLOh/FaXdSBSRUHNqMTQEnkIYw4faArDS/zKjVDs0/+e9mhtjL0akLcK04crlk2KD8Q2csya5givdAD7fVNOx7DtckRR47FLM1bERe0t0FlUESx/x7oLjNEmNUrPXV6GSkCoskmKSZC1vwgAf0VrxFADv1EywQXmlNaa4+rzqS4jMYuwi5QCtQXFFZl5qQ1Sh1rnliTRJvJzjXCeq3QPsPzUJInfVGzrPClfHG7whlJE/Uwv8UOF7WHzUt5OBOsW6nZrplldvfYif/qz6dR+RX2G0zi8tC/2Mzahr6toAqtsqbdp3coYvpi/OjHIV3RhyJxG1FtyGYQRnmGPs8R9ic3pupjLFWM9qIilUCjFrUoiw7QAgfUrUc= ubuntu_user@example.com
     sudo: ALL=(ALL) NOPASSWD:ALL
     groups: users, admin
+write_files:
+  - path: /etc/sysctl.d/60-apparmor.conf
+    permissions: 0644
+    owner: root
+    content: |
+      kernel.apparmor_restrict_unprivileged_userns=0
+runcmd:
+  - systemctl restart systemd-sysctl
 EOF
     # meta-data is necessary, even if empty.
     cat >meta-data <<EOF

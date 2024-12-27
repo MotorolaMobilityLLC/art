@@ -105,6 +105,7 @@ class StackedShadowFrameRecord;
 class Thread;
 class ThreadList;
 enum VisitRootFlags : uint8_t;
+enum class LowOverheadTraceType;
 
 // A piece of data that can be held in the CustomTls. The destructor will be called during thread
 // shutdown. The thread the destructor is called on is not necessarily the same thread it was stored
@@ -1427,7 +1428,7 @@ class EXPORT Thread {
     }
   }
 
-  void UpdateTlsLowOverheadTraceEntrypoints(bool enable);
+  void UpdateTlsLowOverheadTraceEntrypoints(LowOverheadTraceType type);
 
   uint64_t GetTraceClockBase() const {
     return tls64_.trace_clock_base;

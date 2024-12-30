@@ -1449,12 +1449,20 @@ TEST_F(AssemblerX86_64AVXTest, MovdquLoad) {
   DriverStr(RepeatFA(&x86_64::X86_64Assembler::movdqu, "vmovdqu {mem}, %{reg}"), "avx_movdqu_l");
 }
 
+TEST_F(AssemblerX86_64Test, Movq1) {
+  DriverStr(RepeatFR(&x86_64::X86_64Assembler::movq, "movq %{reg2}, %{reg1}"), "movq.1");
+}
+
+TEST_F(AssemblerX86_64Test, Movq2) {
+  DriverStr(RepeatRF(&x86_64::X86_64Assembler::movq, "movq %{reg2}, %{reg1}"), "movq.2");
+}
+
 TEST_F(AssemblerX86_64Test, Movd1) {
-  DriverStr(RepeatFR(&x86_64::X86_64Assembler::movd, "movd %{reg2}, %{reg1}"), "movd.1");
+  DriverStr(RepeatFr(&x86_64::X86_64Assembler::movd, "movd %{reg2}, %{reg1}"), "movd.1");
 }
 
 TEST_F(AssemblerX86_64Test, Movd2) {
-  DriverStr(RepeatRF(&x86_64::X86_64Assembler::movd, "movd %{reg2}, %{reg1}"), "movd.2");
+  DriverStr(RepeatrF(&x86_64::X86_64Assembler::movd, "movd %{reg2}, %{reg1}"), "movd.2");
 }
 
 TEST_F(AssemblerX86_64Test, Addss) {

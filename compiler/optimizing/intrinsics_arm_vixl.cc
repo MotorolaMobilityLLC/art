@@ -3204,12 +3204,12 @@ void IntrinsicCodeGeneratorARMVIXL::VisitUnsafePutAbsolute(HInvoke* invoke) {
   VisitJdkUnsafePutAbsolute(invoke);
 }
 
-void IntrinsicLocationsBuilderARMVIXL::VisitUnsafePutOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutOrdered(invoke);
+void IntrinsicLocationsBuilderARMVIXL::VisitUnsafePutOrderedInt(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedInt(invoke);
 }
 
-void IntrinsicCodeGeneratorARMVIXL::VisitUnsafePutOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutOrdered(invoke);
+void IntrinsicCodeGeneratorARMVIXL::VisitUnsafePutOrderedInt(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedInt(invoke);
 }
 
 void IntrinsicLocationsBuilderARMVIXL::VisitUnsafePutVolatile(HInvoke* invoke) {
@@ -3227,12 +3227,12 @@ void IntrinsicCodeGeneratorARMVIXL::VisitUnsafePutObject(HInvoke* invoke) {
   VisitJdkUnsafePutReference(invoke);
 }
 
-void IntrinsicLocationsBuilderARMVIXL::VisitUnsafePutObjectOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutObjectOrdered(invoke);
+void IntrinsicLocationsBuilderARMVIXL::VisitUnsafePutOrderedObject(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedObject(invoke);
 }
 
-void IntrinsicCodeGeneratorARMVIXL::VisitUnsafePutObjectOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutObjectOrdered(invoke);
+void IntrinsicCodeGeneratorARMVIXL::VisitUnsafePutOrderedObject(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedObject(invoke);
 }
 
 void IntrinsicLocationsBuilderARMVIXL::VisitUnsafePutObjectVolatile(HInvoke* invoke) {
@@ -3311,11 +3311,11 @@ void IntrinsicCodeGeneratorARMVIXL::VisitJdkUnsafePutByte(HInvoke* invoke) {
                codegen_);
 }
 
-void IntrinsicLocationsBuilderARMVIXL::VisitJdkUnsafePutOrdered(HInvoke* invoke) {
+void IntrinsicLocationsBuilderARMVIXL::VisitJdkUnsafePutOrderedInt(HInvoke* invoke) {
   CreateUnsafePutLocations(invoke, codegen_, DataType::Type::kInt32, /*atomic=*/ true);
 }
 
-void IntrinsicCodeGeneratorARMVIXL::VisitJdkUnsafePutOrdered(HInvoke* invoke) {
+void IntrinsicCodeGeneratorARMVIXL::VisitJdkUnsafePutOrderedInt(HInvoke* invoke) {
   GenUnsafePut(invoke,
                DataType::Type::kInt32,
                std::memory_order_release,
@@ -3359,11 +3359,11 @@ void IntrinsicCodeGeneratorARMVIXL::VisitJdkUnsafePutReference(HInvoke* invoke) 
                codegen_);
 }
 
-void IntrinsicLocationsBuilderARMVIXL::VisitJdkUnsafePutObjectOrdered(HInvoke* invoke) {
+void IntrinsicLocationsBuilderARMVIXL::VisitJdkUnsafePutOrderedObject(HInvoke* invoke) {
   CreateUnsafePutLocations(invoke, codegen_, DataType::Type::kReference, /*atomic=*/ true);
 }
 
-void IntrinsicCodeGeneratorARMVIXL::VisitJdkUnsafePutObjectOrdered(HInvoke* invoke) {
+void IntrinsicCodeGeneratorARMVIXL::VisitJdkUnsafePutOrderedObject(HInvoke* invoke) {
   GenUnsafePut(invoke,
                DataType::Type::kReference,
                std::memory_order_release,

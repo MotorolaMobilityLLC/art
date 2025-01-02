@@ -3562,7 +3562,7 @@ bool InstructionSimplifierVisitor::TryHandleAssociativeAndCommutativeOperation(
   return true;
 }
 
-static HBinaryOperation* AsAddOrSub(HInstruction* binop) {
+static HBinaryOperation* AsAddOrSubOrNull(HInstruction* binop) {
   return (binop->IsAdd() || binop->IsSub()) ? binop->AsBinaryOperation() : nullptr;
 }
 
@@ -3607,9 +3607,9 @@ bool InstructionSimplifierVisitor::TrySubtractionChainSimplification(
     return false;
   }
 
-  HBinaryOperation* y = (AsAddOrSub(left) != nullptr)
+  HBinaryOperation* y = (AsAddOrSubOrNull(left) != nullptr)
       ? left->AsBinaryOperation()
-      : AsAddOrSub(right);
+      : AsAddOrSubOrNull(right);
   // If y has more than one use, we do not perform the optimization because
   // it might increase code size (e.g. if the new constant is no longer
   // encodable as an immediate operand in the target ISA).

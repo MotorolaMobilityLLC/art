@@ -1167,6 +1167,10 @@ class X86_64Assembler final : public Assembler {
                                            bool normalize_both = false);
   void EmitOptionalByteRegNormalizingRex32(CpuRegister dst, const Operand& operand);
 
+  void EmitVexPrefixForAddress(const Address& addr, bool r, int vex_l, int vex_pp);
+
+  // TODO: Rename these functions. They calculate the byte but they do not "emit" that
+  // byte to the code buffer.
   uint8_t EmitVexPrefixByteZero(bool is_twobyte_form);
   uint8_t EmitVexPrefixByteOne(bool R, bool X, bool B, int SET_VEX_M);
   uint8_t EmitVexPrefixByteOne(bool R,

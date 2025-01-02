@@ -733,31 +733,25 @@ void X86_64Assembler::movsxd(CpuRegister dst, const Address& src) {
 }
 
 
-void X86_64Assembler::movd(XmmRegister dst, CpuRegister src) {
-  movd(dst, src, true);
+void X86_64Assembler::movq(XmmRegister dst, CpuRegister src) {
+  EmitMovCpuFpu(dst, src, /*is64bit=*/ true, /*opcode=*/ 0x6E);
 }
+
+
+void X86_64Assembler::movq(CpuRegister dst, XmmRegister src) {
+  EmitMovCpuFpu(src, dst, /*is64bit=*/ true, /*opcode=*/ 0x7E);
+}
+
+
+void X86_64Assembler::movd(XmmRegister dst, CpuRegister src) {
+  EmitMovCpuFpu(dst, src, /*is64bit=*/ false, /*opcode=*/ 0x6E);
+}
+
 
 void X86_64Assembler::movd(CpuRegister dst, XmmRegister src) {
-  movd(dst, src, true);
+  EmitMovCpuFpu(src, dst, /*is64bit=*/ false, /*opcode=*/ 0x7E);
 }
 
-void X86_64Assembler::movd(XmmRegister dst, CpuRegister src, bool is64bit) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  EmitUint8(0x66);
-  EmitOptionalRex(false, is64bit, dst.NeedsRex(), false, src.NeedsRex());
-  EmitUint8(0x0F);
-  EmitUint8(0x6E);
-  EmitOperand(dst.LowBits(), Operand(src));
-}
-
-void X86_64Assembler::movd(CpuRegister dst, XmmRegister src, bool is64bit) {
-  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  EmitUint8(0x66);
-  EmitOptionalRex(false, is64bit, src.NeedsRex(), false, dst.NeedsRex());
-  EmitUint8(0x0F);
-  EmitUint8(0x7E);
-  EmitOperand(src.LowBits(), Operand(dst));
-}
 
 void X86_64Assembler::addss(XmmRegister dst, XmmRegister src) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
@@ -5518,6 +5512,16 @@ void X86_64Assembler::EmitGenericShift(bool wide,
   }
   EmitUint8(0xD3);
   EmitOperand(reg_or_opcode, Operand(operand));
+}
+
+void X86_64Assembler::EmitMovCpuFpu(
+    XmmRegister fp_reg, CpuRegister cpu_reg, bool is64bit, uint8_t opcode) {
+  AssemblerBuffer::EnsureCapacity ensured(&buffer_);
+  EmitUint8(0x66);
+  EmitOptionalRex(false, is64bit, fp_reg.NeedsRex(), false, cpu_reg.NeedsRex());
+  EmitUint8(0x0F);
+  EmitUint8(opcode);
+  EmitOperand(fp_reg.LowBits(), Operand(cpu_reg));
 }
 
 void X86_64Assembler::EmitOptionalRex(bool force, bool w, bool r, bool x, bool b) {

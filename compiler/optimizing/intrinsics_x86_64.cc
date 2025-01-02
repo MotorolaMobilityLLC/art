@@ -194,16 +194,34 @@ static void CreateIntToFPLocations(ArenaAllocator* allocator, HInvoke* invoke) {
   locations->SetOut(Location::RequiresFpuRegister());
 }
 
+static void MoveFPToInt(
+    CpuRegister dst, XmmRegister src, bool is64bit, X86_64Assembler* assembler) {
+  if (is64bit) {
+    __ movq(dst, src);
+  } else {
+    __ movd(dst, src);
+  }
+}
+
+static void MoveIntToFP(
+    XmmRegister dst, CpuRegister src, bool is64bit, X86_64Assembler* assembler) {
+  if (is64bit) {
+    __ movq(dst, src);
+  } else {
+    __ movd(dst, src);
+  }
+}
+
 static void MoveFPToInt(LocationSummary* locations, bool is64bit, X86_64Assembler* assembler) {
-  Location input = locations->InAt(0);
-  Location output = locations->Out();
-  __ movd(output.AsRegister<CpuRegister>(), input.AsFpuRegister<XmmRegister>(), is64bit);
+  XmmRegister input = locations->InAt(0).AsFpuRegister<XmmRegister>();
+  CpuRegister output = locations->Out().AsRegister<CpuRegister>();
+  MoveFPToInt(output, input, is64bit, assembler);
 }
 
 static void MoveIntToFP(LocationSummary* locations, bool is64bit, X86_64Assembler* assembler) {
-  Location input = locations->InAt(0);
-  Location output = locations->Out();
-  __ movd(output.AsFpuRegister<XmmRegister>(), input.AsRegister<CpuRegister>(), is64bit);
+  CpuRegister input = locations->InAt(0).AsRegister<CpuRegister>();
+  XmmRegister output = locations->Out().AsFpuRegister<XmmRegister>();
+  MoveIntToFP(output, input, is64bit, assembler);
 }
 
 void IntrinsicLocationsBuilderX86_64::VisitDoubleDoubleToRawLongBits(HInvoke* invoke) {
@@ -2505,7 +2523,7 @@ static void GenCompareAndSetOrExchangeFP(CodeGeneratorX86_64* codegen,
     if (byte_swap) {
       instr_codegen->Bswap(rax_loc, type);
     }
-    __ movd(out.AsFpuRegister<XmmRegister>(), CpuRegister(RAX), is64bit);
+    MoveIntToFP(out.AsFpuRegister<XmmRegister>(), CpuRegister(RAX), is64bit, assembler);
   } else {
     GenZFlagToResult(assembler, out.AsRegister<CpuRegister>());
   }
@@ -4738,7 +4756,8 @@ static void GenerateVarHandleGetAndSet(HInvoke* invoke,
       codegen->GetInstructionCodegen()->Bswap(temp, bswap_type);
     }
     if (!is_void) {
-      __ movd(out.AsFpuRegister<XmmRegister>(), temp.AsRegister<CpuRegister>(), is64bit);
+      MoveIntToFP(
+          out.AsFpuRegister<XmmRegister>(), temp.AsRegister<CpuRegister>(), is64bit, assembler);
     }
   } else if (type == DataType::Type::kReference) {
     // `getAndSet` for references: load reference and atomically exchange it with the field.
@@ -5088,11 +5107,11 @@ static void GenerateVarHandleGetAndAdd(HInvoke* invoke,
     } else {
       __ movss(fptemp, field_addr);
     }
-    __ movd(CpuRegister(RAX), fptemp, is64bit);
+    MoveFPToInt(CpuRegister(RAX), fptemp, is64bit, assembler);
     // If necessary, byte swap RAX and update the value in FP register to also be byte-swapped.
     if (byte_swap) {
       codegen->GetInstructionCodegen()->Bswap(rax_loc, bswap_type);
-      __ movd(fptemp, CpuRegister(RAX), is64bit);
+      MoveIntToFP(fptemp, CpuRegister(RAX), is64bit, assembler);
     }
     // Perform the FP addition and move it to a temporary register to prepare for CMPXCHG.
     if (is64bit) {
@@ -5100,7 +5119,7 @@ static void GenerateVarHandleGetAndAdd(HInvoke* invoke,
     } else {
       __ addss(fptemp, value.AsFpuRegister<XmmRegister>());
     }
-    __ movd(temp, fptemp, is64bit);
+    MoveFPToInt(temp, fptemp, is64bit, assembler);
     // If necessary, byte swap RAX before CMPXCHG and the temporary before copying to FP register.
     if (byte_swap) {
       codegen->GetInstructionCodegen()->Bswap(temp_loc, bswap_type);
@@ -5119,7 +5138,7 @@ static void GenerateVarHandleGetAndAdd(HInvoke* invoke,
       codegen->GetInstructionCodegen()->Bswap(rax_loc, bswap_type);
     }
     if (!is_void) {
-      __ movd(out.AsFpuRegister<XmmRegister>(), CpuRegister(RAX), is64bit);
+      MoveIntToFP(out.AsFpuRegister<XmmRegister>(), CpuRegister(RAX), is64bit, assembler);
     }
   } else {
     if (byte_swap) {

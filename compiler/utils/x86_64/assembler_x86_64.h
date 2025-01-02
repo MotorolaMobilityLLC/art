@@ -498,10 +498,10 @@ class X86_64Assembler final : public Assembler {
   void movsxd(CpuRegister dst, CpuRegister src);
   void movsxd(CpuRegister dst, const Address& src);
 
-  void movd(XmmRegister dst, CpuRegister src);  // Note: this is the r64 version, formally movq.
-  void movd(CpuRegister dst, XmmRegister src);  // Note: this is the r64 version, formally movq.
-  void movd(XmmRegister dst, CpuRegister src, bool is64bit);
-  void movd(CpuRegister dst, XmmRegister src, bool is64bit);
+  void movq(XmmRegister dst, CpuRegister src);
+  void movq(CpuRegister dst, XmmRegister src);
+  void movd(XmmRegister dst, CpuRegister src);
+  void movd(CpuRegister dst, XmmRegister src);
 
   void addss(XmmRegister dst, XmmRegister src);
   void addss(XmmRegister dst, const Address& src);
@@ -1131,6 +1131,8 @@ class X86_64Assembler final : public Assembler {
 
   void EmitGenericShift(bool wide, int rm, CpuRegister reg, const Immediate& imm);
   void EmitGenericShift(bool wide, int rm, CpuRegister operand, CpuRegister shifter);
+
+  void EmitMovCpuFpu(XmmRegister fp_reg, CpuRegister cpu_reg, bool is64bit, uint8_t opcode);
 
   // If any input is not false, output the necessary rex prefix.
   void EmitOptionalRex(bool force, bool w, bool r, bool x, bool b);

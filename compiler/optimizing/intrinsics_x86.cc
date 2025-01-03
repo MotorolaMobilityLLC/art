@@ -2011,8 +2011,8 @@ void IntrinsicLocationsBuilderX86::VisitUnsafePut(HInvoke* invoke) {
 void IntrinsicLocationsBuilderX86::VisitUnsafePutAbsolute(HInvoke* invoke) {
   VisitJdkUnsafePutAbsolute(invoke);
 }
-void IntrinsicLocationsBuilderX86::VisitUnsafePutOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutOrdered(invoke);
+void IntrinsicLocationsBuilderX86::VisitUnsafePutOrderedInt(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedInt(invoke);
 }
 void IntrinsicLocationsBuilderX86::VisitUnsafePutVolatile(HInvoke* invoke) {
   VisitJdkUnsafePutVolatile(invoke);
@@ -2020,8 +2020,8 @@ void IntrinsicLocationsBuilderX86::VisitUnsafePutVolatile(HInvoke* invoke) {
 void IntrinsicLocationsBuilderX86::VisitUnsafePutObject(HInvoke* invoke) {
   VisitJdkUnsafePutReference(invoke);
 }
-void IntrinsicLocationsBuilderX86::VisitUnsafePutObjectOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutObjectOrdered(invoke);
+void IntrinsicLocationsBuilderX86::VisitUnsafePutOrderedObject(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedObject(invoke);
 }
 void IntrinsicLocationsBuilderX86::VisitUnsafePutObjectVolatile(HInvoke* invoke) {
   VisitJdkUnsafePutReferenceVolatile(invoke);
@@ -2047,7 +2047,7 @@ void IntrinsicLocationsBuilderX86::VisitJdkUnsafePutAbsolute(HInvoke* invoke) {
   CreateIntIntIntToVoidPlusTempsLocations(
       allocator_, DataType::Type::kInt64, invoke, /*is_volatile=*/ false);
 }
-void IntrinsicLocationsBuilderX86::VisitJdkUnsafePutOrdered(HInvoke* invoke) {
+void IntrinsicLocationsBuilderX86::VisitJdkUnsafePutOrderedInt(HInvoke* invoke) {
   CreateIntIntIntIntToVoidPlusTempsLocations(
       allocator_, DataType::Type::kInt32, invoke, /*is_volatile=*/ false);
 }
@@ -2063,7 +2063,7 @@ void IntrinsicLocationsBuilderX86::VisitJdkUnsafePutReference(HInvoke* invoke) {
   CreateIntIntIntIntToVoidPlusTempsLocations(
       allocator_, DataType::Type::kReference, invoke, /*is_volatile=*/ false);
 }
-void IntrinsicLocationsBuilderX86::VisitJdkUnsafePutObjectOrdered(HInvoke* invoke) {
+void IntrinsicLocationsBuilderX86::VisitJdkUnsafePutOrderedObject(HInvoke* invoke) {
   CreateIntIntIntIntToVoidPlusTempsLocations(
       allocator_, DataType::Type::kReference, invoke, /*is_volatile=*/ false);
 }
@@ -2200,8 +2200,8 @@ void IntrinsicCodeGeneratorX86::VisitUnsafePut(HInvoke* invoke) {
 void IntrinsicCodeGeneratorX86::VisitUnsafePutAbsolute(HInvoke* invoke) {
   VisitJdkUnsafePutAbsolute(invoke);
 }
-void IntrinsicCodeGeneratorX86::VisitUnsafePutOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutOrdered(invoke);
+void IntrinsicCodeGeneratorX86::VisitUnsafePutOrderedInt(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedInt(invoke);
 }
 void IntrinsicCodeGeneratorX86::VisitUnsafePutVolatile(HInvoke* invoke) {
   VisitJdkUnsafePutVolatile(invoke);
@@ -2209,8 +2209,8 @@ void IntrinsicCodeGeneratorX86::VisitUnsafePutVolatile(HInvoke* invoke) {
 void IntrinsicCodeGeneratorX86::VisitUnsafePutObject(HInvoke* invoke) {
   VisitJdkUnsafePutReference(invoke);
 }
-void IntrinsicCodeGeneratorX86::VisitUnsafePutObjectOrdered(HInvoke* invoke) {
-  VisitJdkUnsafePutObjectOrdered(invoke);
+void IntrinsicCodeGeneratorX86::VisitUnsafePutOrderedObject(HInvoke* invoke) {
+  VisitJdkUnsafePutOrderedObject(invoke);
 }
 void IntrinsicCodeGeneratorX86::VisitUnsafePutObjectVolatile(HInvoke* invoke) {
   VisitJdkUnsafePutReferenceVolatile(invoke);
@@ -2235,7 +2235,7 @@ void IntrinsicCodeGeneratorX86::VisitJdkUnsafePutAbsolute(HInvoke* invoke) {
   GenUnsafePutAbsolute(
       invoke->GetLocations(), DataType::Type::kInt32, /*is_volatile=*/false, codegen_);
 }
-void IntrinsicCodeGeneratorX86::VisitJdkUnsafePutOrdered(HInvoke* invoke) {
+void IntrinsicCodeGeneratorX86::VisitJdkUnsafePutOrderedInt(HInvoke* invoke) {
   GenUnsafePut(invoke->GetLocations(), DataType::Type::kInt32, /*is_volatile=*/ false, codegen_);
 }
 void IntrinsicCodeGeneratorX86::VisitJdkUnsafePutVolatile(HInvoke* invoke) {
@@ -2248,7 +2248,7 @@ void IntrinsicCodeGeneratorX86::VisitJdkUnsafePutReference(HInvoke* invoke) {
   GenUnsafePut(
       invoke->GetLocations(), DataType::Type::kReference, /*is_volatile=*/ false, codegen_);
 }
-void IntrinsicCodeGeneratorX86::VisitJdkUnsafePutObjectOrdered(HInvoke* invoke) {
+void IntrinsicCodeGeneratorX86::VisitJdkUnsafePutOrderedObject(HInvoke* invoke) {
   GenUnsafePut(
       invoke->GetLocations(), DataType::Type::kReference, /*is_volatile=*/ false, codegen_);
 }

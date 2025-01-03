@@ -1983,7 +1983,7 @@ void CodeGeneratorX86_64::Move(Location destination, Location source) {
     if (source.IsRegister()) {
       __ movq(dest, source.AsRegister<CpuRegister>());
     } else if (source.IsFpuRegister()) {
-      __ movd(dest, source.AsFpuRegister<XmmRegister>());
+      __ movq(dest, source.AsFpuRegister<XmmRegister>());
     } else if (source.IsStackSlot()) {
       __ movl(dest, Address(CpuRegister(RSP), source.GetStackIndex()));
     } else if (source.IsConstant()) {
@@ -2002,7 +2002,7 @@ void CodeGeneratorX86_64::Move(Location destination, Location source) {
   } else if (destination.IsFpuRegister()) {
     XmmRegister dest = destination.AsFpuRegister<XmmRegister>();
     if (source.IsRegister()) {
-      __ movd(dest, source.AsRegister<CpuRegister>());
+      __ movq(dest, source.AsRegister<CpuRegister>());
     } else if (source.IsFpuRegister()) {
       __ movaps(dest, source.AsFpuRegister<XmmRegister>());
     } else if (source.IsConstant()) {
@@ -2948,7 +2948,7 @@ void InstructionCodeGeneratorX86_64::VisitReturn(HReturn* ret) {
       // To simplify callers of an OSR method, we put the return value in both
       // floating point and core register.
       if (GetGraph()->IsCompilingOsr()) {
-        __ movd(CpuRegister(RAX), XmmRegister(XMM0), /* is64bit= */ false);
+        __ movd(CpuRegister(RAX), XmmRegister(XMM0));
       }
       break;
     }
@@ -2958,7 +2958,7 @@ void InstructionCodeGeneratorX86_64::VisitReturn(HReturn* ret) {
       // To simplify callers of an OSR method, we put the return value in both
       // floating point and core register.
       if (GetGraph()->IsCompilingOsr()) {
-        __ movd(CpuRegister(RAX), XmmRegister(XMM0), /* is64bit= */ true);
+        __ movq(CpuRegister(RAX), XmmRegister(XMM0));
       }
       break;
     }
@@ -5460,16 +5460,16 @@ void InstructionCodeGeneratorX86_64::Bswap(Location value,
       break;
     case DataType::Type::kFloat32: {
       DCHECK_NE(temp, nullptr);
-      __ movd(*temp, value.AsFpuRegister<XmmRegister>(), /*is64bit=*/ false);
+      __ movd(*temp, value.AsFpuRegister<XmmRegister>());
       __ bswapl(*temp);
-      __ movd(value.AsFpuRegister<XmmRegister>(), *temp, /*is64bit=*/ false);
+      __ movd(value.AsFpuRegister<XmmRegister>(), *temp);
       break;
     }
     case DataType::Type::kFloat64: {
       DCHECK_NE(temp, nullptr);
-      __ movd(*temp, value.AsFpuRegister<XmmRegister>(), /*is64bit=*/ true);
+      __ movq(*temp, value.AsFpuRegister<XmmRegister>());
       __ bswapq(*temp);
-      __ movd(value.AsFpuRegister<XmmRegister>(), *temp, /*is64bit=*/ true);
+      __ movq(value.AsFpuRegister<XmmRegister>(), *temp);
       break;
     }
     default:
@@ -6561,7 +6561,7 @@ void ParallelMoveResolverX86_64::Exchange32(XmmRegister reg, int mem) {
 void ParallelMoveResolverX86_64::Exchange64(XmmRegister reg, int mem) {
   __ movq(CpuRegister(TMP), Address(CpuRegister(RSP), mem));
   __ movsd(Address(CpuRegister(RSP), mem), reg);
-  __ movd(reg, CpuRegister(TMP));
+  __ movq(reg, CpuRegister(TMP));
 }
 
 void ParallelMoveResolverX86_64::Exchange128(XmmRegister reg, int mem) {
@@ -6626,9 +6626,9 @@ void ParallelMoveResolverX86_64::EmitSwap(size_t index) {
   } else if (source.IsDoubleStackSlot() && destination.IsDoubleStackSlot()) {
     ExchangeMemory64(destination.GetStackIndex(), source.GetStackIndex(), 1);
   } else if (source.IsFpuRegister() && destination.IsFpuRegister()) {
-    __ movd(CpuRegister(TMP), source.AsFpuRegister<XmmRegister>());
+    __ movq(CpuRegister(TMP), source.AsFpuRegister<XmmRegister>());
     __ movaps(source.AsFpuRegister<XmmRegister>(), destination.AsFpuRegister<XmmRegister>());
-    __ movd(destination.AsFpuRegister<XmmRegister>(), CpuRegister(TMP));
+    __ movq(destination.AsFpuRegister<XmmRegister>(), CpuRegister(TMP));
   } else if (source.IsFpuRegister() && destination.IsStackSlot()) {
     Exchange32(source.AsFpuRegister<XmmRegister>(), destination.GetStackIndex());
   } else if (source.IsStackSlot() && destination.IsFpuRegister()) {

@@ -1165,8 +1165,7 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
   }
 
   // Returns the method index of an invoke instruction.
-  static uint16_t GetMethodIdxOfInvoke(const Instruction* inst)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
+  static uint16_t GetMethodIdxOfInvoke(const Instruction* inst) {
     // Note: This is compiled to a single load in release mode.
     Instruction::Code opcode = inst->Opcode();
     if (opcode == Instruction::INVOKE_VIRTUAL ||
@@ -1191,11 +1190,13 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
     }
   }
   // Returns the field index of a field access instruction.
-  uint16_t GetFieldIdxOfFieldAccess(const Instruction* inst, bool is_static)
-      REQUIRES_SHARED(Locks::mutator_lock_) {
-    if (is_static) {
+  NO_INLINE static uint16_t GetFieldIdxOfFieldAccess(const Instruction* inst) {
+    // Note: This is compiled to a single load in release mode.
+    Instruction::Code opcode = inst->Opcode();
+    if (IsInstructionSGet(opcode) || IsInstructionSPut(opcode)) {
       return inst->VRegB_21c();
     } else {
+      DCHECK(IsInstructionIGet(opcode) || IsInstructionIPut(opcode));
       return inst->VRegC_22c();
     }
   }
@@ -5045,7 +5046,7 @@ template <FieldAccessType kAccType>
 void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst,
                                                          bool is_primitive,
                                                          bool is_static) {
-  uint32_t field_idx = GetFieldIdxOfFieldAccess(inst, is_static);
+  uint32_t field_idx = GetFieldIdxOfFieldAccess(inst);
   DCHECK(!flags_.have_pending_hard_failure_);
   ArtField* field;
   if (is_static) {

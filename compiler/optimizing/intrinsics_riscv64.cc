@@ -3774,7 +3774,7 @@ static void GenerateVarHandleTarget(HInvoke* invoke,
   if (expected_coordinates_count <= 1u) {
     if (VarHandleOptimizations(invoke).GetUseKnownImageVarHandle()) {
       ScopedObjectAccess soa(Thread::Current());
-      ArtField* target_field = GetBootImageVarHandleField(invoke);
+      ArtField* target_field = GetImageVarHandleField(invoke);
       if (expected_coordinates_count == 0u) {
         ObjPtr<mirror::Class> declaring_class = target_field->GetDeclaringClass();
         if (Runtime::Current()->GetHeap()->ObjectIsInBootImageSpace(declaring_class)) {

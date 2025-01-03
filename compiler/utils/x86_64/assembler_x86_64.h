@@ -1185,6 +1185,13 @@ class X86_64Assembler final : public Assembler {
                                int SET_VEX_L,
                                int SET_VEX_PP);
 
+  void EmitVecArithAndLogicalOperation(XmmRegister dst,
+                                       XmmRegister src1,
+                                       XmmRegister src2,
+                                       uint8_t opcode,
+                                       int vex_pp,
+                                       bool is_commutative = false);
+
   // Helper function to emit a shorter variant of XCHG if at least one operand is RAX/EAX/AX.
   bool try_xchg_rax(CpuRegister dst,
                     CpuRegister src,

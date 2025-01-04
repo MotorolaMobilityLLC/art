@@ -128,6 +128,12 @@ class ObjectHandler implements AhatHandler {
         new Column("Value"),
         new Column("Δ", Column.Align.LEFT, diff));
 
+    if (array.hasByteArray()) {
+      doc.println(
+        DocString.link(DocString.uri("array?id=" + array.getId()),
+        DocString.text("📂 Download bytes")));
+    }
+
     List<Value> elements = array.getValues();
     SubsetSelector<Value> selector = new SubsetSelector(query, ARRAY_ELEMENTS_ID, elements);
     int i = 0;

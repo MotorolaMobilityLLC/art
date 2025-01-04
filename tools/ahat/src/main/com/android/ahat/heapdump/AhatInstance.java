@@ -675,8 +675,15 @@ public abstract class AhatInstance implements Diffable<AhatInstance> {
    * Read the byte[] value from an hprof Instance.
    * Returns null if the instance is not a byte array.
    */
-  byte[] asByteArray() {
+  public byte[] asByteArray() {
     return null;
+  }
+
+  /**
+   * Whether this array instance has an underlying byte array.
+   */
+  public boolean hasByteArray() {
+    return asByteArray() != null;
   }
 
   void setBaseline(AhatInstance baseline) {

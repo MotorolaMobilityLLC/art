@@ -1292,7 +1292,7 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
     }
   }
   // Returns the field index of a field access instruction.
-  NO_INLINE static uint16_t GetFieldIdxOfFieldAccess(const Instruction* inst) {
+  ALWAYS_INLINE static uint16_t GetFieldIdxOfFieldAccess(const Instruction* inst) {
     // Note: This is compiled to a single load in release mode.
     Instruction::Code opcode = inst->Opcode();
     if (IsInstructionSGet(opcode) || IsInstructionSPut(opcode)) {

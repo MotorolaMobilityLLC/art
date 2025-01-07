@@ -1619,29 +1619,79 @@ template <bool kVerifierDebug>
 bool MethodVerifier<kVerifierDebug>::ComputeWidthsAndCountOps() {
   // We can't assume the instruction is well formed, handle the case where calculating the size
   // goes past the end of the code item.
-  SafeDexInstructionIterator it(code_item_accessor_.begin(), code_item_accessor_.end());
-  if (it == code_item_accessor_.end()) {
+  const uint32_t insns_size = code_item_accessor_.InsnsSizeInCodeUnits();
+  if (insns_size == 0u) {
     Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "code item has no opcode";
     return false;
   }
-  for ( ; !it.IsErrorState() && it < code_item_accessor_.end(); ++it) {
-    // In case the instruction goes past the end of the code item, make sure to not process it.
-    SafeDexInstructionIterator next = it;
-    ++next;
-    if (next.IsErrorState()) {
-      break;
+  const Instruction* inst = &code_item_accessor_.InstructionAt(0u);
+  uint32_t dex_pc = 0u;
+  while (dex_pc != insns_size) {
+    const uint32_t remaining_code_units = insns_size - dex_pc;
+    const uint16_t inst_data = inst->Fetch16(0);
+    const Instruction::Code opcode = inst->Opcode(inst_data);
+    uint32_t instruction_size = 0u;
+    bool ok;
+    if (opcode == Instruction::NOP) {
+      auto check_switch = [&](uint32_t base_size, uint32_t entry_size) ALWAYS_INLINE {
+        if (UNLIKELY(base_size > remaining_code_units)) {
+          return false;
+        }
+        // This 32-bit calculation cannot overflow because `num_entries` starts as 16-bit.
+        uint32_t num_entries = inst->Fetch16(1);
+        instruction_size = base_size + num_entries * entry_size;
+        if (UNLIKELY(instruction_size > remaining_code_units)) {
+          return false;
+        }
+        return true;
+      };
+      switch (inst_data) {
+        case Instruction::kPackedSwitchSignature:
+          ok = check_switch(4u, 2u);
+          break;
+        case Instruction::kSparseSwitchSignature:
+          ok = check_switch(2u, 4u);
+          break;
+        case Instruction::kArrayDataSignature:
+          if (UNLIKELY(remaining_code_units < 4u)) {
+            ok = false;
+          } else {
+            uint16_t element_size = inst->Fetch16(1);
+            uint32_t length = inst->Fetch16(2) | (((uint32_t)inst->Fetch16(3)) << 16);
+            // Use 64-bit calculation to avoid arithmetic overflow.
+            uint64_t bytes = static_cast<uint64_t>(element_size) * static_cast<uint64_t>(length);
+            uint64_t code_units = UINT64_C(4) + (bytes + /* round up */ UINT64_C(1)) / UINT64_C(2);
+            if (UNLIKELY(code_units > remaining_code_units)) {
+              ok = false;
+            } else {
+              instruction_size = dchecked_integral_cast<uint32_t>(code_units);
+              ok = true;
+            }
+          }
+          break;
+        default:
+          instruction_size = 1u;
+          ok = true;
+          break;
+      }
+    } else {
+      instruction_size = Instruction::SizeInCodeUnits(Instruction::FormatOf(opcode));
+      DCHECK_EQ(instruction_size, inst->SizeInCodeUnits());
+      ok = LIKELY(instruction_size <= remaining_code_units);
     }
-    GetModifiableInstructionFlags(it.DexPc()).SetIsOpcode();
-  }
-
-  if (it != code_item_accessor_.end()) {
-    const size_t insns_size = code_item_accessor_.InsnsSizeInCodeUnits();
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "code did not end where expected ("
-                                      << it.DexPc() << " vs. " << insns_size << ")";
-    return false;
+    if (!ok) {
+      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "code did not end where expected ("
+                                        << dex_pc << " vs. " << insns_size << ")";
+      return false;
+    }
+    GetModifiableInstructionFlags(dex_pc).SetIsOpcode();
+    DCHECK_NE(instruction_size, 0u);
+    DCHECK_EQ(instruction_size, inst->SizeInCodeUnits());
+    DCHECK_LE(instruction_size, remaining_code_units);
+    dex_pc += instruction_size;
+    inst = inst->RelativeAt(instruction_size);
   }
   DCHECK(GetInstructionFlags(0).IsOpcode());
-
   return true;
 }
 

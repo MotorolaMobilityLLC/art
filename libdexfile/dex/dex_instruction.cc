@@ -74,7 +74,12 @@ size_t Instruction::SizeInCodeUnitsComplexOpcode() const {
       uint16_t element_size = insns[1];
       uint32_t length = insns[2] | (((uint32_t)insns[3]) << 16);
       // The plus 1 is to round up for odd size and width.
-      return (4 + (element_size * length + 1) / 2);
+      uint32_t result = (4 + (element_size * length + 1) / 2);
+      // This function is used only after the `MethodVerifier` checked that the 32-bit calculation
+      // does not overflow. Let's `DCHECK()` the result against a 64-bit calculation.
+      DCHECK_EQ(result,
+                4 + (static_cast<uint64_t>(element_size) * static_cast<uint64_t>(length) + 1) / 2);
+      return result;
     }
     default:
       if ((*insns & 0xFF) == 0) {

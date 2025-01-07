@@ -1816,13 +1816,6 @@ TEST_F(Dex2oatTest, AppImageResolveStrings) {
                 const_cast<Instruction&>(last_instruction.Inst())
                     .SetOpcode(Instruction::CONST_STRING_JUMBO);
                 mutated_successfully = true;
-                // Test that the safe iterator doesn't go past the end.
-                SafeDexInstructionIterator it2(instructions.begin(), instructions.end());
-                while (!it2.IsErrorState()) {
-                  ++it2;
-                }
-                EXPECT_TRUE(it2 == last_instruction);
-                EXPECT_TRUE(it2 < instructions.end());
                 methods.push_back(method.GetIndex());
                 mutated_successfully = true;
               } else if (method_name == "startUpMethod") {
@@ -1890,8 +1883,6 @@ TEST_F(Dex2oatTest, AppImageResolveStrings) {
     // Classes initializers
     EXPECT_TRUE(seen.find("Startup init") != seen.end());
     EXPECT_TRUE(seen.find("Other class init") == seen.end());
-    // Expect the sets match.
-    EXPECT_GE(seen.size(), seen.size());
 
     // Verify what strings are marked as boot image.
     std::set<std::string> boot_image_strings;

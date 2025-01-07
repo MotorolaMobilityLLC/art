@@ -209,12 +209,10 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
     delete last_fail_message;
   }
 
-  // Adds the given string to the end of the last failure message.
-  void AppendToLastFailMessage(const std::string& append) {
-    size_t failure_num = failure_messages_.size();
-    DCHECK_NE(failure_num, 0U);
-    std::ostringstream* last_fail_message = failure_messages_[failure_num - 1];
-    (*last_fail_message) << append;
+  // Return the last failure message stream for appending.
+  std::ostream& LastFailureMessageStream() {
+    DCHECK(!failure_messages_.empty());
+    return *failure_messages_.back();
   }
 
   /*
@@ -286,8 +284,9 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
    *   instruction
    */
   template <Instruction::Code kDispatchOpcode>
-  ALWAYS_INLINE bool VerifyInstruction(const Instruction* inst,
-                                       uint32_t code_offset,
+  ALWAYS_INLINE bool VerifyInstruction(uint32_t dex_pc,
+                                       uint32_t end_dex_pc,
+                                       const Instruction* inst,
                                        uint16_t inst_data);
 
   /* Ensure that the register index is valid for this code item. */
@@ -479,19 +478,41 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
   // creating an array of arrays that causes the number of dimensions to exceed 255.
   bool CheckNewArray(dex::TypeIndex idx);
 
-  // Verify an array data table. "cur_offset" is the offset of the fill-array-data instruction.
-  bool CheckArrayData(uint32_t cur_offset);
+  // Determine if the relative `offset` targets a valid dex pc.
+  // The `offset` should be inside the range `[-dex_pc, end_dex_pc - dex_pc)`.
+  ALWAYS_INLINE
+  static bool IsOffsetInRange(uint32_t dex_pc, uint32_t end_dex_pc, int32_t offset) {
+    DCHECK_LT(dex_pc, end_dex_pc);
+    if (offset >= 0) {
+      return static_cast<uint32_t>(offset) < end_dex_pc - dex_pc;
+    } else {
+      // Use well-defined unsigned arithmetic for the lower bound check.
+      return dex_pc >= -static_cast<uint32_t>(offset);
+    }
+  }
+
+  // Verify an array data table.
+  bool CheckArrayData(uint32_t dex_pc, uint32_t end_dex_pc, const Instruction* inst);
 
   // Verify that the target of a branch instruction is valid. We don't expect code to jump directly
   // into an exception handler, but it's valid to do so as long as the target isn't a
   // "move-exception" instruction. We verify that in a later stage.
-  // The dex format forbids certain instructions from branching to themselves.
+  // The dex format forbids instructions other than `goto/32` from branching to themselves.
   // Updates "insn_flags_", setting the "branch target" flag.
-  bool CheckBranchTarget(uint32_t cur_offset);
+  template <Instruction::Format kFormat>
+  ALWAYS_INLINE
+  bool CheckAndMarkBranchTarget(uint32_t dex_pc,
+                                uint32_t end_dex_pc,
+                                const Instruction* inst,
+                                uint16_t inst_data);
 
-  // Verify a switch table. "cur_offset" is the offset of the switch instruction.
+  // Verify a switch table.
   // Updates "insn_flags_", setting the "branch target" flag.
-  bool CheckSwitchTargets(uint32_t cur_offset);
+  ALWAYS_INLINE
+  bool CheckAndMarkSwitchTargets(uint32_t dex_pc,
+                                 uint32_t end_dex_pc,
+                                 const Instruction* inst,
+                                 uint16_t inst_data);
 
   // Check the register indices used in a "vararg" instruction, such as invoke-virtual or
   // filled-new-array.
@@ -714,43 +735,6 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
   bool CheckCallSite(uint32_t call_site_idx);
 
   /*
-   * Verify that the target instruction is not "move-exception". It's important that the only way
-   * to execute a move-exception is as the first instruction of an exception handler.
-   * Returns "true" if all is well, "false" if the target instruction is move-exception.
-   */
-  bool CheckNotMoveException(const uint16_t* insns, int insn_idx) {
-    if ((insns[insn_idx] & 0xff) == Instruction::MOVE_EXCEPTION) {
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid use of move-exception";
-      return false;
-    }
-    return true;
-  }
-
-  /*
-   * Verify that the target instruction is not "move-result". It is important that we cannot
-   * branch to move-result instructions, but we have to make this a distinct check instead of
-   * adding it to CheckNotMoveException, because it is legal to continue into "move-result"
-   * instructions - as long as the previous instruction was an invoke, which is checked elsewhere.
-   */
-  bool CheckNotMoveResult(const uint16_t* insns, int insn_idx) {
-    if (((insns[insn_idx] & 0xff) >= Instruction::MOVE_RESULT) &&
-        ((insns[insn_idx] & 0xff) <= Instruction::MOVE_RESULT_OBJECT)) {
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid use of move-result*";
-      return false;
-    }
-    return true;
-  }
-
-  /*
-   * Verify that the target instruction is not "move-result" or "move-exception". This is to
-   * be used when checking branch and switch instructions, but not instructions that can
-   * continue.
-   */
-  bool CheckNotMoveExceptionOrMoveResult(const uint16_t* insns, int insn_idx) {
-    return (CheckNotMoveException(insns, insn_idx) && CheckNotMoveResult(insns, insn_idx));
-  }
-
-  /*
   * Control can transfer to "next_insn". Merge the registers from merge_line into the table at
   * next_insn, and set the changed flag on the target address if any of the registers were changed.
   * In the case of fall-through, update the merge line on a change as its the working line for the
@@ -804,6 +788,19 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
     }
   }
 
+  ALWAYS_INLINE static bool IsMoveResult(Instruction::Code opcode) {
+    static_assert(Instruction::MOVE_RESULT + 1 == Instruction::MOVE_RESULT_WIDE);
+    static_assert(Instruction::MOVE_RESULT_WIDE + 1 == Instruction::MOVE_RESULT_OBJECT);
+    return Instruction::MOVE_RESULT <= opcode && opcode <= Instruction::MOVE_RESULT_OBJECT;
+  }
+
+  ALWAYS_INLINE static bool IsMoveResultOrMoveException(Instruction::Code opcode) {
+    static_assert(Instruction::MOVE_RESULT + 1 == Instruction::MOVE_RESULT_WIDE);
+    static_assert(Instruction::MOVE_RESULT_WIDE + 1 == Instruction::MOVE_RESULT_OBJECT);
+    static_assert(Instruction::MOVE_RESULT_OBJECT + 1 == Instruction::MOVE_EXCEPTION);
+    return Instruction::MOVE_RESULT <= opcode && opcode <= Instruction::MOVE_EXCEPTION;
+  }
+
   NO_INLINE void FailInvalidArgCount(const Instruction* inst, uint32_t arg_count) {
     Fail(VERIFY_ERROR_BAD_CLASS_HARD)
         << "invalid arg count (" << arg_count << ") in " << inst->Name();
@@ -821,6 +818,111 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
   NO_INLINE void FailBadMethodIndex(uint32_t method_idx) {
     Fail(VERIFY_ERROR_BAD_CLASS_HARD)
         << "bad method index " << method_idx << " (max " << dex_file_->NumMethodIds() << ")";
+  }
+
+  NO_INLINE void FailBranchOffsetZero(uint32_t dex_pc) {
+    work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "branch offset of zero not allowed.";
+  }
+
+  NO_INLINE void FailTargetOffsetOutOfRange(uint32_t dex_pc, uint32_t end_dex_pc, int32_t offset) {
+    work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "invalid target offset " << offset
+        << " (end " << reinterpret_cast<void*>(end_dex_pc) << ")";
+  }
+
+  NO_INLINE void FailTargetMidInstruction(uint32_t dex_pc, uint32_t target_dex_pc) {
+    work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "target dex pc " << reinterpret_cast<void*>(target_dex_pc)
+        << " is not at instruction start.";
+  }
+
+  NO_INLINE void FailBranchTargetIsMoveResultOrMoveException(uint32_t dex_pc,
+                                                             uint32_t target_dex_pc,
+                                                             Instruction::Code target_opcode) {
+    DCHECK(IsMoveResultOrMoveException(target_opcode));
+    work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "invalid use of " << target_opcode << " as branch target at "
+        << reinterpret_cast<void*>(target_dex_pc);
+  }
+
+  NO_INLINE void FailUnalignedTableDexPc(uint32_t dex_pc, uint32_t table_dex_pc) {
+    work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unaligned table at " << table_dex_pc;
+  }
+
+  NO_INLINE void FailBadArrayDataSignature(uint32_t dex_pc, uint32_t array_data_dex_pc) {
+    work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "invalid magic for array-data at " << reinterpret_cast<void*>(array_data_dex_pc);
+  }
+
+  NO_INLINE void FailBadSwitchPayloadSignature(uint32_t dex_pc,
+                                               uint32_t switch_payload_dex_pc,
+                                               uint16_t signature,
+                                               uint16_t expected_signature) {
+    work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "wrong signature for switch payload at "
+        << reinterpret_cast<void*>(switch_payload_dex_pc)
+        << " (0x" << std::hex << signature << ", wanted 0x" << expected_signature << ")";
+  }
+
+  NO_INLINE void FailPackedSwitchKeyOverflow(uint32_t dex_pc,
+                                             uint32_t switch_payload_dex_pc,
+                                             int32_t first_key,
+                                             uint32_t switch_count) {
+    work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "invalid packed switch payload at "
+        << reinterpret_cast<void*>(switch_payload_dex_pc)
+        << ", key overflow: first_key=" << first_key << ", switch_count=" << switch_count;
+  }
+
+  NO_INLINE void FailSparseSwitchPayloadKeyOrder(uint32_t dex_pc,
+                                                 uint32_t switch_payload_dex_pc,
+                                                 int32_t previous_key,
+                                                 int32_t current_key) {
+    work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "invalid sparse switch payload at "
+        << reinterpret_cast<void*>(switch_payload_dex_pc)
+        << ", unordered keys: previous=" << previous_key << ", current=" << current_key;
+  }
+
+  NO_INLINE void FailSwitchTargetOffsetOutOfRange(uint32_t dex_pc,
+                                                  uint32_t end_dex_pc,
+                                                  uint32_t switch_payload_dex_pc,
+                                                  int32_t offset,
+                                                  uint32_t target_index) {
+    FailTargetOffsetOutOfRange(dex_pc, end_dex_pc, offset);
+    LastFailureMessageStream()
+        << " in switch payload at " << reinterpret_cast<void*>(switch_payload_dex_pc)
+        << ", target index " << target_index;
+  }
+
+  NO_INLINE void FailSwitchTargetMidInstruction(uint32_t dex_pc,
+                                                uint32_t target_dex_pc,
+                                                uint32_t switch_payload_dex_pc,
+                                                uint32_t target_index) {
+    FailTargetMidInstruction(dex_pc, target_dex_pc);
+    LastFailureMessageStream()
+        << " in switch payload at " << reinterpret_cast<void*>(switch_payload_dex_pc)
+        << ", target index " << target_index;
+  }
+
+  NO_INLINE void FailSwitchTargetIsMoveResultOrMoveException(uint32_t dex_pc,
+                                                             uint32_t target_dex_pc,
+                                                             Instruction::Code target_opcode,
+                                                             uint32_t switch_payload_dex_pc,
+                                                             uint32_t target_index) {
+    FailBranchTargetIsMoveResultOrMoveException(dex_pc, target_dex_pc, target_opcode);
+    LastFailureMessageStream()
+        << " in switch payload at " << reinterpret_cast<void*>(switch_payload_dex_pc)
+        << ", target index " << target_index;
   }
 
   NO_INLINE void FailForRegisterType(uint32_t vsrc,
@@ -1576,14 +1678,16 @@ bool MethodVerifier<kVerifierDebug>::ScanTryCatchBlocks() {
     CatchHandlerIterator iterator(handlers_ptr);
     for (; iterator.HasNext(); iterator.Next()) {
       uint32_t dex_pc = iterator.GetHandlerAddress();
+      // `DexFileVerifier` checks that the `dex_pc` is in range.
+      DCHECK_LT(dex_pc, code_item_accessor_.InsnsSizeInCodeUnits());
       if (!GetInstructionFlags(dex_pc).IsOpcode()) {
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD)
-            << "exception handler starts at bad address (" << dex_pc << ")";
+        work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "exception handler starts at bad address";
         return false;
       }
-      if (!CheckNotMoveResult(code_item_accessor_.Insns(), dex_pc)) {
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD)
-            << "exception handler begins with move-result* (" << dex_pc << ")";
+      if (UNLIKELY(IsMoveResult(code_item_accessor_.InstructionAt(dex_pc).Opcode()))) {
+        work_insn_idx_ = dex_pc;  // Let `Fail()` record the dex PC of the failing instruction.
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "exception handler begins with move-result*";
         return false;
       }
       GetModifiableInstructionFlags(dex_pc).SetBranchTarget();
@@ -1653,7 +1757,7 @@ bool MethodVerifier<kVerifierDebug>::VerifyInstructions() {
 #define DEFINE_CASE(opcode, c, p, format, index, flags, eflags, vflags)             \
       case opcode: {                                                                \
         constexpr Instruction::Code kOpcode = enum_cast<Instruction::Code>(opcode); \
-        if (!VerifyInstruction<kOpcode>(inst, dex_pc, inst_data)) {                 \
+        if (!VerifyInstruction<kOpcode>(dex_pc, end_dex_pc, inst, inst_data)) {     \
           DCHECK_NE(failures_.size(), 0U);                                          \
           return false;                                                             \
         }                                                                           \
@@ -1681,8 +1785,9 @@ bool MethodVerifier<kVerifierDebug>::VerifyInstructions() {
 
 template <bool kVerifierDebug>
 template <Instruction::Code kDispatchOpcode>
-inline bool MethodVerifier<kVerifierDebug>::VerifyInstruction(const Instruction* inst,
-                                                              uint32_t code_offset,
+inline bool MethodVerifier<kVerifierDebug>::VerifyInstruction(uint32_t dex_pc,
+                                                              uint32_t end_dex_pc,
+                                                              const Instruction* inst,
                                                               uint16_t inst_data) {
   // The `kDispatchOpcode` may differ from the actual opcode but it shall have the
   // same verification flags and format. We explicitly `DCHECK` these below and
@@ -1773,13 +1878,13 @@ inline bool MethodVerifier<kVerifierDebug>::VerifyInstruction(const Instruction*
   DCHECK_EQ(kVerifyExtra, inst->GetVerifyExtraFlags());
   switch (kVerifyExtra) {
     case Instruction::kVerifyArrayData:
-      result = result && CheckArrayData(code_offset);
+      result = result && CheckArrayData(dex_pc, end_dex_pc, inst);
       break;
     case Instruction::kVerifyBranchTarget:
-      result = result && CheckBranchTarget(code_offset);
+      result = result && CheckAndMarkBranchTarget<kFormat>(dex_pc, end_dex_pc, inst, inst_data);
       break;
     case Instruction::kVerifySwitchTargets:
-      result = result && CheckSwitchTargets(code_offset);
+      result = result && CheckAndMarkSwitchTargets(dex_pc, end_dex_pc, inst, inst_data);
       break;
     case Instruction::kVerifyVarArgNonZero:
       // Fall-through.
@@ -1864,82 +1969,77 @@ bool MethodVerifier<kVerifierDebug>::CheckNewArray(dex::TypeIndex idx) {
 }
 
 template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::CheckArrayData(uint32_t cur_offset) {
-  const uint32_t insn_count = code_item_accessor_.InsnsSizeInCodeUnits();
-  const uint16_t* insns = code_item_accessor_.Insns() + cur_offset;
-  const uint16_t* array_data;
-  int32_t array_data_offset;
-
-  DCHECK_LT(cur_offset, insn_count);
-  /* make sure the start of the array data table is in range */
-  array_data_offset = insns[1] | (static_cast<int32_t>(insns[2]) << 16);
-  if (UNLIKELY(static_cast<int32_t>(cur_offset) + array_data_offset < 0 ||
-               cur_offset + array_data_offset + 2 >= insn_count)) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid array data start: at " << cur_offset
-                                      << ", data offset " << array_data_offset
-                                      << ", count " << insn_count;
+bool MethodVerifier<kVerifierDebug>::CheckArrayData(uint32_t dex_pc,
+                                                    uint32_t end_dex_pc,
+                                                    const Instruction* inst) {
+  int32_t array_data_offset = inst->VRegB_31t();
+  /* Make sure the start of the array data table is in range. */
+  if (!IsOffsetInRange(dex_pc, end_dex_pc, array_data_offset)) {
+    FailTargetOffsetOutOfRange(dex_pc, end_dex_pc, array_data_offset);
     return false;
   }
-  /* offset to array data table is a relative branch-style offset */
-  array_data = insns + array_data_offset;
+  // Make sure the array-data is marked as an opcode.
+  // This ensures that it was reached when traversing the code in `ComputeWidthsAndCountOps()`.
+  uint32_t array_data_dex_pc = dex_pc + array_data_offset;
+  if (UNLIKELY(!GetInstructionFlags(array_data_dex_pc).IsOpcode())) {
+    FailTargetMidInstruction(dex_pc, array_data_dex_pc);
+    return false;
+  }
   // Make sure the table is at an even dex pc, that is, 32-bit aligned.
-  if (UNLIKELY(!IsAligned<4>(array_data))) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unaligned array data table: at " << cur_offset
-                                      << ", data offset " << array_data_offset;
+  if (UNLIKELY(!IsAligned<2>(array_data_dex_pc))) {
+    FailUnalignedTableDexPc(dex_pc, array_data_dex_pc);
     return false;
   }
-  // Make sure the array-data is marked as an opcode. This ensures that it was reached when
-  // traversing the code item linearly. It is an approximation for a by-spec padding value.
-  if (UNLIKELY(!GetInstructionFlags(cur_offset + array_data_offset).IsOpcode())) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "array data table at " << cur_offset
-                                      << ", data offset " << array_data_offset
-                                      << " not correctly visited, probably bad padding.";
+  const Instruction* array_data = inst->RelativeAt(array_data_offset);
+  DCHECK_EQ(array_data, &code_item_accessor_.InstructionAt(array_data_dex_pc));
+  DCHECK_ALIGNED(array_data, 4u);
+  // Make sure the array data has the correct signature.
+  if (UNLIKELY(array_data->Fetch16(0) != Instruction::kArrayDataSignature)) {
+    FailBadArrayDataSignature(dex_pc, array_data_dex_pc);
     return false;
   }
-
-  uint32_t value_width = array_data[1];
-  uint32_t value_count = *reinterpret_cast<const uint32_t*>(&array_data[2]);
-  uint32_t table_size = 4 + (value_width * value_count + 1) / 2;
-  /* make sure the end of the switch is in range */
-  if (UNLIKELY(cur_offset + array_data_offset + table_size > insn_count)) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid array data end: at " << cur_offset
-                                      << ", data offset " << array_data_offset << ", end "
-                                      << cur_offset + array_data_offset + table_size
-                                      << ", count " << insn_count;
-    return false;
-  }
+  // The length of the array data has been verified by `ComputeWidthsAndCountOps()`.
+  DCHECK_LT(array_data_dex_pc, end_dex_pc);
+  DCHECK_LE(array_data->SizeInCodeUnits(), end_dex_pc - array_data_dex_pc);
   return true;
 }
 
 template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::CheckBranchTarget(uint32_t cur_offset) {
+template <Instruction::Format kFormat>
+bool MethodVerifier<kVerifierDebug>::CheckAndMarkBranchTarget(uint32_t dex_pc,
+                                                              uint32_t end_dex_pc,
+                                                              const Instruction* inst,
+                                                              uint16_t inst_data) {
   int32_t offset;
-  bool isConditional, selfOkay;
-  if (!GetBranchOffset(cur_offset, &offset, &isConditional, &selfOkay)) {
+  if constexpr (kFormat == Instruction::k22t) {  // if-<cond>?
+    offset = inst->VRegC(kFormat);
+  } else if constexpr (kFormat == Instruction::k21t) {  // if-<cond>z?
+    offset = inst->VRegB(kFormat, /*unused*/ inst_data);
+  } else {  // goto
+    offset = inst->VRegA(kFormat, inst_data);
+  }
+  // Only `goto/32` instruction can target itself. For other instructions `offset` must not be 0.
+  DCHECK_EQ(kFormat == Instruction::k30t,
+            code_item_accessor_.InstructionAt(dex_pc).Opcode() == Instruction::GOTO_32);
+  if (kFormat != Instruction::k30t && UNLIKELY(offset == 0)) {
+    FailBranchOffsetZero(dex_pc);
     return false;
   }
-  if (UNLIKELY(!selfOkay && offset == 0)) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "branch offset of zero not allowed at"
-                                      << reinterpret_cast<void*>(cur_offset);
+  if (!IsOffsetInRange(dex_pc, end_dex_pc, offset)) {
+    FailTargetOffsetOutOfRange(dex_pc, end_dex_pc, offset);
     return false;
   }
-  // Check for 32-bit overflow. This isn't strictly necessary if we can depend on the runtime
-  // to have identical "wrap-around" behavior, but it's unwise to depend on that.
-  if (UNLIKELY(((int64_t) cur_offset + (int64_t) offset) != (int64_t) (cur_offset + offset))) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "branch target overflow "
-                                      << reinterpret_cast<void*>(cur_offset) << " +" << offset;
+  uint32_t target_dex_pc = dex_pc + offset;
+  if (UNLIKELY(!GetInstructionFlags(target_dex_pc).IsOpcode())) {
+    FailTargetMidInstruction(dex_pc, target_dex_pc);
     return false;
   }
-  int32_t abs_offset = cur_offset + offset;
-  if (UNLIKELY(abs_offset < 0 ||
-               (uint32_t) abs_offset >= code_item_accessor_.InsnsSizeInCodeUnits()  ||
-               !GetInstructionFlags(abs_offset).IsOpcode())) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid branch target " << offset << " (-> "
-                                      << reinterpret_cast<void*>(abs_offset) << ") at "
-                                      << reinterpret_cast<void*>(cur_offset);
+  Instruction::Code target_opcode = inst->RelativeAt(offset)->Opcode();
+  if (UNLIKELY(IsMoveResultOrMoveException(target_opcode))) {
+    FailBranchTargetIsMoveResultOrMoveException(dex_pc, target_dex_pc, target_opcode);
     return false;
   }
-  GetModifiableInstructionFlags(abs_offset).SetBranchTarget();
+  GetModifiableInstructionFlags(target_dex_pc).SetBranchTarget();
   return true;
 }
 
@@ -1984,37 +2084,37 @@ bool MethodVerifier<kVerifierDebug>::GetBranchOffset(uint32_t cur_offset,
 }
 
 template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::CheckSwitchTargets(uint32_t cur_offset) {
-  const uint32_t insn_count = code_item_accessor_.InsnsSizeInCodeUnits();
-  DCHECK_LT(cur_offset, insn_count);
-  const uint16_t* insns = code_item_accessor_.Insns() + cur_offset;
-  /* make sure the start of the switch is in range */
-  int32_t switch_offset = insns[1] | (static_cast<int32_t>(insns[2]) << 16);
-  if (UNLIKELY(static_cast<int32_t>(cur_offset) + switch_offset < 0 ||
-               cur_offset + switch_offset + 2 > insn_count)) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid switch start: at " << cur_offset
-                                      << ", switch offset " << switch_offset
-                                      << ", count " << insn_count;
+bool MethodVerifier<kVerifierDebug>::CheckAndMarkSwitchTargets(uint32_t dex_pc,
+                                                               uint32_t end_dex_pc,
+                                                               const Instruction* inst,
+                                                               uint16_t inst_data) {
+  int32_t switch_payload_offset = inst->VRegB_31t();
+  /* Make sure the start of the switch data is in range. */
+  if (!IsOffsetInRange(dex_pc, end_dex_pc, switch_payload_offset)) {
+    FailTargetOffsetOutOfRange(dex_pc, end_dex_pc, switch_payload_offset);
     return false;
   }
-  /* offset to switch table is a relative branch-style offset */
-  const uint16_t* switch_insns = insns + switch_offset;
-  // Make sure the table is at an even dex pc, that is, 32-bit aligned.
-  if (UNLIKELY(!IsAligned<4>(switch_insns))) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unaligned switch table: at " << cur_offset
-                                      << ", switch offset " << switch_offset;
+  // Make sure the switch data is marked as an opcode.
+  // This ensures that it was reached when traversing the code in `ComputeWidthsAndCountOps()`.
+  uint32_t switch_payload_dex_pc = dex_pc + switch_payload_offset;
+  if (UNLIKELY(!GetInstructionFlags(switch_payload_dex_pc).IsOpcode())) {
+    FailTargetMidInstruction(dex_pc, switch_payload_dex_pc);
     return false;
   }
-  // Make sure the switch data is marked as an opcode. This ensures that it was reached when
-  // traversing the code item linearly. It is an approximation for a by-spec padding value.
-  if (UNLIKELY(!GetInstructionFlags(cur_offset + switch_offset).IsOpcode())) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "switch table at " << cur_offset
-                                      << ", switch offset " << switch_offset
-                                      << " not correctly visited, probably bad padding.";
+  // Make sure the switch data is at an even dex pc, that is, 32-bit aligned.
+  if (UNLIKELY(!IsAligned<2>(switch_payload_dex_pc))) {
+    FailUnalignedTableDexPc(dex_pc, switch_payload_dex_pc);
     return false;
   }
 
-  bool is_packed_switch = (*insns & 0xff) == Instruction::PACKED_SWITCH;
+  /* offset to switch table is a relative branch-style offset */
+  const Instruction* payload = inst->RelativeAt(switch_payload_offset);
+  DCHECK_EQ(payload, &code_item_accessor_.InstructionAt(switch_payload_dex_pc));
+  DCHECK_ALIGNED(payload, 4u);
+  const uint16_t* switch_insns = reinterpret_cast<const uint16_t*>(payload);
+
+  bool is_packed_switch = inst->Opcode(inst_data) == Instruction::PACKED_SWITCH;
+  DCHECK_IMPLIES(!is_packed_switch, inst->Opcode(inst_data) == Instruction::SPARSE_SWITCH);
 
   uint32_t switch_count = switch_insns[1];
   int32_t targets_offset;
@@ -2028,21 +2128,15 @@ bool MethodVerifier<kVerifierDebug>::CheckSwitchTargets(uint32_t cur_offset) {
     targets_offset = 2 + 2 * switch_count;
     expected_signature = Instruction::kSparseSwitchSignature;
   }
+  uint16_t signature = switch_insns[0];
+  if (UNLIKELY(signature != expected_signature)) {
+    FailBadSwitchPayloadSignature(dex_pc, switch_payload_dex_pc, signature, expected_signature);
+    return false;
+  }
+  // The table size has been verified in `ComputeWidthsAndCountOps()`.
   uint32_t table_size = targets_offset + switch_count * 2;
-  if (UNLIKELY(switch_insns[0] != expected_signature)) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
-        << StringPrintf("wrong signature for switch table (%x, wanted %x)",
-                        switch_insns[0], expected_signature);
-    return false;
-  }
-  /* make sure the end of the switch is in range */
-  if (UNLIKELY(cur_offset + switch_offset + table_size > (uint32_t) insn_count)) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid switch end: at " << cur_offset
-                                      << ", switch offset " << switch_offset
-                                      << ", end " << (cur_offset + switch_offset + table_size)
-                                      << ", count " << insn_count;
-    return false;
-  }
+  DCHECK_LT(switch_payload_dex_pc, end_dex_pc);
+  DCHECK_LE(table_size, end_dex_pc - switch_payload_dex_pc);
 
   constexpr int32_t keys_offset = 2;
   if (switch_count > 1) {
@@ -2052,8 +2146,7 @@ bool MethodVerifier<kVerifierDebug>::CheckSwitchTargets(uint32_t cur_offset) {
       int32_t max_first_key =
           std::numeric_limits<int32_t>::max() - (static_cast<int32_t>(switch_count) - 1);
       if (UNLIKELY(first_key > max_first_key)) {
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid packed switch: first_key=" << first_key
-                                          << ", switch_count=" << switch_count;
+        FailPackedSwitchKeyOverflow(dex_pc, switch_payload_dex_pc, first_key, switch_count);
         return false;
       }
     } else {
@@ -2064,8 +2157,7 @@ bool MethodVerifier<kVerifierDebug>::CheckSwitchTargets(uint32_t cur_offset) {
             static_cast<int32_t>(switch_insns[keys_offset + targ * 2]) |
             static_cast<int32_t>(switch_insns[keys_offset + targ * 2 + 1] << 16);
         if (UNLIKELY(key <= last_key)) {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid sparse switch: last key=" << last_key
-                                            << ", this=" << key;
+          FailSparseSwitchPayloadKeyOrder(dex_pc, switch_payload_dex_pc, last_key, key);
           return false;
         }
         last_key = key;
@@ -2076,17 +2168,22 @@ bool MethodVerifier<kVerifierDebug>::CheckSwitchTargets(uint32_t cur_offset) {
   for (uint32_t targ = 0; targ < switch_count; targ++) {
     int32_t offset = static_cast<int32_t>(switch_insns[targets_offset + targ * 2]) |
                      static_cast<int32_t>(switch_insns[targets_offset + targ * 2 + 1] << 16);
-    int32_t abs_offset = cur_offset + offset;
-    if (UNLIKELY(abs_offset < 0 ||
-                 abs_offset >= static_cast<int32_t>(insn_count) ||
-                 !GetInstructionFlags(abs_offset).IsOpcode())) {
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid switch target " << offset
-                                        << " (-> " << reinterpret_cast<void*>(abs_offset) << ") at "
-                                        << reinterpret_cast<void*>(cur_offset)
-                                        << "[" << targ << "]";
+    if (!IsOffsetInRange(dex_pc, end_dex_pc, offset)) {
+      FailSwitchTargetOffsetOutOfRange(dex_pc, end_dex_pc, switch_payload_dex_pc, offset, targ);
       return false;
     }
-    GetModifiableInstructionFlags(abs_offset).SetBranchTarget();
+    uint32_t target_dex_pc = dex_pc + offset;
+    if (UNLIKELY(!GetInstructionFlags(target_dex_pc).IsOpcode())) {
+      FailSwitchTargetMidInstruction(dex_pc, target_dex_pc, switch_payload_dex_pc, targ);
+      return false;
+    }
+    Instruction::Code target_opcode = inst->RelativeAt(offset)->Opcode();
+    if (UNLIKELY(IsMoveResultOrMoveException(target_opcode))) {
+      FailSwitchTargetIsMoveResultOrMoveException(
+          dex_pc, target_dex_pc, target_opcode, switch_payload_dex_pc, targ);
+      return false;
+    }
+    GetModifiableInstructionFlags(target_dex_pc).SetBranchTarget();
   }
   return true;
 }
@@ -2627,7 +2724,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
           /* check the register contents */
           bool success = VerifyRegisterType(vregA, use_src ? src_type : return_type);
           if (!success) {
-            AppendToLastFailMessage(StringPrintf(" return-1nr on invalid register v%d", vregA));
+            LastFailureMessageStream() << " return-1nr on invalid register v" << vregA;
           }
         }
       }
@@ -2643,7 +2740,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
           const uint32_t vregA = inst->VRegA_11x(inst_data);
           bool success = VerifyRegisterTypeWide(vregA, return_type.GetKind());
           if (!success) {
-            AppendToLastFailMessage(StringPrintf(" return-wide on invalid register v%d", vregA));
+            LastFailureMessageStream() << " return-wide on invalid register v" << vregA;
           }
         }
       }
@@ -3004,19 +3101,16 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                                               << component_type;
           } else {
             // Now verify if the element width in the table matches the element width declared in
-            // the array
+            // the array. The signature has been verified by `CheckArrayData()`.
             const uint16_t* array_data =
                 insns + (insns[1] | (static_cast<int32_t>(insns[2]) << 16));
-            if (array_data[0] != Instruction::kArrayDataSignature) {
-              Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid magic for array-data";
-            } else {
-              size_t elem_width = Primitive::ComponentSize(component_type.GetPrimitiveType());
-              // Since we don't compress the data in Dex, expect to see equal width of data stored
-              // in the table and expected from the array class.
-              if (array_data[1] != elem_width) {
-                Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "array-data size mismatch (" << array_data[1]
-                                                  << " vs " << elem_width << ")";
-              }
+            DCHECK_EQ(array_data[0], Instruction::kArrayDataSignature);
+            size_t elem_width = Primitive::ComponentSize(component_type.GetPrimitiveType());
+            // Since we don't compress the data in Dex, expect to see equal width of data stored
+            // in the table and expected from the array class.
+            if (array_data[1] != elem_width) {
+              Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "array-data size mismatch (" << array_data[1]
+                                                << " vs " << elem_width << ")";
             }
           }
         }
@@ -3778,10 +3872,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       return false;
     }
     DCHECK_EQ(isConditional, (opcode_flags & Instruction::kContinue) != 0);
-    if (!CheckNotMoveExceptionOrMoveResult(code_item_accessor_.Insns(),
-                                           work_insn_idx_ + branch_target)) {
-      return false;
-    }
+    DCHECK(!IsMoveResultOrMoveException(inst->RelativeAt(branch_target)->Opcode()));
     /* update branch target, set "changed" if appropriate */
     if (nullptr != branch_line) {
       if (!UpdateRegisters(work_insn_idx_ + branch_target, branch_line.get(), false)) {
@@ -3825,9 +3916,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
          (static_cast<int32_t>(switch_insns[offset_to_targets + targ * 2 + 1]) << 16);
       abs_offset = work_insn_idx_ + offset;
       DCHECK_LT(abs_offset, code_item_accessor_.InsnsSizeInCodeUnits());
-      if (!CheckNotMoveExceptionOrMoveResult(code_item_accessor_.Insns(), abs_offset)) {
-        return false;
-      }
+      DCHECK(!IsMoveResultOrMoveException(inst->RelativeAt(offset)->Opcode()));
       if (!UpdateRegisters(abs_offset, work_line_.get(), false)) {
         return false;
       }
@@ -3911,7 +4000,9 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     }
     // The only way to get to a move-exception instruction is to get thrown there. Make sure the
     // next instruction isn't one.
-    if (!CheckNotMoveException(code_item_accessor_.Insns(), next_insn_idx)) {
+    Instruction::Code next_opcode = code_item_accessor_.InstructionAt(next_insn_idx).Opcode();
+    if (UNLIKELY(next_opcode == Instruction::MOVE_EXCEPTION)) {
+      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid use of move-exception";
       return false;
     }
     if (nullptr != fallthrough_line) {
@@ -4118,9 +4209,8 @@ ArtMethod* MethodVerifier<kVerifierDebug>::ResolveMethodAndCheckAccess(
   const dex::MethodId& method_id = dex_file_->GetMethodId(dex_method_idx);
   const RegType& klass_type = ResolveClass<CheckAccess::kYes>(method_id.class_idx_);
   if (klass_type.IsConflict()) {
-    std::string append(" in attempt to access method ");
-    append += dex_file_->GetMethodName(method_id);
-    AppendToLastFailMessage(append);
+    LastFailureMessageStream()
+        << " in attempt to access method " << dex_file_->GetMethodName(method_id);
     return nullptr;
   }
   if (klass_type.IsUnresolvedTypes()) {

@@ -315,12 +315,14 @@ if [[ $build_target == "yes" ]]; then
 
   # temporary root for linkerconfig
   linkerconfig_root=$ANDROID_PRODUCT_OUT/art_linkerconfig_root
+  system_linker_config_pb=$linkerconfig_root/system/etc/linker.config.pb
 
   rm -rf $linkerconfig_root
 
   # Linkerconfig reads files from /system/etc
   mkdir -p $linkerconfig_root/system
   cp -r $ANDROID_PRODUCT_OUT/system/etc $linkerconfig_root/system
+  rm -f $system_linker_config_pb  # We create our own below
 
   # Use our smaller public.libraries.txt that contains only the public libraries
   # pushed to the chroot directory.
@@ -356,7 +358,6 @@ EOF
 </apex-info-list>
 EOF
 
-  system_linker_config_pb=$linkerconfig_root/system/etc/linker.config.pb
   # This list needs to be synced with provideLibs in system/etc/linker.config.pb
   # in the targeted platform image.
   # TODO(b/186649223): Create a prebuilt for it in platform-mainline-sdk.

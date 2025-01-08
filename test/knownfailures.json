@@ -1225,7 +1225,8 @@
                   "2263-method-trace-jit",
                   "2270-mh-internal-hiddenapi-use",
                   "2271-profile-inline-cache",
-                  "2279-aconfig-flags"],
+                  "2279-aconfig-flags",
+                  "2286-method-tracing-aot-code"],
         "variant": "jvm",
         "description": ["Doesn't run on RI."]
     },

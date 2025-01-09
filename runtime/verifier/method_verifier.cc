@@ -1257,8 +1257,6 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
   RegType::Kind DetermineCat1Constant(int32_t value)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  ALWAYS_INLINE bool FailOrAbort(bool condition, const char* error_msg, uint32_t work_insn_idx);
-
   ALWAYS_INLINE InstructionFlags& GetModifiableInstructionFlags(size_t index) {
     return insn_flags_[index];
   }
@@ -1366,36 +1364,6 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
 
   DISALLOW_COPY_AND_ASSIGN(MethodVerifier);
 };
-
-// Note: returns true on failure.
-template <bool kVerifierDebug>
-inline bool MethodVerifier<kVerifierDebug>::FailOrAbort(bool condition,
-                                                        const char* error_msg,
-                                                        uint32_t work_insn_idx) {
-  if (kIsDebugBuild) {
-    // In a debug build, abort if the error condition is wrong. Only warn if
-    // we are already aborting (as this verification is likely run to print
-    // lock information).
-    if (LIKELY(gAborting == 0)) {
-      DCHECK(condition) << error_msg << work_insn_idx << " "
-                        << dex_file_->PrettyMethod(dex_method_idx_);
-    } else {
-      if (!condition) {
-        LOG(ERROR) << error_msg << work_insn_idx;
-        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << error_msg << work_insn_idx;
-        return true;
-      }
-    }
-  } else {
-    // In a non-debug build, just fail the class.
-    if (!condition) {
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << error_msg << work_insn_idx;
-      return true;
-    }
-  }
-
-  return false;
-}
 
 static bool IsLargeMethod(const CodeItemDataAccessor& accessor) {
   if (!accessor.HasCodeItem()) {
@@ -4209,9 +4177,9 @@ bool MethodVerifier<kVerifierDebug>::HandleMoveException(const Instruction* inst
                 // odd case, but nothing to do
               } else {
                 common_super = &common_super->Merge(exception, &reg_types_, this);
-                if (FailOrAbort(IsAssignableFrom(reg_types_.JavaLangThrowable(), *common_super),
-                                "java.lang.Throwable is not assignable-from common_super at ",
-                                work_insn_idx_)) {
+                if (UNLIKELY(!IsAssignableFrom(reg_types_.JavaLangThrowable(), *common_super))) {
+                  Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+                      << "java.lang.Throwable is not assignable-from common_super";
                   break;
                 }
               }

@@ -170,13 +170,6 @@ class RegisterLine {
   void MarkRefsAsInitialized(MethodVerifier* verifier, uint32_t vsrc)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  /*
-   * Update all registers to be Conflict except vsrc.
-   */
-  void MarkAllRegistersAsConflicts(MethodVerifier* verifier);
-  void MarkAllRegistersAsConflictsExcept(MethodVerifier* verifier, uint32_t vsrc);
-  void MarkAllRegistersAsConflictsExceptWide(MethodVerifier* verifier, uint32_t vsrc);
-
   void SetThisInitialized() {
     this_initialized_ = true;
   }

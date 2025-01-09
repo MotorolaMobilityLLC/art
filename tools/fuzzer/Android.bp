@@ -83,7 +83,7 @@ cc_defaults {
         ":okhttp",
         ":bouncycastle",
         ":apache-xml",
-        ":core-icu4j",
+        ":core-icu4j-fuzzer",
         ":conscrypt-fuzzer",
     ],
 }

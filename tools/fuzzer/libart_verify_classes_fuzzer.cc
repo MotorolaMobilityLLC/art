@@ -28,6 +28,7 @@
 #include "jni/java_vm_ext.h"
 #include "noop_compiler_callbacks.h"
 #include "runtime.h"
+#include "runtime_intrinsics.h"
 #include "scoped_thread_state_change-inl.h"
 #include "verifier/class_verifier.h"
 #include "well_known_classes.h"
@@ -138,6 +139,16 @@ extern "C" int LLVMFuzzerInitialize([[maybe_unused]] int* argc, [[maybe_unused]]
 
   art::Thread::Current()->TransitionFromRunnableToSuspended(art::ThreadState::kNative);
 
+  {
+    art::ScopedObjectAccess soa(art::Thread::Current());
+    art::Runtime::Current()->GetClassLinker()->RunEarlyRootClinits(soa.Self());
+    art::InitializeIntrinsics();
+    art::Runtime::Current()->RunRootClinits(soa.Self());
+  }
+
+  // Check for heap corruption before running the fuzzer.
+  art::Runtime::Current()->GetHeap()->VerifyHeap();
+
   // Query the current stack and add it to the global variable. Otherwise LSAN complains about a
   // non-existing leak.
   stack_t ss;
@@ -194,6 +205,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         soa.Self()->ClearException();
         continue;
       }
+      // TODO(solanes): Figure out why `h_klass->GetDexCache()->GetClassLoader()` is null for
+      // sun.misc.Unsafe.
+      if (h_klass->GetDexCache()->GetClassLoader() == nullptr) {
+        continue;
+      }
+
       h_dex_cache.Assign(h_klass->GetDexCache());
       art::verifier::ClassVerifier::VerifyClass(soa.Self(),
                                                 /* verifier_deps= */ nullptr,

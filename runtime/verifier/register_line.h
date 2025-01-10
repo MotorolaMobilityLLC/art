@@ -76,7 +76,7 @@ class RegisterLine {
       std::numeric_limits<RegisterStackMask>::digits;
 
   // Create a register line of num_regs registers.
-  static RegisterLine* Create(size_t num_regs, ArenaAllocator& allocator, RegTypeCache* reg_types);
+  static RegisterLine* Create(size_t num_regs, ArenaAllocator& allocator);
 
   // Implement category-1 "move" instructions. Copy a 32-bit value from "vsrc" to "vdst".
   void CopyRegister1(MethodVerifier* verifier, uint32_t vdst, uint32_t vsrc, TypeCategory cat)
@@ -98,7 +98,7 @@ class RegisterLine {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Set the invisible result register to unknown
-  void SetResultTypeToUnknown(RegTypeCache* reg_types) REQUIRES_SHARED(Locks::mutator_lock_);
+  void SetResultTypeToUnknown() REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Set the type of register N, verifying that the register is valid.  If "newType" is the "Lo"
   // part of a 64-bit value, register N+1 will be set to "newType+1".
@@ -123,7 +123,7 @@ class RegisterLine {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   /* Set the type of the "result" register. */
-  void SetResultRegisterType(MethodVerifier* verifier, const RegType& new_type)
+  void SetResultRegisterType(const RegType& new_type)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   void SetResultRegisterTypeWide(const RegType& new_type1, const RegType& new_type2)
@@ -305,7 +305,7 @@ class RegisterLine {
     reg_to_lock_depths_.erase(reg);
   }
 
-  RegisterLine(size_t num_regs, ArenaAllocator& allocator, RegTypeCache* reg_types);
+  RegisterLine(size_t num_regs, ArenaAllocator& allocator);
 
   static constexpr uint32_t kNoDexPc = static_cast<uint32_t>(-1);
 

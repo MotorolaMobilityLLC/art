@@ -97,16 +97,16 @@ inline void RegisterLine::SetRegisterTypeWide(uint32_t vdst,
   SetRegisterTypeWideImpl(vdst, new_type1.GetId(), new_type2.GetId());
 }
 
-inline void RegisterLine::SetResultTypeToUnknown(RegTypeCache* reg_types) {
-  result_[0] = reg_types->Undefined().GetId();
-  result_[1] = result_[0];
+inline void RegisterLine::SetResultTypeToUnknown() {
+  result_[0] = RegTypeCache::kUndefinedCacheId;
+  result_[1] = RegTypeCache::kUndefinedCacheId;
 }
 
-inline void RegisterLine::SetResultRegisterType(MethodVerifier* verifier, const RegType& new_type) {
+inline void RegisterLine::SetResultRegisterType(const RegType& new_type) {
   DCHECK(!new_type.IsLowHalf());
   DCHECK(!new_type.IsHighHalf());
   result_[0] = new_type.GetId();
-  result_[1] = verifier->GetRegTypeCache()->Undefined().GetId();
+  result_[1] = RegTypeCache::kUndefinedCacheId;
 }
 
 inline void RegisterLine::SetResultRegisterTypeWide(const RegType& new_type1,
@@ -206,16 +206,12 @@ inline size_t RegisterLine::ComputeSize(size_t num_regs) {
   return OFFSETOF_MEMBER(RegisterLine, line_) + num_regs * sizeof(uint16_t);
 }
 
-inline RegisterLine* RegisterLine::Create(size_t num_regs,
-                                          ArenaAllocator& allocator,
-                                          RegTypeCache* reg_types) {
+inline RegisterLine* RegisterLine::Create(size_t num_regs, ArenaAllocator& allocator) {
   void* memory = allocator.Alloc(ComputeSize(num_regs));
-  return new (memory) RegisterLine(num_regs, allocator, reg_types);
+  return new (memory) RegisterLine(num_regs, allocator);
 }
 
-inline RegisterLine::RegisterLine(size_t num_regs,
-                                  ArenaAllocator& allocator,
-                                  RegTypeCache* reg_types)
+inline RegisterLine::RegisterLine(size_t num_regs, ArenaAllocator& allocator)
     : num_regs_(num_regs),
       allocation_dex_pcs_(nullptr),
       monitors_(allocator.Adapter(kArenaAllocVerifier)),
@@ -227,7 +223,7 @@ inline RegisterLine::RegisterLine(size_t num_regs,
   DCHECK(std::all_of(line_,
                      line_ + num_regs_,
                      [](auto id) { return id == RegTypeCache::kUndefinedCacheId;}));
-  SetResultTypeToUnknown(reg_types);
+  SetResultTypeToUnknown();
 }
 
 inline void RegisterLine::ClearRegToLockDepth(size_t reg, size_t depth) {

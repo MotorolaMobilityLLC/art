@@ -189,12 +189,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   // Scope for the handles
   {
-    art::StackHandleScope<3> scope(soa.Self());
+    art::StackHandleScope<4> scope(soa.Self());
     art::Handle<art::mirror::ClassLoader> h_loader =
         scope.NewHandle(soa.Decode<art::mirror::ClassLoader>(class_loader));
     art::MutableHandle<art::mirror::Class> h_klass(scope.NewHandle<art::mirror::Class>(nullptr));
     art::MutableHandle<art::mirror::DexCache> h_dex_cache(
         scope.NewHandle<art::mirror::DexCache>(nullptr));
+    art::MutableHandle<art::mirror::ClassLoader> h_dex_cache_class_loader =
+        scope.NewHandle(h_loader.Get());
 
     for (art::ClassAccessor accessor : dex_file.GetClasses()) {
       h_klass.Assign(
@@ -205,19 +207,17 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         soa.Self()->ClearException();
         continue;
       }
-      // TODO(solanes): Figure out why `h_klass->GetDexCache()->GetClassLoader()` is null for
-      // sun.misc.Unsafe.
-      if (h_klass->GetDexCache()->GetClassLoader() == nullptr) {
-        continue;
-      }
-
       h_dex_cache.Assign(h_klass->GetDexCache());
+
+      // The class loader from the class's dex cache is different from the dex file's class loader
+      // for boot image classes e.g. java.util.AbstractCollection.
+      h_dex_cache_class_loader.Assign(h_klass->GetDexCache()->GetClassLoader());
       art::verifier::ClassVerifier::VerifyClass(soa.Self(),
                                                 /* verifier_deps= */ nullptr,
                                                 h_dex_cache->GetDexFile(),
                                                 h_klass,
                                                 h_dex_cache,
-                                                h_loader,
+                                                h_dex_cache_class_loader,
                                                 *h_klass->GetClassDef(),
                                                 runtime->GetCompilerCallbacks(),
                                                 art::verifier::HardFailLogMode::kLogWarning,

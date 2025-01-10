@@ -141,9 +141,9 @@ void RegisterLine::CopyResultRegister1(MethodVerifier* verifier, uint32_t vdst, 
     verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD)
         << "copyRes1 v" << vdst << "<- result0"  << " type=" << type;
   } else {
-    DCHECK(verifier->GetRegTypeCache()->GetFromId(result_[1]).IsUndefined());
+    DCHECK_EQ(result_[1], RegTypeCache::kUndefinedCacheId);
     SetRegisterType<LockOp::kClear>(vdst, type);
-    result_[0] = verifier->GetRegTypeCache()->Undefined().GetId();
+    result_[0] = RegTypeCache::kUndefinedCacheId;
   }
 }
 
@@ -160,8 +160,8 @@ void RegisterLine::CopyResultRegister2(MethodVerifier* verifier, uint32_t vdst) 
   } else {
     DCHECK(type_l.CheckWidePair(type_h));  // Set should never allow this case
     SetRegisterTypeWide(vdst, type_l, type_h);  // also sets the high
-    result_[0] = verifier->GetRegTypeCache()->Undefined().GetId();
-    result_[1] = verifier->GetRegTypeCache()->Undefined().GetId();
+    result_[0] = RegTypeCache::kUndefinedCacheId;
+    result_[1] = RegTypeCache::kUndefinedCacheId;
   }
 }
 
@@ -283,7 +283,7 @@ bool RegisterLine::MergeRegisters(MethodVerifier* verifier, const RegisterLine* 
           incoming_line->allocation_dex_pcs_ != nullptr &&
           allocation_dex_pcs_[idx] != incoming_line->allocation_dex_pcs_[idx] &&
           needs_allocation_dex_pc()) {
-        line_[idx] = verifier->GetRegTypeCache()->Conflict().GetId();
+        line_[idx] = RegTypeCache::kConflictCacheId;
       }
     }
   }

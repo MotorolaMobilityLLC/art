@@ -70,6 +70,7 @@ enum class OptimizationPass {
   kAggressiveInstructionSimplifier,
   kBoundsCheckElimination,
   kCHAGuardOptimization,
+  kCodeFlowSimplifier,
   kCodeSinking,
   kConstantFolding,
   kConstructorFenceRedundancyElimination,
@@ -83,7 +84,6 @@ enum class OptimizationPass {
   kLoopOptimization,
   kReferenceTypePropagation,
   kScheduling,
-  kSelectGenerator,
   kSideEffectsAnalysis,
   kWriteBarrierElimination,
 #ifdef ART_ENABLE_CODEGEN_arm

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "select_generator.h"
+#include "code_flow_simplifier.h"
 
 #include "base/arena_allocator.h"
 #include "base/macros.h"
@@ -25,7 +25,7 @@
 
 namespace art HIDDEN {
 
-class SelectGeneratorTest : public OptimizingUnitTest {
+class CodeFlowSimplifierTest : public OptimizingUnitTest {
  protected:
   HPhi* ConstructBasicGraphForSelect(HBasicBlock* return_block, HInstruction* instr) {
     HParameterValue* bool_param = MakeParam(DataType::Type::kBool);
@@ -38,18 +38,18 @@ class SelectGeneratorTest : public OptimizingUnitTest {
     return phi;
   }
 
-  bool CheckGraphAndTrySelectGenerator() {
+  bool CheckGraphAndTryCodeFlowSimplifier() {
     graph_->BuildDominatorTree();
     EXPECT_TRUE(CheckGraph());
 
     SideEffectsAnalysis side_effects(graph_);
     side_effects.Run();
-    return HSelectGenerator(graph_, /*handles*/ nullptr, /*stats*/ nullptr).Run();
+    return HCodeFlowSimplifier(graph_, /*handles*/ nullptr, /*stats*/ nullptr).Run();
   }
 };
 
 // HDivZeroCheck might throw and should not be hoisted from the conditional to an unconditional.
-TEST_F(SelectGeneratorTest, testZeroCheck) {
+TEST_F(CodeFlowSimplifierTest, testZeroCheckPreventsSelect) {
   HBasicBlock* return_block = InitEntryMainExitGraphWithReturnVoid();
   HParameterValue* param = MakeParam(DataType::Type::kInt32);
   HDivZeroCheck* instr = new (GetAllocator()) HDivZeroCheck(param, 0);
@@ -57,17 +57,17 @@ TEST_F(SelectGeneratorTest, testZeroCheck) {
 
   ManuallyBuildEnvFor(instr, {param, graph_->GetIntConstant(1)});
 
-  EXPECT_FALSE(CheckGraphAndTrySelectGenerator());
+  EXPECT_FALSE(CheckGraphAndTryCodeFlowSimplifier());
   EXPECT_FALSE(phi->GetBlock() == nullptr);
 }
 
-// Test that SelectGenerator succeeds with HAdd.
-TEST_F(SelectGeneratorTest, testAdd) {
+// Test that CodeFlowSimplifier succeeds with HAdd.
+TEST_F(CodeFlowSimplifierTest, testSelectWithAdd) {
   HBasicBlock* return_block = InitEntryMainExitGraphWithReturnVoid();
   HParameterValue* param = MakeParam(DataType::Type::kInt32);
   HAdd* instr = new (GetAllocator()) HAdd(DataType::Type::kInt32, param, param, /*dex_pc=*/ 0);
   HPhi* phi = ConstructBasicGraphForSelect(return_block, instr);
-  EXPECT_TRUE(CheckGraphAndTrySelectGenerator());
+  EXPECT_TRUE(CheckGraphAndTryCodeFlowSimplifier());
   EXPECT_TRUE(phi->GetBlock() == nullptr);
 }
 

@@ -88,7 +88,7 @@ enum ArenaAllocKind {
   kArenaAllocSsaLiveness,
   kArenaAllocSsaPhiElimination,
   kArenaAllocReferenceTypePropagation,
-  kArenaAllocSelectGenerator,
+  kArenaAllocCodeFlowSimplifier,
   kArenaAllocSideEffectsAnalysis,
   kArenaAllocRegisterAllocator,
   kArenaAllocRegisterAllocatorValidate,

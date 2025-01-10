@@ -156,7 +156,7 @@ class MethodVerifier {
                                uint32_t api_level)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  virtual ~MethodVerifier();
+  virtual ~MethodVerifier() {}
 
   const CodeItemDataAccessor& CodeItem() const {
     return code_item_accessor_;
@@ -331,10 +331,16 @@ class MethodVerifier {
   // Owned, but not unique_ptr since insn_flags_ are allocated in arenas.
   ArenaUniquePtr<InstructionFlags[]> insn_flags_;
 
-  // The types of any error that occurs.
-  std::vector<VerifyError> failures_;
-  // Error messages associated with failures.
-  std::vector<std::ostringstream*> failure_messages_;
+  // The types of any error that occurs and associated error messages.
+  using MessageOStream =
+      std::basic_ostringstream<char, std::char_traits<char>, ArenaAllocatorAdapter<char>>;
+  struct VerifyErrorAndMessage {
+    VerifyErrorAndMessage(VerifyError e, const std::string& location, ArenaAllocatorAdapter<char> a)
+        : error(e), message(location, std::ios_base::ate, a) {}
+    VerifyError error;
+    MessageOStream message;
+  };
+  ArenaList<VerifyErrorAndMessage> failures_;
 
   struct {
     // Is there a pending hard failure?

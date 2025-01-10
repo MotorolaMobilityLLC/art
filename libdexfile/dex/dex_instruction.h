@@ -552,7 +552,9 @@ class Instruction {
   int32_t GetTargetOffset() const;
 
   // Returns true if the instruction allows control flow to go to the following instruction.
-  bool CanFlowThrough() const;
+  bool CanFlowThrough() const {
+    return (FlagsOf(Opcode()) & Instruction::kContinue) != 0;
+  }
 
   // Returns true if this instruction is a switch.
   bool IsSwitch() const {

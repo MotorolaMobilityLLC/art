@@ -81,13 +81,12 @@ void PcToRegisterLineTable::Init(InstructionFlags* flags,
                                  uint32_t insns_size,
                                  uint16_t registers_size,
                                  ArenaAllocator& allocator,
-                                 RegTypeCache* reg_types,
                                  uint32_t interesting_dex_pc) {
   DCHECK_GT(insns_size, 0U);
   register_lines_.resize(insns_size);
   for (uint32_t i = 0; i < insns_size; i++) {
     if ((i == interesting_dex_pc) || flags[i].IsBranchTarget()) {
-      register_lines_[i].reset(RegisterLine::Create(registers_size, allocator, reg_types));
+      register_lines_[i].reset(RegisterLine::Create(registers_size, allocator));
     }
   }
 }
@@ -2202,11 +2201,10 @@ bool MethodVerifier<kVerifierDebug>::VerifyCodeFlow() {
                   code_item_accessor_.InsnsSizeInCodeUnits(),
                   registers_size,
                   allocator_,
-                  GetRegTypeCache(),
                   interesting_dex_pc_);
 
-  work_line_.reset(RegisterLine::Create(registers_size, allocator_, GetRegTypeCache()));
-  saved_line_.reset(RegisterLine::Create(registers_size, allocator_, GetRegTypeCache()));
+  work_line_.reset(RegisterLine::Create(registers_size, allocator_));
+  saved_line_.reset(RegisterLine::Create(registers_size, allocator_));
 
   /* Initialize register types of method arguments. */
   if (!SetTypesFromSignature()) {
@@ -3211,8 +3209,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
             !orig_type.IsZeroOrNull() &&
             IsStrictlyAssignableFrom(orig_type, cast_type.Merge(orig_type, &reg_types_, this))) {
           RegisterLine* update_line = RegisterLine::Create(code_item_accessor_.RegistersSize(),
-                                                           allocator_,
-                                                           GetRegTypeCache());
+                                                           allocator_);
           if (inst->Opcode() == Instruction::IF_EQZ) {
             fallthrough_line.reset(update_line);
           } else {
@@ -3420,7 +3417,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                          dex_file_->GetTypeDescriptorView(return_type_idx));
       const RegType& return_type = reg_types_.FromTypeIndex(return_type_idx);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3483,7 +3480,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       }
       const RegType& return_type = reg_types_.FromTypeIndex(return_type_idx);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3502,7 +3499,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                          dex_file_->GetTypeDescriptorView(return_type_idx));
       const RegType& return_type = reg_types_.FromTypeIndex(return_type_idx);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3553,7 +3550,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                          dex_file_->GetTypeDescriptorView(return_type_idx));
       const RegType& return_type = reg_types_.FromTypeIndex(return_type_idx);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3583,7 +3580,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       const RegType& return_type =
           reg_types_.FromTypeIndex(dex_file_->GetProtoId(proto_idx).return_type_idx_);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3614,7 +3611,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       // Step 3. Propagate return type information
       const RegType& return_type = reg_types_.FromTypeIndex(proto_id.return_type_idx_);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3850,7 +3847,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
    * not expensive and it makes our debugging output cleaner.)
    */
   if (!just_set_result) {
-    work_line_->SetResultTypeToUnknown(GetRegTypeCache());
+    work_line_->SetResultTypeToUnknown();
   }
 
   /*
@@ -4762,7 +4759,7 @@ void MethodVerifierImpl::VerifyNewArray(const Instruction* inst,
         }
       }
       // filled-array result goes into "result" register
-      work_line_->SetResultRegisterType(this, res_type);
+      work_line_->SetResultRegisterType(res_type);
     }
   }
 }
@@ -5184,7 +5181,7 @@ bool MethodVerifier<kVerifierDebug>::UpdateRegisters(uint32_t next_insn,
   } else {
     RegisterLineArenaUniquePtr copy;
     if (kVerifierDebug) {
-      copy.reset(RegisterLine::Create(target_line->NumRegs(), allocator_, GetRegTypeCache()));
+      copy.reset(RegisterLine::Create(target_line->NumRegs(), allocator_));
       copy->CopyFromLine(target_line);
     }
     changed = target_line->MergeRegisters(this, merge_line);

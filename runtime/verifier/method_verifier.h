@@ -76,7 +76,6 @@ class PcToRegisterLineTable {
             uint32_t insns_size,
             uint16_t registers_size,
             ArenaAllocator& allocator,
-            RegTypeCache* reg_types,
             uint32_t interesting_dex_pc);
 
   bool IsInitialized() const {

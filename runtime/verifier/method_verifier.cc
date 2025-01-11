@@ -81,13 +81,12 @@ void PcToRegisterLineTable::Init(InstructionFlags* flags,
                                  uint32_t insns_size,
                                  uint16_t registers_size,
                                  ArenaAllocator& allocator,
-                                 RegTypeCache* reg_types,
                                  uint32_t interesting_dex_pc) {
   DCHECK_GT(insns_size, 0U);
   register_lines_.resize(insns_size);
   for (uint32_t i = 0; i < insns_size; i++) {
     if ((i == interesting_dex_pc) || flags[i].IsBranchTarget()) {
-      register_lines_[i].reset(RegisterLine::Create(registers_size, allocator, reg_types));
+      register_lines_[i].reset(RegisterLine::Create(registers_size, allocator));
     }
   }
 }
@@ -120,36 +119,33 @@ constexpr bool IsCompatThrow(Instruction::Code opcode) {
   return opcode == Instruction::Code::RETURN_OBJECT || opcode == Instruction::Code::MOVE_EXCEPTION;
 }
 
-template <bool kVerifierDebug>
-class MethodVerifier final : public ::art::verifier::MethodVerifier {
+class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
  public:
   bool IsInstanceConstructor() const {
     return IsConstructor() && !IsStatic();
   }
 
-  void FindLocksAtDexPc() REQUIRES_SHARED(Locks::mutator_lock_);
-
- private:
-  MethodVerifier(Thread* self,
-                 ArenaPool* arena_pool,
-                 RegTypeCache* reg_types,
-                 VerifierDeps* verifier_deps,
-                 const dex::CodeItem* code_item,
-                 uint32_t method_idx,
-                 bool aot_mode,
-                 Handle<mirror::DexCache> dex_cache,
-                 const dex::ClassDef& class_def,
-                 uint32_t access_flags,
-                 bool verify_to_dump,
-                 uint32_t api_level) REQUIRES_SHARED(Locks::mutator_lock_)
-     : art::verifier::MethodVerifier(self,
-                                     arena_pool,
-                                     reg_types,
-                                     verifier_deps,
-                                     class_def,
-                                     code_item,
-                                     method_idx,
-                                     aot_mode),
+ protected:
+  MethodVerifierImpl(Thread* self,
+                     ArenaPool* arena_pool,
+                     RegTypeCache* reg_types,
+                     VerifierDeps* verifier_deps,
+                     const dex::CodeItem* code_item,
+                     uint32_t method_idx,
+                     bool aot_mode,
+                     Handle<mirror::DexCache> dex_cache,
+                     const dex::ClassDef& class_def,
+                     uint32_t access_flags,
+                     bool verify_to_dump,
+                     uint32_t api_level) REQUIRES_SHARED(Locks::mutator_lock_)
+     : ::art::verifier::MethodVerifier(self,
+                                       arena_pool,
+                                       reg_types,
+                                       verifier_deps,
+                                       class_def,
+                                       code_item,
+                                       method_idx,
+                                       aot_mode),
        method_access_flags_(access_flags),
        return_type_(nullptr),
        dex_cache_(dex_cache),
@@ -565,73 +561,9 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
   bool GetBranchOffset(uint32_t cur_offset, int32_t* pOffset, bool* pConditional,
                        bool* selfOkay);
 
-  /* Perform detailed code-flow analysis on a single method. */
-  bool VerifyCodeFlow() REQUIRES_SHARED(Locks::mutator_lock_);
-
   // Set the register types for the first instruction in the method based on the method signature.
   // This has the side-effect of validating the signature.
   bool SetTypesFromSignature() REQUIRES_SHARED(Locks::mutator_lock_);
-
-  /*
-   * Perform code flow on a method.
-   *
-   * The basic strategy is as outlined in v3 4.11.1.2: set the "changed" bit on the first
-   * instruction, process it (setting additional "changed" bits), and repeat until there are no
-   * more.
-   *
-   * v3 4.11.1.1
-   * - (N/A) operand stack is always the same size
-   * - operand stack [registers] contain the correct types of values
-   * - local variables [registers] contain the correct types of values
-   * - methods are invoked with the appropriate arguments
-   * - fields are assigned using values of appropriate types
-   * - opcodes have the correct type values in operand registers
-   * - there is never an uninitialized class instance in a local variable in code protected by an
-   *   exception handler (operand stack is okay, because the operand stack is discarded when an
-   *   exception is thrown) [can't know what's a local var w/o the debug info -- should fall out of
-   *   register typing]
-   *
-   * v3 4.11.1.2
-   * - execution cannot fall off the end of the code
-   *
-   * (We also do many of the items described in the "static checks" sections, because it's easier to
-   * do them here.)
-   *
-   * We need an array of RegType values, one per register, for every instruction. If the method uses
-   * monitor-enter, we need extra data for every register, and a stack for every "interesting"
-   * instruction. In theory this could become quite large -- up to several megabytes for a monster
-   * function.
-   *
-   * NOTE:
-   * The spec forbids backward branches when there's an uninitialized reference in a register. The
-   * idea is to prevent something like this:
-   *   loop:
-   *     move r1, r0
-   *     new-instance r0, MyClass
-   *     ...
-   *     if-eq rN, loop  // once
-   *   initialize r0
-   *
-   * This leaves us with two different instances, both allocated by the same instruction, but only
-   * one is initialized. The scheme outlined in v3 4.11.1.4 wouldn't catch this, so they work around
-   * it by preventing backward branches. We achieve identical results without restricting code
-   * reordering by specifying that you can't execute the new-instance instruction if a register
-   * contains an uninitialized instance created by that same instruction.
-   */
-  template <bool kMonitorDexPCs>
-  bool CodeFlowVerifyMethod() REQUIRES_SHARED(Locks::mutator_lock_);
-
-  /*
-   * Perform verification for a single instruction.
-   *
-   * This requires fully decoding the instruction to determine the effect it has on registers.
-   *
-   * Finds zero or more following instructions and sets the "changed" flag if execution at that
-   * point needs to be (re-)evaluated. Register changes are merged into "reg_types_" at the target
-   * addresses. Does not set or clear any other flags in "insn_flags_".
-   */
-  bool CodeFlowVerifyInstruction(uint32_t* start_guess)
-      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Perform verification of a new array instruction
   void VerifyNewArray(const Instruction* inst, bool is_filled, bool is_range)
@@ -671,14 +603,6 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
   // the referrer can access the resolved class.
   template <CheckAccess C>
   const RegType& ResolveClass(dex::TypeIndex class_idx)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  /*
-   * For the "move-exception" instruction at "work_insn_idx_", which must be at an exception handler
-   * address, determine the Join of all exceptions that can land here. Fails if no matching
-   * exception handler can be found or if the Join of exception types fails.
-   */
-  const RegType& GetCaughtExceptionType()
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   /*
@@ -730,16 +654,6 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
    * Verify the arguments present for a call site. Returns "true" if all is well, "false" otherwise.
    */
   bool CheckCallSite(uint32_t call_site_idx);
-
-  /*
-  * Control can transfer to "next_insn". Merge the registers from merge_line into the table at
-  * next_insn, and set the changed flag on the target address if any of the registers were changed.
-  * In the case of fall-through, update the merge line on a change as its the working line for the
-  * next instruction.
-  * Returns "false" if an error is encountered.
-  */
-  bool UpdateRegisters(uint32_t next_insn, RegisterLine* merge_line, bool update_merge_line)
-      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Return the register type for the method.
   const RegType& GetMethodReturnType() REQUIRES_SHARED(Locks::mutator_lock_);
@@ -1286,6 +1200,7 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
       return inst->VRegB_4rcc();
     }
   }
+
   // Returns the field index of a field access instruction.
   ALWAYS_INLINE static uint16_t GetFieldIdxOfFieldAccess(const Instruction* inst) {
     // Note: This is compiled to a single load in release mode.
@@ -1297,10 +1212,6 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
       return inst->VRegC_22c();
     }
   }
-
-  // Run verification on the method. Returns true if verification completes and false if the input
-  // has an irrecoverable corruption.
-  bool Verify() override REQUIRES_SHARED(Locks::mutator_lock_);
 
   // For app-compatibility, code after a runtime throw is treated as dead code
   // for apps targeting <= S.
@@ -1359,6 +1270,95 @@ class MethodVerifier final : public ::art::verifier::MethodVerifier {
   // API level, for dependent checks. Note: we do not use '0' for unset here, to simplify checks.
   // Instead, unset level should correspond to max().
   const uint32_t api_level_;
+
+  DISALLOW_COPY_AND_ASSIGN(MethodVerifierImpl);
+};
+
+template <bool kVerifierDebug>
+class MethodVerifier final : public MethodVerifierImpl {
+ public:
+  void FindLocksAtDexPc() REQUIRES_SHARED(Locks::mutator_lock_);
+
+ private:
+  using MethodVerifierImpl::MethodVerifierImpl;
+
+  /* Perform detailed code-flow analysis on a single method. */
+  bool VerifyCodeFlow() REQUIRES_SHARED(Locks::mutator_lock_);
+
+  /*
+   * Perform code flow on a method.
+   *
+   * The basic strategy is as outlined in v3 4.11.1.2: set the "changed" bit on the first
+   * instruction, process it (setting additional "changed" bits), and repeat until there are no
+   * more.
+   *
+   * v3 4.11.1.1
+   * - (N/A) operand stack is always the same size
+   * - operand stack [registers] contain the correct types of values
+   * - local variables [registers] contain the correct types of values
+   * - methods are invoked with the appropriate arguments
+   * - fields are assigned using values of appropriate types
+   * - opcodes have the correct type values in operand registers
+   * - there is never an uninitialized class instance in a local variable in code protected by an
+   *   exception handler (operand stack is okay, because the operand stack is discarded when an
+   *   exception is thrown) [can't know what's a local var w/o the debug info -- should fall out of
+   *   register typing]
+   *
+   * v3 4.11.1.2
+   * - execution cannot fall off the end of the code
+   *
+   * (We also do many of the items described in the "static checks" sections, because it's easier to
+   * do them here.)
+   *
+   * We need an array of RegType values, one per register, for every instruction. If the method uses
+   * monitor-enter, we need extra data for every register, and a stack for every "interesting"
+   * instruction. In theory this could become quite large -- up to several megabytes for a monster
+   * function.
+   *
+   * NOTE:
+   * The spec forbids backward branches when there's an uninitialized reference in a register. The
+   * idea is to prevent something like this:
+   *   loop:
+   *     move r1, r0
+   *     new-instance r0, MyClass
+   *     ...
+   *     if-eq rN, loop  // once
+   *   initialize r0
+   *
+   * This leaves us with two different instances, both allocated by the same instruction, but only
+   * one is initialized. The scheme outlined in v3 4.11.1.4 wouldn't catch this, so they work around
+   * it by preventing backward branches. We achieve identical results without restricting code
+   * reordering by specifying that you can't execute the new-instance instruction if a register
+   * contains an uninitialized instance created by that same instruction.
+   */
+  template <bool kMonitorDexPCs>
+  bool CodeFlowVerifyMethod() REQUIRES_SHARED(Locks::mutator_lock_);
+
+  /*
+   * Perform verification for a single instruction.
+   *
+   * This requires fully decoding the instruction to determine the effect it has on registers.
+   *
+   * Finds zero or more following instructions and sets the "changed" flag if execution at that
+   * point needs to be (re-)evaluated. Register changes are merged into "reg_types_" at the target
+   * addresses. Does not set or clear any other flags in "insn_flags_".
+   */
+  bool CodeFlowVerifyInstruction(uint32_t* start_guess)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  /*
+  * Control can transfer to "next_insn". Merge the registers from merge_line into the table at
+  * next_insn, and set the changed flag on the target address if any of the registers were changed.
+  * In the case of fall-through, update the merge line on a change as it's the working line for the
+  * next instruction.
+  * Returns "false" if an error is encountered.
+  */
+  bool UpdateRegisters(uint32_t next_insn, RegisterLine* merge_line, bool update_merge_line)
+      REQUIRES_SHARED(Locks::mutator_lock_);
+
+  // Run verification on the method. Returns true if verification completes and false if the input
+  // has an irrecoverable corruption.
+  bool Verify() override REQUIRES_SHARED(Locks::mutator_lock_);
 
   friend class ::art::verifier::MethodVerifier;
 
@@ -1579,8 +1579,7 @@ bool MethodVerifier<kVerifierDebug>::Verify() {
   return result;
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::ComputeWidthsAndCountOps() {
+bool MethodVerifierImpl::ComputeWidthsAndCountOps() {
   // We can't assume the instruction is well formed, handle the case where calculating the size
   // goes past the end of the code item.
   const uint32_t insns_size = code_item_accessor_.InsnsSizeInCodeUnits();
@@ -1659,8 +1658,7 @@ bool MethodVerifier<kVerifierDebug>::ComputeWidthsAndCountOps() {
   return true;
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::ScanTryCatchBlocks() {
+bool MethodVerifierImpl::ScanTryCatchBlocks() {
   const uint32_t tries_size = code_item_accessor_.TriesSize();
   if (tries_size == 0) {
     return true;
@@ -1721,8 +1719,7 @@ bool MethodVerifier<kVerifierDebug>::ScanTryCatchBlocks() {
   return true;
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::VerifyInstructions() {
+bool MethodVerifierImpl::VerifyInstructions() {
   // Flag the start of the method as a branch target.
   GetModifiableInstructionFlags(0).SetBranchTarget();
   const Instruction* inst = Instruction::At(code_item_accessor_.Insns());
@@ -1797,12 +1794,11 @@ bool MethodVerifier<kVerifierDebug>::VerifyInstructions() {
   return true;
 }
 
-template <bool kVerifierDebug>
 template <Instruction::Code kDispatchOpcode>
-inline bool MethodVerifier<kVerifierDebug>::VerifyInstruction(uint32_t dex_pc,
-                                                              uint32_t end_dex_pc,
-                                                              const Instruction* inst,
-                                                              uint16_t inst_data) {
+inline bool MethodVerifierImpl::VerifyInstruction(uint32_t dex_pc,
+                                                  uint32_t end_dex_pc,
+                                                  const Instruction* inst,
+                                                  uint16_t inst_data) {
   // The `kDispatchOpcode` may differ from the actual opcode but it shall have the
   // same verification flags and format. We explicitly `DCHECK` these below and
   // the format is also `DCHECK`ed in VReg getters that take it as an argument.
@@ -1935,8 +1931,7 @@ inline bool MethodVerifier<kVerifierDebug>::VerifyInstruction(uint32_t dex_pc,
   return result;
 }
 
-template <bool kVerifierDebug>
-inline bool MethodVerifier<kVerifierDebug>::CheckNewInstance(dex::TypeIndex idx) {
+inline bool MethodVerifierImpl::CheckNewInstance(dex::TypeIndex idx) {
   if (UNLIKELY(idx.index_ >= dex_file_->GetHeader().type_ids_size_)) {
     Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "bad type index " << idx.index_ << " (max "
                                       << dex_file_->GetHeader().type_ids_size_ << ")";
@@ -1955,8 +1950,7 @@ inline bool MethodVerifier<kVerifierDebug>::CheckNewInstance(dex::TypeIndex idx)
   return true;
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::CheckNewArray(dex::TypeIndex idx) {
+bool MethodVerifierImpl::CheckNewArray(dex::TypeIndex idx) {
   if (UNLIKELY(idx.index_ >= dex_file_->GetHeader().type_ids_size_)) {
     Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "bad type index " << idx.index_ << " (max "
                                       << dex_file_->GetHeader().type_ids_size_ << ")";
@@ -1982,10 +1976,9 @@ bool MethodVerifier<kVerifierDebug>::CheckNewArray(dex::TypeIndex idx) {
   return true;
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::CheckArrayData(uint32_t dex_pc,
-                                                    uint32_t end_dex_pc,
-                                                    const Instruction* inst) {
+bool MethodVerifierImpl::CheckArrayData(uint32_t dex_pc,
+                                        uint32_t end_dex_pc,
+                                        const Instruction* inst) {
   int32_t array_data_offset = inst->VRegB_31t();
   /* Make sure the start of the array data table is in range. */
   if (!IsOffsetInRange(dex_pc, end_dex_pc, array_data_offset)) {
@@ -2018,12 +2011,11 @@ bool MethodVerifier<kVerifierDebug>::CheckArrayData(uint32_t dex_pc,
   return true;
 }
 
-template <bool kVerifierDebug>
 template <Instruction::Format kFormat>
-bool MethodVerifier<kVerifierDebug>::CheckAndMarkBranchTarget(uint32_t dex_pc,
-                                                              uint32_t end_dex_pc,
-                                                              const Instruction* inst,
-                                                              uint16_t inst_data) {
+bool MethodVerifierImpl::CheckAndMarkBranchTarget(uint32_t dex_pc,
+                                                  uint32_t end_dex_pc,
+                                                  const Instruction* inst,
+                                                  uint16_t inst_data) {
   int32_t offset;
   if constexpr (kFormat == Instruction::k22t) {  // if-<cond>?
     offset = inst->VRegC(kFormat);
@@ -2057,11 +2049,10 @@ bool MethodVerifier<kVerifierDebug>::CheckAndMarkBranchTarget(uint32_t dex_pc,
   return true;
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::GetBranchOffset(uint32_t cur_offset,
-                                                     int32_t* pOffset,
-                                                     bool* pConditional,
-                                                     bool* selfOkay) {
+bool MethodVerifierImpl::GetBranchOffset(uint32_t cur_offset,
+                                         int32_t* pOffset,
+                                         bool* pConditional,
+                                         bool* selfOkay) {
   const uint16_t* insns = code_item_accessor_.Insns() + cur_offset;
   *pConditional = false;
   *selfOkay = false;
@@ -2097,11 +2088,10 @@ bool MethodVerifier<kVerifierDebug>::GetBranchOffset(uint32_t cur_offset,
   return true;
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::CheckAndMarkSwitchTargets(uint32_t dex_pc,
-                                                               uint32_t end_dex_pc,
-                                                               const Instruction* inst,
-                                                               uint16_t inst_data) {
+bool MethodVerifierImpl::CheckAndMarkSwitchTargets(uint32_t dex_pc,
+                                                   uint32_t end_dex_pc,
+                                                   const Instruction* inst,
+                                                   uint16_t inst_data) {
   int32_t switch_payload_offset = inst->VRegB_31t();
   /* Make sure the start of the switch data is in range. */
   if (!IsOffsetInRange(dex_pc, end_dex_pc, switch_payload_offset)) {
@@ -2211,11 +2201,10 @@ bool MethodVerifier<kVerifierDebug>::VerifyCodeFlow() {
                   code_item_accessor_.InsnsSizeInCodeUnits(),
                   registers_size,
                   allocator_,
-                  GetRegTypeCache(),
                   interesting_dex_pc_);
 
-  work_line_.reset(RegisterLine::Create(registers_size, allocator_, GetRegTypeCache()));
-  saved_line_.reset(RegisterLine::Create(registers_size, allocator_, GetRegTypeCache()));
+  work_line_.reset(RegisterLine::Create(registers_size, allocator_));
+  saved_line_.reset(RegisterLine::Create(registers_size, allocator_));
 
   /* Initialize register types of method arguments. */
   if (!SetTypesFromSignature()) {
@@ -2239,8 +2228,7 @@ bool MethodVerifier<kVerifierDebug>::VerifyCodeFlow() {
   return true;
 }
 
-template <bool kVerifierDebug>
-void MethodVerifier<kVerifierDebug>::Dump(VariableIndentationOutputStream* vios) {
+void MethodVerifierImpl::Dump(VariableIndentationOutputStream* vios) {
   if (!code_item_accessor_.HasCodeItem()) {
     vios->Stream() << "Native method\n";
     return;
@@ -2274,8 +2262,7 @@ void MethodVerifier<kVerifierDebug>::Dump(VariableIndentationOutputStream* vios)
   }
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::SetTypesFromSignature() {
+bool MethodVerifierImpl::SetTypesFromSignature() {
   RegisterLine* reg_line = reg_table_.GetLine(0);
 
   // Should have been verified earlier.
@@ -3222,8 +3209,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
             !orig_type.IsZeroOrNull() &&
             IsStrictlyAssignableFrom(orig_type, cast_type.Merge(orig_type, &reg_types_, this))) {
           RegisterLine* update_line = RegisterLine::Create(code_item_accessor_.RegistersSize(),
-                                                           allocator_,
-                                                           GetRegTypeCache());
+                                                           allocator_);
           if (inst->Opcode() == Instruction::IF_EQZ) {
             fallthrough_line.reset(update_line);
           } else {
@@ -3431,7 +3417,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                          dex_file_->GetTypeDescriptorView(return_type_idx));
       const RegType& return_type = reg_types_.FromTypeIndex(return_type_idx);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3494,7 +3480,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       }
       const RegType& return_type = reg_types_.FromTypeIndex(return_type_idx);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3513,7 +3499,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                          dex_file_->GetTypeDescriptorView(return_type_idx));
       const RegType& return_type = reg_types_.FromTypeIndex(return_type_idx);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3564,7 +3550,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
                          dex_file_->GetTypeDescriptorView(return_type_idx));
       const RegType& return_type = reg_types_.FromTypeIndex(return_type_idx);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3594,7 +3580,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       const RegType& return_type =
           reg_types_.FromTypeIndex(dex_file_->GetProtoId(proto_idx).return_type_idx_);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3625,7 +3611,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       // Step 3. Propagate return type information
       const RegType& return_type = reg_types_.FromTypeIndex(proto_id.return_type_idx_);
       if (!return_type.IsLowHalf()) {
-        work_line_->SetResultRegisterType(this, return_type);
+        work_line_->SetResultRegisterType(return_type);
       } else {
         work_line_->SetResultRegisterTypeWide(return_type, return_type.HighHalf(&reg_types_));
       }
@@ -3861,7 +3847,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
    * not expensive and it makes our debugging output cleaner.)
    */
   if (!just_set_result) {
-    work_line_->SetResultTypeToUnknown(GetRegTypeCache());
+    work_line_->SetResultTypeToUnknown();
   }
 
   /*
@@ -4074,9 +4060,8 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
   return true;
 }  // NOLINT(readability/fn_size)
 
-template <bool kVerifierDebug>
 template <CheckAccess C>
-const RegType& MethodVerifier<kVerifierDebug>::ResolveClass(dex::TypeIndex class_idx) {
+const RegType& MethodVerifierImpl::ResolveClass(dex::TypeIndex class_idx) {
   // FIXME: `RegTypeCache` can currently return a few fundamental classes such as j.l.Object
   // or j.l.Class without resolving them using the current class loader and recording them
   // in the corresponding `ClassTable`. The subsequent method and field lookup by callers of
@@ -4129,8 +4114,7 @@ const RegType& MethodVerifier<kVerifierDebug>::ResolveClass(dex::TypeIndex class
   return result;
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::HandleMoveException(const Instruction* inst)  {
+bool MethodVerifierImpl::HandleMoveException(const Instruction* inst)  {
   // We do not allow MOVE_EXCEPTION as the first instruction in a method. This is a simple case
   // where one entrypoint to the catch block is not actually an exception path.
   if (work_insn_idx_ == 0) {
@@ -4215,8 +4199,7 @@ bool MethodVerifier<kVerifierDebug>::HandleMoveException(const Instruction* inst
   return result.first;
 }
 
-template <bool kVerifierDebug>
-ArtMethod* MethodVerifier<kVerifierDebug>::ResolveMethodAndCheckAccess(
+ArtMethod* MethodVerifierImpl::ResolveMethodAndCheckAccess(
     uint32_t dex_method_idx, MethodType method_type) {
   const dex::MethodId& method_id = dex_file_->GetMethodId(dex_method_idx);
   const RegType& klass_type = ResolveClass<CheckAccess::kYes>(method_id.class_idx_);
@@ -4352,9 +4335,8 @@ ArtMethod* MethodVerifier<kVerifierDebug>::ResolveMethodAndCheckAccess(
   return res_method;
 }
 
-template <bool kVerifierDebug>
 template <class T>
-ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgsFromIterator(
+ArtMethod* MethodVerifierImpl::VerifyInvocationArgsFromIterator(
     T* it, const Instruction* inst, MethodType method_type, bool is_range, ArtMethod* res_method) {
   DCHECK_EQ(!is_range, inst->HasVarArgs());
 
@@ -4493,10 +4475,9 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgsFromIterator(
   return res_method;
 }
 
-template <bool kVerifierDebug>
-void MethodVerifier<kVerifierDebug>::VerifyInvocationArgsUnresolvedMethod(const Instruction* inst,
-                                                                          MethodType method_type,
-                                                                          bool is_range) {
+void MethodVerifierImpl::VerifyInvocationArgsUnresolvedMethod(const Instruction* inst,
+                                                              MethodType method_type,
+                                                              bool is_range) {
   // As the method may not have been resolved, make this static check against what we expect.
   // The main reason for this code block is to fail hard when we find an illegal use, e.g.,
   // wrong number of arguments or wrong primitive types, even if the method could not be resolved.
@@ -4506,8 +4487,7 @@ void MethodVerifier<kVerifierDebug>::VerifyInvocationArgsUnresolvedMethod(const 
   VerifyInvocationArgsFromIterator(&it, inst, method_type, is_range, nullptr);
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::CheckCallSite(uint32_t call_site_idx) {
+bool MethodVerifierImpl::CheckCallSite(uint32_t call_site_idx) {
   if (call_site_idx >= dex_file_->NumCallSiteIds()) {
     Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "Bad call site id #" << call_site_idx
                                       << " >= " << dex_file_->NumCallSiteIds();
@@ -4561,8 +4541,7 @@ bool MethodVerifier<kVerifierDebug>::CheckCallSite(uint32_t call_site_idx) {
   return true;
 }
 
-template <bool kVerifierDebug>
-ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgs(
+ArtMethod* MethodVerifierImpl::VerifyInvocationArgs(
     const Instruction* inst, MethodType method_type, bool is_range) {
   // Resolve the method. This could be an abstract or concrete method depending on what sort of call
   // we're making.
@@ -4654,8 +4633,7 @@ ArtMethod* MethodVerifier<kVerifierDebug>::VerifyInvocationArgs(
   return verified_method;
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::CheckSignaturePolymorphicMethod(ArtMethod* method) {
+bool MethodVerifierImpl::CheckSignaturePolymorphicMethod(ArtMethod* method) {
   ObjPtr<mirror::Class> klass = method->GetDeclaringClass();
   const char* method_name = method->GetName();
 
@@ -4703,8 +4681,7 @@ bool MethodVerifier<kVerifierDebug>::CheckSignaturePolymorphicMethod(ArtMethod* 
   return true;
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::CheckSignaturePolymorphicReceiver(const Instruction* inst) {
+bool MethodVerifierImpl::CheckSignaturePolymorphicReceiver(const Instruction* inst) {
   const RegType& this_type = GetInvocationThis(inst);
   if (this_type.IsZeroOrNull()) {
     /* null pointer always passes (and always fails at run time) */
@@ -4737,10 +4714,9 @@ bool MethodVerifier<kVerifierDebug>::CheckSignaturePolymorphicReceiver(const Ins
   return true;
 }
 
-template <bool kVerifierDebug>
-void MethodVerifier<kVerifierDebug>::VerifyNewArray(const Instruction* inst,
-                                                    bool is_filled,
-                                                    bool is_range) {
+void MethodVerifierImpl::VerifyNewArray(const Instruction* inst,
+                                        bool is_filled,
+                                        bool is_range) {
   dex::TypeIndex type_idx;
   if (!is_filled) {
     DCHECK_EQ(inst->Opcode(), Instruction::NEW_ARRAY);
@@ -4783,15 +4759,14 @@ void MethodVerifier<kVerifierDebug>::VerifyNewArray(const Instruction* inst,
         }
       }
       // filled-array result goes into "result" register
-      work_line_->SetResultRegisterType(this, res_type);
+      work_line_->SetResultRegisterType(res_type);
     }
   }
 }
 
-template <bool kVerifierDebug>
-void MethodVerifier<kVerifierDebug>::VerifyAGet(const Instruction* inst,
-                                                const RegType& insn_type,
-                                                bool is_primitive) {
+void MethodVerifierImpl::VerifyAGet(const Instruction* inst,
+                                    const RegType& insn_type,
+                                    bool is_primitive) {
   const RegType& index_type = work_line_->GetRegisterType(this, inst->VRegC_23x());
   if (!index_type.IsArrayIndexTypes()) {
     Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "Invalid reg type for array index (" << index_type << ")";
@@ -4858,9 +4833,7 @@ void MethodVerifier<kVerifierDebug>::VerifyAGet(const Instruction* inst,
   }
 }
 
-template <bool kVerifierDebug>
-void MethodVerifier<kVerifierDebug>::VerifyPrimitivePut(const RegType& target_type,
-                                                        uint32_t vregA) {
+void MethodVerifierImpl::VerifyPrimitivePut(const RegType& target_type, uint32_t vregA) {
   // Primitive assignability rules are weaker than regular assignability rules.
   bool value_compatible;
   const RegType& value_type = work_line_->GetRegisterType(this, vregA);
@@ -4886,10 +4859,9 @@ void MethodVerifier<kVerifierDebug>::VerifyPrimitivePut(const RegType& target_ty
   }
 }
 
-template <bool kVerifierDebug>
-void MethodVerifier<kVerifierDebug>::VerifyAPut(const Instruction* inst,
-                                                const RegType& insn_type,
-                                                bool is_primitive) {
+void MethodVerifierImpl::VerifyAPut(const Instruction* inst,
+                                    const RegType& insn_type,
+                                    bool is_primitive) {
   const RegType& index_type = work_line_->GetRegisterType(this, inst->VRegC_23x());
   if (!index_type.IsArrayIndexTypes()) {
     Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "Invalid reg type for array index (" << index_type << ")";
@@ -4967,8 +4939,7 @@ void MethodVerifier<kVerifierDebug>::VerifyAPut(const Instruction* inst,
   }
 }
 
-template <bool kVerifierDebug>
-ArtField* MethodVerifier<kVerifierDebug>::GetStaticField(uint32_t field_idx, bool is_put) {
+ArtField* MethodVerifierImpl::GetStaticField(uint32_t field_idx, bool is_put) {
   const dex::FieldId& field_id = dex_file_->GetFieldId(field_idx);
   // Check access to class
   const RegType& klass_type = ResolveClass<CheckAccess::kYes>(field_id.class_idx_);
@@ -5003,10 +4974,7 @@ ArtField* MethodVerifier<kVerifierDebug>::GetStaticField(uint32_t field_idx, boo
   return GetISFieldCommon(field, is_put);
 }
 
-template <bool kVerifierDebug>
-ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(uint32_t vregB,
-                                                           uint32_t field_idx,
-                                                           bool is_put) {
+ArtField* MethodVerifierImpl::GetInstanceField(uint32_t vregB, uint32_t field_idx, bool is_put) {
   const RegType& obj_type = work_line_->GetRegisterType(this, vregB);
   if (!obj_type.IsReferenceTypes()) {
     // Trying to read a field from something that isn't a reference.
@@ -5124,8 +5092,7 @@ ArtField* MethodVerifier<kVerifierDebug>::GetInstanceField(uint32_t vregB,
   return GetISFieldCommon(field, is_put);
 }
 
-template <bool kVerifierDebug>
-ArtField* MethodVerifier<kVerifierDebug>::GetISFieldCommon(ArtField* field, bool is_put) {
+ArtField* MethodVerifierImpl::GetISFieldCommon(ArtField* field, bool is_put) {
   DCHECK(field != nullptr);
   if (!CanAccessMember(field->GetDeclaringClass(), field->GetAccessFlags())) {
     Fail(VERIFY_ERROR_ACCESS_FIELD)
@@ -5143,11 +5110,10 @@ ArtField* MethodVerifier<kVerifierDebug>::GetISFieldCommon(ArtField* field, bool
   return field;
 }
 
-template <bool kVerifierDebug>
 template <FieldAccessType kAccType>
-void MethodVerifier<kVerifierDebug>::VerifyISFieldAccess(const Instruction* inst,
-                                                         bool is_primitive,
-                                                         bool is_static) {
+void MethodVerifierImpl::VerifyISFieldAccess(const Instruction* inst,
+                                             bool is_primitive,
+                                             bool is_static) {
   uint32_t field_idx = GetFieldIdxOfFieldAccess(inst);
   DCHECK(!flags_.have_pending_hard_failure_);
   ArtField* field;
@@ -5215,7 +5181,7 @@ bool MethodVerifier<kVerifierDebug>::UpdateRegisters(uint32_t next_insn,
   } else {
     RegisterLineArenaUniquePtr copy;
     if (kVerifierDebug) {
-      copy.reset(RegisterLine::Create(target_line->NumRegs(), allocator_, GetRegTypeCache()));
+      copy.reset(RegisterLine::Create(target_line->NumRegs(), allocator_));
       copy->CopyFromLine(target_line);
     }
     changed = target_line->MergeRegisters(this, merge_line);
@@ -5239,8 +5205,7 @@ bool MethodVerifier<kVerifierDebug>::UpdateRegisters(uint32_t next_insn,
   return true;
 }
 
-template <bool kVerifierDebug>
-const RegType& MethodVerifier<kVerifierDebug>::GetMethodReturnType() {
+const RegType& MethodVerifierImpl::GetMethodReturnType() {
   if (return_type_ == nullptr) {
     const dex::MethodId& method_id = dex_file_->GetMethodId(dex_method_idx_);
     const dex::ProtoId& proto_id = dex_file_->GetMethodPrototype(method_id);
@@ -5249,8 +5214,7 @@ const RegType& MethodVerifier<kVerifierDebug>::GetMethodReturnType() {
   return *return_type_;
 }
 
-template <bool kVerifierDebug>
-RegType::Kind MethodVerifier<kVerifierDebug>::DetermineCat1Constant(int32_t value) {
+RegType::Kind MethodVerifierImpl::DetermineCat1Constant(int32_t value) {
   // Imprecise constant type.
   if (value < -32768) {
     return RegType::Kind::kIntegerConstant;
@@ -5273,8 +5237,7 @@ RegType::Kind MethodVerifier<kVerifierDebug>::DetermineCat1Constant(int32_t valu
   }
 }
 
-template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::PotentiallyMarkRuntimeThrow() {
+bool MethodVerifierImpl::PotentiallyMarkRuntimeThrow() {
   if (IsAotMode() || IsSdkVersionSetAndAtLeast(api_level_, SdkVersion::kS_V2)) {
     return false;
   }

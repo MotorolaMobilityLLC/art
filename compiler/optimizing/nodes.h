@@ -3697,7 +3697,7 @@ class HUnaryOperation : public HExpression<1> {
   HInstruction* GetInput() const { return InputAt(0); }
   DataType::Type GetResultType() const { return GetType(); }
 
-  bool CanBeMoved() const override { return true; }
+  bool CanBeMoved() const final { return true; }
   bool InstructionDataEquals([[maybe_unused]] const HInstruction* other) const override {
     return true;
   }
@@ -3788,7 +3788,7 @@ class HBinaryOperation : public HExpression<2> {
     }
   }
 
-  bool CanBeMoved() const override { return true; }
+  bool CanBeMoved() const final { return true; }
   bool InstructionDataEquals([[maybe_unused]] const HInstruction* other) const override {
     return true;
   }
@@ -5872,7 +5872,6 @@ class HNot final : public HUnaryOperation {
       : HUnaryOperation(kNot, result_type, input, dex_pc) {
   }
 
-  bool CanBeMoved() const override { return true; }
   bool InstructionDataEquals([[maybe_unused]] const HInstruction* other) const override {
     return true;
   }
@@ -5898,7 +5897,6 @@ class HBooleanNot final : public HUnaryOperation {
       : HUnaryOperation(kBooleanNot, DataType::Type::kBool, input, dex_pc) {
   }
 
-  bool CanBeMoved() const override { return true; }
   bool InstructionDataEquals([[maybe_unused]] const HInstruction* other) const override {
     return true;
   }

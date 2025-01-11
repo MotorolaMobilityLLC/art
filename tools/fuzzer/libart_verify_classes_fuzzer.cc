@@ -28,6 +28,7 @@
 #include "jni/java_vm_ext.h"
 #include "noop_compiler_callbacks.h"
 #include "runtime.h"
+#include "runtime_intrinsics.h"
 #include "scoped_thread_state_change-inl.h"
 #include "verifier/class_verifier.h"
 #include "well_known_classes.h"
@@ -138,6 +139,16 @@ extern "C" int LLVMFuzzerInitialize([[maybe_unused]] int* argc, [[maybe_unused]]
 
   art::Thread::Current()->TransitionFromRunnableToSuspended(art::ThreadState::kNative);
 
+  {
+    art::ScopedObjectAccess soa(art::Thread::Current());
+    art::Runtime::Current()->GetClassLinker()->RunEarlyRootClinits(soa.Self());
+    art::InitializeIntrinsics();
+    art::Runtime::Current()->RunRootClinits(soa.Self());
+  }
+
+  // Check for heap corruption before running the fuzzer.
+  art::Runtime::Current()->GetHeap()->VerifyHeap();
+
   // Query the current stack and add it to the global variable. Otherwise LSAN complains about a
   // non-existing leak.
   stack_t ss;
@@ -178,12 +189,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
   // Scope for the handles
   {
-    art::StackHandleScope<3> scope(soa.Self());
+    art::StackHandleScope<4> scope(soa.Self());
     art::Handle<art::mirror::ClassLoader> h_loader =
         scope.NewHandle(soa.Decode<art::mirror::ClassLoader>(class_loader));
     art::MutableHandle<art::mirror::Class> h_klass(scope.NewHandle<art::mirror::Class>(nullptr));
     art::MutableHandle<art::mirror::DexCache> h_dex_cache(
         scope.NewHandle<art::mirror::DexCache>(nullptr));
+    art::MutableHandle<art::mirror::ClassLoader> h_dex_cache_class_loader =
+        scope.NewHandle(h_loader.Get());
 
     for (art::ClassAccessor accessor : dex_file.GetClasses()) {
       h_klass.Assign(
@@ -195,12 +208,16 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
         continue;
       }
       h_dex_cache.Assign(h_klass->GetDexCache());
+
+      // The class loader from the class's dex cache is different from the dex file's class loader
+      // for boot image classes e.g. java.util.AbstractCollection.
+      h_dex_cache_class_loader.Assign(h_klass->GetDexCache()->GetClassLoader());
       art::verifier::ClassVerifier::VerifyClass(soa.Self(),
                                                 /* verifier_deps= */ nullptr,
                                                 h_dex_cache->GetDexFile(),
                                                 h_klass,
                                                 h_dex_cache,
-                                                h_loader,
+                                                h_dex_cache_class_loader,
                                                 *h_klass->GetClassDef(),
                                                 runtime->GetCompilerCallbacks(),
                                                 art::verifier::HardFailLogMode::kLogWarning,

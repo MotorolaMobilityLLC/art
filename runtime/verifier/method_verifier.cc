@@ -1351,9 +1351,8 @@ class MethodVerifier final : public MethodVerifierImpl {
   * next_insn, and set the changed flag on the target address if any of the registers were changed.
   * In the case of fall-through, update the merge line on a change as it's the working line for the
   * next instruction.
-  * Returns "false" if an error is encountered.
   */
-  bool UpdateRegisters(uint32_t next_insn, RegisterLine* merge_line, bool update_merge_line)
+  void UpdateRegisters(uint32_t next_insn, RegisterLine* merge_line, bool update_merge_line)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Run verification on the method. Returns true if verification completes and false if the input
@@ -2536,37 +2535,6 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyMethod() {
     // }
   }
   return true;
-}
-
-// Setup a register line for the given return instruction.
-template <bool kVerifierDebug>
-static void AdjustReturnLine(MethodVerifier<kVerifierDebug>* verifier,
-                             const Instruction* ret_inst,
-                             RegisterLine* line) {
-  Instruction::Code opcode = ret_inst->Opcode();
-
-  switch (opcode) {
-    case Instruction::RETURN_VOID:
-      if (verifier->IsInstanceConstructor()) {
-        // Before we mark all regs as conflicts, check that we don't have an uninitialized this.
-        line->CheckConstructorReturn(verifier);
-      }
-      line->MarkAllRegistersAsConflicts(verifier);
-      break;
-
-    case Instruction::RETURN:
-    case Instruction::RETURN_OBJECT:
-      line->MarkAllRegistersAsConflictsExcept(verifier, ret_inst->VRegA_11x());
-      break;
-
-    case Instruction::RETURN_WIDE:
-      line->MarkAllRegistersAsConflictsExceptWide(verifier, ret_inst->VRegA_11x());
-      break;
-
-    default:
-      LOG(FATAL) << "Unknown return opcode " << opcode;
-      UNREACHABLE();
-  }
 }
 
 template <bool kVerifierDebug>
@@ -3873,13 +3841,9 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     DCHECK(!IsMoveResultOrMoveException(inst->RelativeAt(branch_target)->Opcode()));
     /* update branch target, set "changed" if appropriate */
     if (nullptr != branch_line) {
-      if (!UpdateRegisters(work_insn_idx_ + branch_target, branch_line.get(), false)) {
-        return false;
-      }
+      UpdateRegisters(work_insn_idx_ + branch_target, branch_line.get(), false);
     } else {
-      if (!UpdateRegisters(work_insn_idx_ + branch_target, work_line_.get(), false)) {
-        return false;
-      }
+      UpdateRegisters(work_insn_idx_ + branch_target, work_line_.get(), false);
     }
   }
 
@@ -3915,9 +3879,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       abs_offset = work_insn_idx_ + offset;
       DCHECK_LT(abs_offset, code_item_accessor_.InsnsSizeInCodeUnits());
       DCHECK(!IsMoveResultOrMoveException(inst->RelativeAt(offset)->Opcode()));
-      if (!UpdateRegisters(abs_offset, work_line_.get(), false)) {
-        return false;
-      }
+      UpdateRegisters(abs_offset, work_line_.get(), false);
     }
   }
 
@@ -3961,9 +3923,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         LogVerifyInfo() << "Updating exception handler 0x"
                         << std::hex << iterator.GetHandlerAddress();
       }
-      if (!UpdateRegisters(iterator.GetHandlerAddress(), saved_line_.get(), false)) {
-        return false;
-      }
+      UpdateRegisters(iterator.GetHandlerAddress(), saved_line_.get(), false);
     }
 
     /*
@@ -4007,19 +3967,12 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       // Make workline consistent with fallthrough computed from peephole optimization.
       work_line_->CopyFromLine(fallthrough_line.get());
     }
-    if (GetInstructionFlags(next_insn_idx).IsReturn()) {
-      // For returns we only care about the operand to the return, all other registers are dead.
-      const Instruction* ret_inst = &code_item_accessor_.InstructionAt(next_insn_idx);
-      AdjustReturnLine(this, ret_inst, work_line_.get());
-    }
     RegisterLine* next_line = reg_table_.GetLine(next_insn_idx);
     if (next_line != nullptr) {
       // Merge registers into what we have for the next instruction, and set the "changed" flag if
       // needed. If the merge changes the state of the registers then the work line will be
       // updated.
-      if (!UpdateRegisters(next_insn_idx, work_line_.get(), true)) {
-        return false;
-      }
+      UpdateRegisters(next_insn_idx, work_line_.get(), true);
     } else {
       /*
        * We're not recording register data for the next instruction, so we don't know what the
@@ -5153,9 +5106,10 @@ void MethodVerifierImpl::VerifyISFieldAccess(const Instruction* inst,
 }
 
 template <bool kVerifierDebug>
-bool MethodVerifier<kVerifierDebug>::UpdateRegisters(uint32_t next_insn,
+void MethodVerifier<kVerifierDebug>::UpdateRegisters(uint32_t next_insn,
                                                      RegisterLine* merge_line,
                                                      bool update_merge_line) {
+  DCHECK(!flags_.have_pending_hard_failure_);
   bool changed = true;
   RegisterLine* target_line = reg_table_.GetLine(next_insn);
   if (!GetInstructionFlags(next_insn).IsVisitedOrChanged()) {
@@ -5165,19 +5119,6 @@ bool MethodVerifier<kVerifierDebug>::UpdateRegisters(uint32_t next_insn,
      * only way a register can transition out of "unknown", so this is not just an optimization.)
      */
     target_line->CopyFromLine(merge_line);
-    if (GetInstructionFlags(next_insn).IsReturn()) {
-      // Verify that the monitor stack is empty on return.
-      merge_line->VerifyMonitorStackEmpty(this);
-
-      // For returns we only care about the operand to the return, all other registers are dead.
-      // Initialize them as conflicts so they don't add to GC and deoptimization information.
-      const Instruction* ret_inst = &code_item_accessor_.InstructionAt(next_insn);
-      AdjustReturnLine(this, ret_inst, target_line);
-      // Directly bail if a hard failure was found.
-      if (flags_.have_pending_hard_failure_) {
-        return false;
-      }
-    }
   } else {
     RegisterLineArenaUniquePtr copy;
     if (kVerifierDebug) {
@@ -5185,9 +5126,6 @@ bool MethodVerifier<kVerifierDebug>::UpdateRegisters(uint32_t next_insn,
       copy->CopyFromLine(target_line);
     }
     changed = target_line->MergeRegisters(this, merge_line);
-    if (flags_.have_pending_hard_failure_) {
-      return false;
-    }
     if (kVerifierDebug && changed) {
       LogVerifyInfo() << "Merging at [" << reinterpret_cast<void*>(work_insn_idx_) << "]"
                       << " to [" << reinterpret_cast<void*>(next_insn) << "]: " << "\n"
@@ -5202,7 +5140,7 @@ bool MethodVerifier<kVerifierDebug>::UpdateRegisters(uint32_t next_insn,
   if (changed) {
     GetModifiableInstructionFlags(next_insn).SetChanged();
   }
-  return true;
+  DCHECK(!flags_.have_pending_hard_failure_);
 }
 
 const RegType& MethodVerifierImpl::GetMethodReturnType() {

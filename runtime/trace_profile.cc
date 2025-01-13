@@ -140,7 +140,7 @@ void RecordMethodsOnThreadStack(Thread* thread, uintptr_t* method_trace_buffer)
   visitor.WalkStack(true);
 
   // Create method entry events for all methods currently on the thread's stack.
-  uint64_t init_time = TimestampCounter::GetMicroTime(TimestampCounter::GetTimestamp());
+  uint64_t init_time = TimestampCounter::GetNanoTime(TimestampCounter::GetTimestamp());
   // Set the lsb to 0 to indicate method entry.
   init_time = init_time & ~1;
   std::ostringstream os;
@@ -492,13 +492,13 @@ void TraceProfiler::DumpLongRunningMethodBuffer(uint32_t thread_id,
       // start of the trace. Just ignore this entry.
     } else if (entry & 0x1) {
       // Method exit
-      os << "<-" << TimestampCounter::GetMicroTime(entry & ~1) << "\n";
+      os << "<-" << TimestampCounter::GetNanoTime(entry & ~1) << "\n";
     } else {
       // Method entry
       ArtMethod* method = reinterpret_cast<ArtMethod*>(entry);
       ptr--;
       CHECK(ptr >= end_trace_entries);
-      os << "->" << method << " " << TimestampCounter::GetMicroTime(*ptr) << "\n";
+      os << "->" << method << " " << TimestampCounter::GetNanoTime(*ptr) << "\n";
       methods.insert(method);
     }
     ptr--;

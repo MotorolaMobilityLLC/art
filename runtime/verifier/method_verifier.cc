@@ -2475,13 +2475,31 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyMethod() {
       HandleMonitorDexPcsWorkLine(monitor_enter_dex_pcs_, work_line_.get());
     }
 
-    if (!CodeFlowVerifyInstruction(&start_guess)) {
+    if (UNLIKELY(!CodeFlowVerifyInstruction(&start_guess))) {
+      DCHECK(flags_.have_pending_hard_failure_);
+      if (IsAotMode()) {
+        /* When AOT compiling, check that the last failure is a hard failure */
+        DCHECK(!failures_.empty());
+        if (failures_.back().error != VERIFY_ERROR_BAD_CLASS_HARD) {
+          LOG(ERROR) << "Pending failures:";
+          for (const VerifyErrorAndMessage& veam : failures_) {
+            LOG(ERROR) << veam.error << " " << veam.message.view();
+          }
+          LOG(FATAL) << "Pending hard failure, but last failure not hard.";
+        }
+      }
+      if (kVerifierDebug) {
+        InfoMessages() << "Rejecting opcode "
+                       << code_item_accessor_.InstructionAt(work_insn_idx_).DumpString(dex_file_);
+      }
+
       std::string prepend(dex_file_->PrettyMethod(dex_method_idx_));
       prepend += " failed to verify: ";
       PrependToLastFailMessage(prepend);
       return false;
     }
     /* Clear "changed" and mark as visited. */
+    DCHECK(!flags_.have_pending_hard_failure_);
     GetModifiableInstructionFlags(insn_idx).SetVisited();
     GetModifiableInstructionFlags(insn_idx).ClearChanged();
   }
@@ -2937,25 +2955,12 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
           (is_checkcast) ? inst->VRegA_21c(inst_data) : inst->VRegB_22c(inst_data);
       const RegType& orig_type = work_line_->GetRegisterType(this, orig_type_reg);
       if (!res_type.IsNonZeroReferenceTypes()) {
-        if (is_checkcast) {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "check-cast on unexpected class " << res_type;
-        } else {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "instance-of on unexpected class " << res_type;
-        }
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << opcode << " on unexpected class " << res_type;
       } else if (!orig_type.IsReferenceTypes()) {
-        if (is_checkcast) {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "check-cast on non-reference in v" << orig_type_reg;
-        } else {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "instance-of on non-reference in v" << orig_type_reg;
-        }
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << opcode << " on non-reference in v" << orig_type_reg;
       } else if (orig_type.IsUninitializedTypes()) {
-        if (is_checkcast) {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "check-cast on uninitialized reference in v"
-                                            << orig_type_reg;
-        } else {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "instance-of on uninitialized reference in v"
-                                            << orig_type_reg;
-        }
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << opcode << " on uninitialized reference in v"
+                                          << orig_type_reg;
       } else {
         if (is_checkcast) {
           work_line_->SetRegisterType<LockOp::kKeep>(inst->VRegA_21c(inst_data), res_type);
@@ -3787,19 +3792,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
   }  // end - switch (dec_insn.opcode)
 
   if (flags_.have_pending_hard_failure_) {
-    if (IsAotMode()) {
-      /* When AOT compiling, check that the last failure is a hard failure */
-      DCHECK(!failures_.empty());
-      if (failures_.back().error != VERIFY_ERROR_BAD_CLASS_HARD) {
-        LOG(ERROR) << "Pending failures:";
-        for (const VerifyErrorAndMessage& veam : failures_) {
-          LOG(ERROR) << veam.error << " " << veam.message.view();
-        }
-        LOG(FATAL) << "Pending hard failure, but last failure not hard.";
-      }
-    }
     /* immediate failure, reject class */
-    InfoMessages() << "Rejecting opcode " << inst->DumpString(dex_file_);
     return false;
   } else if (flags_.have_pending_runtime_throw_failure_) {
     LogVerifyInfo() << "Elevating opcode flags from " << opcode_flags << " to Throw";
@@ -3953,14 +3946,14 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     DCHECK_EQ(&code_item_accessor_.InstructionAt(work_insn_idx_), inst);
     uint32_t next_insn_idx = work_insn_idx_ + inst->SizeInCodeUnits();
     if (next_insn_idx >= code_item_accessor_.InsnsSizeInCodeUnits()) {
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "Execution can walk off end of code area";
+      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "Can flow through to end of code area";
       return false;
     }
     // The only way to get to a move-exception instruction is to get thrown there. Make sure the
     // next instruction isn't one.
     Instruction::Code next_opcode = code_item_accessor_.InstructionAt(next_insn_idx).Opcode();
     if (UNLIKELY(next_opcode == Instruction::MOVE_EXCEPTION)) {
-      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid use of move-exception";
+      Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "Can flow through to move-exception";
       return false;
     }
     if (nullptr != fallthrough_line) {

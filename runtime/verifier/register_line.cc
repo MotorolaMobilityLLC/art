@@ -91,31 +91,6 @@ void RegisterLine::MarkRefsAsInitialized(MethodVerifier* verifier, uint32_t vsrc
   DCHECK_GT(changed, 0u);
 }
 
-void RegisterLine::MarkAllRegistersAsConflicts(MethodVerifier* verifier) {
-  uint16_t conflict_type_id = verifier->GetRegTypeCache()->Conflict().GetId();
-  for (uint32_t i = 0; i < num_regs_; i++) {
-    line_[i] = conflict_type_id;
-  }
-}
-
-void RegisterLine::MarkAllRegistersAsConflictsExcept(MethodVerifier* verifier, uint32_t vsrc) {
-  uint16_t conflict_type_id = verifier->GetRegTypeCache()->Conflict().GetId();
-  for (uint32_t i = 0; i < num_regs_; i++) {
-    if (i != vsrc) {
-      line_[i] = conflict_type_id;
-    }
-  }
-}
-
-void RegisterLine::MarkAllRegistersAsConflictsExceptWide(MethodVerifier* verifier, uint32_t vsrc) {
-  uint16_t conflict_type_id = verifier->GetRegTypeCache()->Conflict().GetId();
-  for (uint32_t i = 0; i < num_regs_; i++) {
-    if ((i != vsrc) && (i != (vsrc + 1))) {
-      line_[i] = conflict_type_id;
-    }
-  }
-}
-
 std::string RegisterLine::Dump(MethodVerifier* verifier) const {
   std::string result;
   for (size_t i = 0; i < num_regs_; i++) {

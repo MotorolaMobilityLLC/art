@@ -1141,6 +1141,7 @@
                   "692-vdex-inmem-loader",
                   "693-vdex-inmem-loader-evict",
                   "723-string-init-range",
+                  "734-duplicate-fields",
                   "808-checker-invoke-super",
                   "809-checker-invoke-super-bss",
                   "810-checker-invoke-super-default",

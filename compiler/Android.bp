@@ -479,6 +479,7 @@ art_cc_defaults {
         "optimizing/nodes_test.cc",
         "optimizing/nodes_vector_test.cc",
         "optimizing/parallel_move_test.cc",
+        "optimizing/prepare_for_register_allocation_test.cc",
         "optimizing/pretty_printer_test.cc",
         "optimizing/reference_type_propagation_test.cc",
         "optimizing/side_effects_test.cc",

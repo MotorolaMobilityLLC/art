@@ -444,10 +444,10 @@ const Iteration* GarbageCollector::GetCurrentIteration() const {
 
 bool GarbageCollector::ShouldEagerlyReleaseMemoryToOS() const {
   // We have seen old kernels and custom kernel features misbehave in the
-  // presence of too much usage of MADV_FREE. So always release memory eagerly
-  // while we investigate.
-  static constexpr bool kEnableLazyRelease = false;
-  if (!kEnableLazyRelease) {
+  // presence of too much usage of MADV_FREE. So only release memory eagerly
+  // on platforms we know do not have the bug.
+  static const bool gEnableLazyRelease = !kIsTargetBuild || IsKernelVersionAtLeast(6, 0);
+  if (!gEnableLazyRelease) {
     return true;
   }
   Runtime* runtime = Runtime::Current();

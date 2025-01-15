@@ -292,7 +292,7 @@ class MethodVerifier {
                                         uint32_t api_level)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
-  virtual bool PotentiallyMarkRuntimeThrow() = 0;
+  virtual void PotentiallyMarkRuntimeThrow() = 0;
 
   std::ostringstream& InfoMessages() {
     if (!info_messages_.has_value()) {

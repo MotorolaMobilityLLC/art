@@ -2820,6 +2820,17 @@ class ArtdPreRebootTest : public ArtdTest {
     ON_CALL(*mock_props_, GetProperty).WillByDefault(Return(""));
     auto mock_exec_utils = std::make_unique<MockExecUtils>();
     mock_exec_utils_ = mock_exec_utils.get();
+    auto mock_pre_reboot_build_props = std::make_unique<NiceMock<MockSystemProperties>>();
+    mock_pre_reboot_build_props_ = mock_pre_reboot_build_props.get();
+
+    ON_CALL(*mock_pre_reboot_build_props_, GetProperty).WillByDefault(Return(""));
+    ON_CALL(*mock_pre_reboot_build_props_, GetProperty("ro.build.version.sdk"))
+        .WillByDefault(Return("35"));
+    ON_CALL(*mock_pre_reboot_build_props_, GetProperty("ro.build.version.codename"))
+        .WillByDefault(Return("Baklava"));
+    ON_CALL(*mock_pre_reboot_build_props_, GetProperty("ro.build.version.known_codenames"))
+        .WillByDefault(Return("VanillaIceCream,Baklava"));
+
     artd_ = ndk::SharedRefBase::make<Artd>(Options{.is_pre_reboot = true},
                                            std::move(mock_props),
                                            std::move(mock_exec_utils),
@@ -2829,7 +2840,8 @@ class ArtdPreRebootTest : public ArtdTest {
                                            mock_mount_.AsStdFunction(),
                                            mock_restorecon_.AsStdFunction(),
                                            pre_reboot_tmp_dir_,
-                                           init_environ_rc_path_);
+                                           init_environ_rc_path_,
+                                           std::move(mock_pre_reboot_build_props));
 
     ON_CALL(mock_restorecon_, Call).WillByDefault(Return(Result<void>()));
 
@@ -2852,6 +2864,7 @@ class ArtdPreRebootTest : public ArtdTest {
                             const std::optional<OutputArtifacts::PermissionSettings::SeContext>&,
                             bool)>
       mock_restorecon_;
+  MockSystemProperties* mock_pre_reboot_build_props_;
 };
 
 TEST_F(ArtdPreRebootTest, preRebootInit) {
@@ -2871,7 +2884,11 @@ TEST_F(ArtdPreRebootTest, preRebootInit) {
                   AllOf(WhenSplitBy("--",
                                     AllOf(Contains(art_root_ + "/bin/art_exec"),
                                           Contains("--drop-capabilities")),
-                                    Contains("/apex/com.android.sdkext/bin/derive_classpath")),
+                                    AllOf(Contains("/apex/com.android.sdkext/bin/derive_classpath"),
+                                          Contains(Flag("--override-device-sdk-version=", "35")),
+                                          Contains(Flag("--override-device-codename=", "Baklava")),
+                                          Contains(Flag("--override-device-known-codenames=",
+                                                        "VanillaIceCream,Baklava")))),
                         HasKeepFdsFor("/proc/self/fd/")),
                   _,
                   _))

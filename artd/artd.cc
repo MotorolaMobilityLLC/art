@@ -2009,10 +2009,25 @@ Result<void> Artd::PreRebootInitDeriveClasspath(const std::string& path) {
     return ErrnoErrorf("Failed to create '{}'", path);
   }
 
+  if (pre_reboot_build_props_ == nullptr) {
+    pre_reboot_build_props_ = std::make_unique<BuildSystemProperties>(
+        OR_RETURN(BuildSystemProperties::Create("/system/build.prop")));
+  }
+  std::string sdk_version = pre_reboot_build_props_->GetOrEmpty("ro.build.version.sdk");
+  std::string codename = pre_reboot_build_props_->GetOrEmpty("ro.build.version.codename");
+  std::string known_codenames =
+      pre_reboot_build_props_->GetOrEmpty("ro.build.version.known_codenames");
+  if (sdk_version.empty() || codename.empty() || known_codenames.empty()) {
+    return Errorf("Failed to read system properties");
+  }
+
   CmdlineBuilder args = OR_RETURN(GetArtExecCmdlineBuilder());
   args.Add("--keep-fds=%d", output->Fd())
       .Add("--")
       .Add("/apex/com.android.sdkext/bin/derive_classpath")
+      .Add("--override-device-sdk-version=%s", sdk_version)
+      .Add("--override-device-codename=%s", codename)
+      .Add("--override-device-known-codenames=%s", known_codenames)
       .Add("/proc/self/fd/%d", output->Fd());
 
   LOG(INFO) << "Running derive_classpath: " << Join(args.Get(), /*separator=*/" ");

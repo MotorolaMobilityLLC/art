@@ -138,7 +138,8 @@ class Artd : public aidl::com::android::server::art::BnArtd {
                 std::function<MountFn> mount_func = mount,
                 std::function<decltype(Restorecon)> restorecon_func = Restorecon,
                 std::optional<std::string> pre_reboot_tmp_dir = std::nullopt,
-                std::optional<std::string> init_environ_rc_path = std::nullopt)
+                std::optional<std::string> init_environ_rc_path = std::nullopt,
+                std::unique_ptr<art::tools::SystemProperties> pre_reboot_build_props = nullptr)
       : options_(std::move(options)),
         props_(std::move(props)),
         exec_utils_(std::move(exec_utils)),
@@ -148,7 +149,8 @@ class Artd : public aidl::com::android::server::art::BnArtd {
         mount_(std::move(mount_func)),
         restorecon_(std::move(restorecon_func)),
         pre_reboot_tmp_dir_(std::move(pre_reboot_tmp_dir)),
-        init_environ_rc_path_(std::move(init_environ_rc_path)) {}
+        init_environ_rc_path_(std::move(init_environ_rc_path)),
+        pre_reboot_build_props_(std::move(pre_reboot_build_props)) {}
 
   ndk::ScopedAStatus isAlive(bool* _aidl_return) override;
 
@@ -379,6 +381,7 @@ class Artd : public aidl::com::android::server::art::BnArtd {
   const std::function<decltype(Restorecon)> restorecon_;
   const std::optional<std::string> pre_reboot_tmp_dir_;
   const std::optional<std::string> init_environ_rc_path_;
+  std::unique_ptr<art::tools::SystemProperties> pre_reboot_build_props_;
 };
 
 // A class for getting system properties from a `build.prop` file.

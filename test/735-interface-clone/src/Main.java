@@ -22,6 +22,7 @@ public class Main {
     Class<?> cls = Class.forName("Cls");
     try {
       cls.getMethod("doClone").invoke(cls.newInstance(), null);
+      throw new Error("Expected IncompatibleClassChangeError");
     } catch (InvocationTargetException e) {
       if (!(e.getCause() instanceof IncompatibleClassChangeError)) {
         throw new Error("Expected IncompatibleClassChangeError, got " + e.getCause());

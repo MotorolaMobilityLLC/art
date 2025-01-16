@@ -356,18 +356,10 @@ void UnstartedRuntime::UnstartedClassGetDeclaredField(
   ObjPtr<mirror::Class> klass = shadow_frame->GetVRegReference(arg_offset)->AsClass();
   ObjPtr<mirror::String> name2 = shadow_frame->GetVRegReference(arg_offset + 1)->AsString();
   ArtField* found = nullptr;
-  for (ArtField& field : klass->GetIFields()) {
+  for (ArtField& field : klass->GetFields()) {
     if (name2->Equals(field.GetName())) {
       found = &field;
       break;
-    }
-  }
-  if (found == nullptr) {
-    for (ArtField& field : klass->GetSFields()) {
-      if (name2->Equals(field.GetName())) {
-        found = &field;
-        break;
-      }
     }
   }
   if (found != nullptr && ShouldDenyAccessToMember(found, shadow_frame)) {

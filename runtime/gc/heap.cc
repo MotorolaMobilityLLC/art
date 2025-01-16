@@ -3375,8 +3375,9 @@ class VerifyReferenceCardVisitor {
           if (!obj->IsObjectArray()) {
             ObjPtr<mirror::Class> klass = is_static ? obj->AsClass() : obj->GetClass();
             CHECK(klass != nullptr);
-            for (ArtField& field : (is_static ? klass->GetSFields() : klass->GetIFields())) {
-              if (field.GetOffset().Int32Value() == offset.Int32Value()) {
+            for (ArtField& field : klass->GetFields()) {
+              if (is_static == field.IsStatic() &&
+                  field.GetOffset().Int32Value() == offset.Int32Value()) {
                 LOG(ERROR) << (is_static ? "Static " : "") << "field in the live stack is "
                            << field.PrettyField();
                 break;

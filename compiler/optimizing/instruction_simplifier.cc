@@ -1800,7 +1800,7 @@ static bool RecognizeAndSimplifyClassCheck(HCondition* condition) {
 
   {
     ScopedObjectAccess soa(Thread::Current());
-    ArtField* field = GetClassRoot<mirror::Object>()->GetInstanceField(0);
+    ArtField* field = GetClassRoot<mirror::Object>()->GetField(0);
     DCHECK_EQ(std::string(field->GetName()), "shadow$_klass_");
     if (field_get->GetFieldInfo().GetField() != field) {
       return false;

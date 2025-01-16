@@ -804,7 +804,7 @@ HInliner::InlineCacheType HInliner::GetInlineCacheAOT(
 HInstanceFieldGet* HInliner::BuildGetReceiverClass(ClassLinker* class_linker,
                                                    HInstruction* receiver,
                                                    uint32_t dex_pc) const {
-  ArtField* field = GetClassRoot<mirror::Object>(class_linker)->GetInstanceField(0);
+  ArtField* field = GetClassRoot<mirror::Object>(class_linker)->GetField(0);
   DCHECK_EQ(std::string(field->GetName()), "shadow$_klass_");
   HInstanceFieldGet* result = new (graph_->GetAllocator()) HInstanceFieldGet(
       receiver,
@@ -2452,8 +2452,7 @@ bool HInliner::ReturnTypeMoreSpecific(HInstruction* return_replacement,
         return true;
       } else if (return_replacement->IsInstanceFieldGet()) {
         HInstanceFieldGet* field_get = return_replacement->AsInstanceFieldGet();
-        if (field_get->GetFieldInfo().GetField() ==
-                GetClassRoot<mirror::Object>()->GetInstanceField(0)) {
+        if (field_get->GetFieldInfo().GetField() == GetClassRoot<mirror::Object>()->GetField(0)) {
           return true;
         }
       }

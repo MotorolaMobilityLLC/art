@@ -54,8 +54,8 @@
  * run after the instruction simplifier has removed redundant suspend checks.
  */
 
-#ifndef ART_COMPILER_OPTIMIZING_SELECT_GENERATOR_H_
-#define ART_COMPILER_OPTIMIZING_SELECT_GENERATOR_H_
+#ifndef ART_COMPILER_OPTIMIZING_CODE_FLOW_SIMPLIFIER_H_
+#define ART_COMPILER_OPTIMIZING_CODE_FLOW_SIMPLIFIER_H_
 
 #include "base/macros.h"
 #include "base/scoped_arena_containers.h"
@@ -64,15 +64,15 @@
 
 namespace art HIDDEN {
 
-class HSelectGenerator : public HOptimization {
+class HCodeFlowSimplifier : public HOptimization {
  public:
-  HSelectGenerator(HGraph* graph,
-                   OptimizingCompilerStats* stats,
-                   const char* name = kSelectGeneratorPassName);
+  HCodeFlowSimplifier(HGraph* graph,
+                      OptimizingCompilerStats* stats,
+                      const char* name = kCodeFlowSimplifierPassName);
 
   bool Run() override;
 
-  static constexpr const char* kSelectGeneratorPassName = "select_generator";
+  static constexpr const char* kCodeFlowSimplifierPassName = "code_flow_simplifier";
 
  private:
   bool TryGenerateSelectSimpleDiamondPattern(HBasicBlock* block,
@@ -112,9 +112,9 @@ class HSelectGenerator : public HOptimization {
   // when that gets resolved we get another one with the outer if.
   HBasicBlock* TryFixupDoubleDiamondPattern(HBasicBlock* block);
 
-  DISALLOW_COPY_AND_ASSIGN(HSelectGenerator);
+  DISALLOW_COPY_AND_ASSIGN(HCodeFlowSimplifier);
 };
 
 }  // namespace art
 
-#endif  // ART_COMPILER_OPTIMIZING_SELECT_GENERATOR_H_
+#endif  // ART_COMPILER_OPTIMIZING_CODE_FLOW_SIMPLIFIER_H_

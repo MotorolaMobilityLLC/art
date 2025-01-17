@@ -57,10 +57,8 @@
 #include "profiling_info_builder.h"
 #include "reference_type_propagation.h"
 #include "register_allocator_linear_scan.h"
-#include "select_generator.h"
 #include "ssa_builder.h"
 #include "ssa_liveness_analysis.h"
-#include "ssa_phi_elimination.h"
 #include "stack_map_stream.h"
 #include "utils/assembler.h"
 
@@ -668,7 +666,7 @@ void OptimizingCompiler::RunOptimizations(HGraph* graph,
              "reference_type_propagation$after_gvn",
              OptimizationPass::kGlobalValueNumbering),
       // Simplification (TODO: only if GVN occurred).
-      OptDef(OptimizationPass::kSelectGenerator),
+      OptDef(OptimizationPass::kCodeFlowSimplifier),
       OptDef(OptimizationPass::kConstantFolding,
              "constant_folding$after_gvn"),
       OptDef(OptimizationPass::kInstructionSimplifier,

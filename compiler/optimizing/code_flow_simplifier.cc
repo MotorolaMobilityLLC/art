@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "select_generator.h"
+#include "code_flow_simplifier.h"
 
 #include "optimizing/nodes.h"
 #include "reference_type_propagation.h"
@@ -23,9 +23,9 @@ namespace art HIDDEN {
 
 static constexpr size_t kMaxInstructionsInBranch = 1u;
 
-HSelectGenerator::HSelectGenerator(HGraph* graph,
-                                   OptimizingCompilerStats* stats,
-                                   const char* name)
+HCodeFlowSimplifier::HCodeFlowSimplifier(HGraph* graph,
+                                         OptimizingCompilerStats* stats,
+                                         const char* name)
     : HOptimization(graph, name, stats) {
 }
 
@@ -87,7 +87,7 @@ static HPhi* GetSinglePhi(HBasicBlock* block, size_t index1, size_t index2) {
   return select_phi;
 }
 
-bool HSelectGenerator::TryGenerateSelectSimpleDiamondPattern(
+bool HCodeFlowSimplifier::TryGenerateSelectSimpleDiamondPattern(
     HBasicBlock* block, ScopedArenaSafeMap<HInstruction*, HSelect*>* cache) {
   DCHECK(block->GetLastInstruction()->IsIf());
   HIf* if_instruction = block->GetLastInstruction()->AsIf();
@@ -214,7 +214,7 @@ bool HSelectGenerator::TryGenerateSelectSimpleDiamondPattern(
   return true;
 }
 
-HBasicBlock* HSelectGenerator::TryFixupDoubleDiamondPattern(HBasicBlock* block) {
+HBasicBlock* HCodeFlowSimplifier::TryFixupDoubleDiamondPattern(HBasicBlock* block) {
   DCHECK(block->GetLastInstruction()->IsIf());
   HIf* if_instruction = block->GetLastInstruction()->AsIf();
   HBasicBlock* true_block = if_instruction->IfTrueSuccessor();
@@ -307,12 +307,12 @@ HBasicBlock* HSelectGenerator::TryFixupDoubleDiamondPattern(HBasicBlock* block) 
   return inner_if_block;
 }
 
-bool HSelectGenerator::Run() {
+bool HCodeFlowSimplifier::Run() {
   bool did_select = false;
   // Select cache with local allocator.
   ScopedArenaAllocator allocator(graph_->GetArenaStack());
-  ScopedArenaSafeMap<HInstruction*, HSelect*> cache(std::less<HInstruction*>(),
-                                                    allocator.Adapter(kArenaAllocSelectGenerator));
+  ScopedArenaSafeMap<HInstruction*, HSelect*> cache(
+      std::less<HInstruction*>(), allocator.Adapter(kArenaAllocCodeFlowSimplifier));
 
   // Iterate in post order in the unlikely case that removing one occurrence of
   // the selection pattern empties a branch block of another occurrence.

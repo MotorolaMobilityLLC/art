@@ -541,7 +541,7 @@ void CodeGenerator::GenerateInvokeStaticOrDirectRuntimeCall(
       UNREACHABLE();
   }
 
-  InvokeRuntime(entrypoint, invoke, invoke->GetDexPc(), slow_path);
+  InvokeRuntime(entrypoint, invoke, slow_path);
 }
 void CodeGenerator::GenerateInvokeUnresolvedRuntimeCall(HInvokeUnresolved* invoke) {
   MethodReference method_reference(invoke->GetMethodReference());
@@ -570,7 +570,7 @@ void CodeGenerator::GenerateInvokeUnresolvedRuntimeCall(HInvokeUnresolved* invok
       LOG(FATAL) << "Unexpected invoke type: " << invoke->GetInvokeType();
       UNREACHABLE();
   }
-  InvokeRuntime(entrypoint, invoke, invoke->GetDexPc(), nullptr);
+  InvokeRuntime(entrypoint, invoke);
 }
 
 void CodeGenerator::GenerateInvokePolymorphicCall(HInvokePolymorphic* invoke,
@@ -579,13 +579,13 @@ void CodeGenerator::GenerateInvokePolymorphicCall(HInvokePolymorphic* invoke,
   // method index) since it requires multiple info from the instruction (registers A, B, H). Not
   // using the reservation has no effect on the registers used in the runtime call.
   QuickEntrypointEnum entrypoint = kQuickInvokePolymorphic;
-  InvokeRuntime(entrypoint, invoke, invoke->GetDexPc(), slow_path);
+  InvokeRuntime(entrypoint, invoke, slow_path);
 }
 
 void CodeGenerator::GenerateInvokeCustomCall(HInvokeCustom* invoke) {
   MoveConstant(invoke->GetLocations()->GetTemp(0), invoke->GetCallSiteIndex());
   QuickEntrypointEnum entrypoint = kQuickInvokeCustom;
-  InvokeRuntime(entrypoint, invoke, invoke->GetDexPc(), nullptr);
+  InvokeRuntime(entrypoint, invoke);
 }
 
 void CodeGenerator::CreateStringBuilderAppendLocations(HStringBuilderAppend* instruction,
@@ -690,7 +690,7 @@ void CodeGenerator::GenerateUnresolvedFieldAccess(
     HInstruction* field_access,
     DataType::Type field_type,
     uint32_t field_index,
-    uint32_t dex_pc,
+    [[maybe_unused]] uint32_t dex_pc,
     const FieldAccessCallingConvention& calling_convention) {
   LocationSummary* locations = field_access->GetLocations();
 
@@ -754,7 +754,7 @@ void CodeGenerator::GenerateUnresolvedFieldAccess(
     default:
       LOG(FATAL) << "Invalid type " << field_type;
   }
-  InvokeRuntime(entrypoint, field_access, dex_pc, nullptr);
+  InvokeRuntime(entrypoint, field_access);
 
   if (is_get && DataType::IsFloatingPointType(field_type)) {
     MoveLocation(locations->Out(), calling_convention.GetReturnLocation(field_type), field_type);
@@ -780,10 +780,10 @@ void CodeGenerator::GenerateLoadClassRuntimeCall(HLoadClass* cls) {
   MoveConstant(locations->GetTemp(0), cls->GetTypeIndex().index_);
   if (cls->NeedsAccessCheck()) {
     CheckEntrypointTypes<kQuickResolveTypeAndVerifyAccess, void*, uint32_t>();
-    InvokeRuntime(kQuickResolveTypeAndVerifyAccess, cls, cls->GetDexPc());
+    InvokeRuntime(kQuickResolveTypeAndVerifyAccess, cls);
   } else {
     CheckEntrypointTypes<kQuickResolveType, void*, uint32_t>();
-    InvokeRuntime(kQuickResolveType, cls, cls->GetDexPc());
+    InvokeRuntime(kQuickResolveType, cls);
   }
 }
 
@@ -804,7 +804,7 @@ void CodeGenerator::GenerateLoadMethodHandleRuntimeCall(HLoadMethodHandle* metho
   LocationSummary* locations = method_handle->GetLocations();
   MoveConstant(locations->GetTemp(0), method_handle->GetMethodHandleIndex());
   CheckEntrypointTypes<kQuickResolveMethodHandle, void*, uint32_t>();
-  InvokeRuntime(kQuickResolveMethodHandle, method_handle, method_handle->GetDexPc());
+  InvokeRuntime(kQuickResolveMethodHandle, method_handle);
 }
 
 void CodeGenerator::CreateLoadMethodTypeRuntimeCallLocationSummary(
@@ -824,7 +824,7 @@ void CodeGenerator::GenerateLoadMethodTypeRuntimeCall(HLoadMethodType* method_ty
   LocationSummary* locations = method_type->GetLocations();
   MoveConstant(locations->GetTemp(0), method_type->GetProtoIndex().index_);
   CheckEntrypointTypes<kQuickResolveMethodType, void*, uint32_t>();
-  InvokeRuntime(kQuickResolveMethodType, method_type, method_type->GetDexPc());
+  InvokeRuntime(kQuickResolveMethodType, method_type);
 }
 
 static uint32_t GetBootImageOffsetImpl(const void* object, ImageHeader::ImageSections section) {

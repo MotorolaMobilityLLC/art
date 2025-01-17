@@ -2075,8 +2075,10 @@ class ImageDumper {
     if (super != nullptr) {
       DumpFields(os, obj, super);
     }
-    for (ArtField& field : klass->GetIFields()) {
-      PrintField(os, &field, obj);
+    for (ArtField& field : klass->GetFields()) {
+      if (!field.IsStatic()) {
+        PrintField(os, &field, obj);
+      }
     }
   }
 
@@ -2190,11 +2192,13 @@ class ImageDumper {
         }
       }
 
-      if (klass->NumStaticFields() != 0) {
+      if (klass->HasStaticFields()) {
         os << "STATICS:\n";
         ScopedIndentation indent2(&vios_);
-        for (ArtField& field : klass->GetSFields()) {
-          PrintField(os, &field, field.GetDeclaringClass());
+        for (ArtField& field : klass->GetFields()) {
+          if (field.IsStatic()) {
+            PrintField(os, &field, field.GetDeclaringClass());
+          }
         }
       }
     }

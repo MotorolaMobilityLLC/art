@@ -1634,7 +1634,7 @@ static bool HasTrivialClinit(ObjPtr<mirror::Class> klass, PointerSize pointer_si
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // Check if the class has encoded fields that trigger bytecode execution.
   // (Encoded fields are just a different representation of <clinit>.)
-  if (klass->NumStaticFields() != 0u) {
+  if (klass->HasStaticFields()) {
     DCHECK(klass->GetClassDef() != nullptr);
     EncodedStaticFieldValueIterator it(klass->GetDexFile(), *klass->GetClassDef());
     for (; it.HasNext(); it.Next()) {

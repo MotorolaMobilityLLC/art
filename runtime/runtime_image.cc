@@ -860,27 +860,23 @@ class RuntimeImageHelper {
 
   void CopyFieldArrays(ObjPtr<mirror::Class> cls, uint32_t class_image_address)
       REQUIRES_SHARED(Locks::mutator_lock_) {
-    LengthPrefixedArray<ArtField>* fields[] = {
-        cls->GetSFieldsPtr(), cls->GetIFieldsPtr(),
-    };
-    for (LengthPrefixedArray<ArtField>* cur_fields : fields) {
-      if (cur_fields != nullptr) {
-        // Copy the array.
-        size_t number_of_fields = cur_fields->size();
-        size_t size = LengthPrefixedArray<ArtField>::ComputeSize(number_of_fields);
-        size_t offset = art_fields_.size();
-        art_fields_.resize(offset + size);
-        auto* dest_array =
-            reinterpret_cast<LengthPrefixedArray<ArtField>*>(art_fields_.data() + offset);
-        memcpy(dest_array, cur_fields, size);
-        native_relocations_.Put(cur_fields,
-                                std::make_pair(NativeRelocationKind::kArtFieldArray, offset));
+    LengthPrefixedArray<ArtField>* cur_fields = cls->GetFieldsPtr();
+    if (cur_fields != nullptr) {
+      // Copy the array.
+      size_t number_of_fields = cur_fields->size();
+      size_t size = LengthPrefixedArray<ArtField>::ComputeSize(number_of_fields);
+      size_t offset = art_fields_.size();
+      art_fields_.resize(offset + size);
+      auto* dest_array =
+          reinterpret_cast<LengthPrefixedArray<ArtField>*>(art_fields_.data() + offset);
+      memcpy(dest_array, cur_fields, size);
+      native_relocations_.Put(cur_fields,
+                              std::make_pair(NativeRelocationKind::kArtFieldArray, offset));
 
-        // Update the class pointer of individual fields.
-        for (size_t i = 0; i != number_of_fields; ++i) {
-          dest_array->At(i).GetDeclaringClassAddressWithoutBarrier()->Assign(
-              reinterpret_cast<mirror::Class*>(class_image_address));
-        }
+      // Update the class pointer of individual fields.
+      for (size_t i = 0; i != number_of_fields; ++i) {
+        dest_array->At(i).GetDeclaringClassAddressWithoutBarrier()->Assign(
+            reinterpret_cast<mirror::Class*>(class_image_address));
       }
     }
   }
@@ -1429,7 +1425,7 @@ class RuntimeImageHelper {
     }
 
     // Trivial case: no static fields.
-    if (cls->NumStaticFields() == 0u) {
+    if (!cls->HasStaticFields()) {
       return true;
     }
 

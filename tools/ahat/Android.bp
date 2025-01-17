@@ -62,3 +62,13 @@ cc_library_shared {
     header_libs: ["jni_headers"],
     host_supported: true,
 }
+
+java_genrule {
+    name: "ahat-test-dump-gen",
+    srcs: [
+        "ahat-test-dump-gen.sh.in",
+        ":ahat-test-dump",
+    ],
+    out: ["ahat-test-dump-gen.sh"],
+    cmd: "sed -e s=@AHAT_TEST_DUMP_JAR@=$(location :ahat-test-dump)= $(location ahat-test-dump-gen.sh.in) > $(out)",
+}

@@ -18,75 +18,6 @@ LOCAL_PATH := $(call my-dir)
 
 include art/build/Android.common_path.mk
 
-# The ahat tests rely on running ART to generate a heap dump for test, but ART
-# doesn't run on darwin. Only build and run the tests for linux.
-# There are also issues with running under instrumentation.
-ifeq ($(HOST_OS),linux)
-ifneq ($(EMMA_INSTRUMENT),true)
-
-# Determine the location of the test-dump.jar, test-dump.hprof, and proguard
-AHAT_TEST_DUMP_JAR := $(call intermediates-dir-for,JAVA_LIBRARIES,ahat-test-dump)/javalib.jar
-AHAT_TEST_DUMP_COMMON := $(call intermediates-dir-for,JAVA_LIBRARIES,ahat-test-dump,,COMMON)
-AHAT_TEST_DUMP_JNI := $(ART_HOST_OUT_SHARED_LIBRARIES)/libahat-test-jni$(ART_HOST_SHLIB_EXTENSION)
-AHAT_TEST_DUMP_HPROF := $(AHAT_TEST_DUMP_COMMON)/test-dump.hprof
-AHAT_TEST_DUMP_BASE_HPROF := $(AHAT_TEST_DUMP_COMMON)/test-dump-base.hprof
-AHAT_TEST_DUMP_PROGUARD_MAP := $(AHAT_TEST_DUMP_COMMON)/test-dump.map
-AHAT_TEST_DUMP_PROGUARD_DICTIONARY := $(AHAT_TEST_DUMP_COMMON)/proguard_dictionary
-
-# Directories to use for ANDROID_DATA when generating the test dumps to
-# ensure we don't pollute the source tree with any artifacts from running
-# dalvikvm.
-AHAT_TEST_DUMP_ANDROID_DATA := $(AHAT_TEST_DUMP_COMMON)/test-dump-android_data
-AHAT_TEST_DUMP_BASE_ANDROID_DATA := $(AHAT_TEST_DUMP_COMMON)/test-dump-base-android_data
-
-# Generate the proguard map in the desired location by copying it from
-# wherever the build system generates it by default.
-$(AHAT_TEST_DUMP_PROGUARD_MAP): PRIVATE_AHAT_SOURCE_PROGUARD_MAP := $(AHAT_TEST_DUMP_PROGUARD_DICTIONARY)
-$(AHAT_TEST_DUMP_PROGUARD_MAP): $(AHAT_TEST_DUMP_PROGUARD_DICTIONARY)
-	cp $(PRIVATE_AHAT_SOURCE_PROGUARD_MAP) $@
-
-ifeq (true,$(HOST_PREFER_32_BIT))
-  AHAT_TEST_DALVIKVM_DEP := $(HOST_OUT_EXECUTABLES)/dalvikvm32
-  AHAT_TEST_DALVIKVM_ARG := --32
-else
-  AHAT_TEST_DALVIKVM_DEP := $(HOST_OUT_EXECUTABLES)/dalvikvm64
-  AHAT_TEST_DALVIKVM_ARG := --64
-endif
-
-# Run ahat-test-dump.jar to generate test-dump.hprof and test-dump-base.hprof
-# The scripts below are run with --no-compile to avoid dependency on dex2oat.
-AHAT_TEST_DUMP_DEPENDENCIES := \
-  $(AHAT_TEST_DALVIKVM_DEP) \
-  $(AHAT_TEST_DUMP_JNI) \
-  $(ART_HOST_SHARED_LIBRARY_DEPENDENCIES) \
-  $(ART_HOST_SHARED_LIBRARY_DEBUG_DEPENDENCIES) \
-  $(ART_HOST_DEX_DEPENDENCIES) \
-  $(HOST_OUT_EXECUTABLES)/art \
-  $(HOST_CORE_IMG_OUTS)
-
-$(AHAT_TEST_DUMP_HPROF): PRIVATE_AHAT_TEST_ART := $(HOST_OUT_EXECUTABLES)/art
-$(AHAT_TEST_DUMP_HPROF): PRIVATE_AHAT_TEST_DUMP_JAR := $(AHAT_TEST_DUMP_JAR)
-$(AHAT_TEST_DUMP_HPROF): PRIVATE_AHAT_TEST_ANDROID_DATA := $(AHAT_TEST_DUMP_ANDROID_DATA)
-$(AHAT_TEST_DUMP_HPROF): PRIVATE_AHAT_TEST_DALVIKVM_ARG := $(AHAT_TEST_DALVIKVM_ARG)
-$(AHAT_TEST_DUMP_HPROF): $(AHAT_TEST_DUMP_JAR) $(AHAT_TEST_DUMP_DEPENDENCIES)
-	rm -rf $(PRIVATE_AHAT_TEST_ANDROID_DATA)
-	mkdir -p $(PRIVATE_AHAT_TEST_ANDROID_DATA)
-	ANDROID_DATA=$(PRIVATE_AHAT_TEST_ANDROID_DATA) \
-	  $(PRIVATE_AHAT_TEST_ART) --no-compile -d $(PRIVATE_AHAT_TEST_DALVIKVM_ARG) \
-	  -cp $(PRIVATE_AHAT_TEST_DUMP_JAR) Main $@
-
-$(AHAT_TEST_DUMP_BASE_HPROF): PRIVATE_AHAT_TEST_ART := $(HOST_OUT_EXECUTABLES)/art
-$(AHAT_TEST_DUMP_BASE_HPROF): PRIVATE_AHAT_TEST_DUMP_JAR := $(AHAT_TEST_DUMP_JAR)
-$(AHAT_TEST_DUMP_BASE_HPROF): PRIVATE_AHAT_TEST_ANDROID_DATA := $(AHAT_TEST_DUMP_BASE_ANDROID_DATA)
-$(AHAT_TEST_DUMP_BASE_HPROF): PRIVATE_AHAT_TEST_DALVIKVM_ARG := $(AHAT_TEST_DALVIKVM_ARG)
-$(AHAT_TEST_DUMP_BASE_HPROF): $(AHAT_TEST_DUMP_JAR) $(AHAT_TEST_DUMP_DEPENDENCIES)
-	rm -rf $(PRIVATE_AHAT_TEST_ANDROID_DATA)
-	mkdir -p $(PRIVATE_AHAT_TEST_ANDROID_DATA)
-	ANDROID_DATA=$(PRIVATE_AHAT_TEST_ANDROID_DATA) \
-	  $(PRIVATE_AHAT_TEST_ART) --no-compile -d $(PRIVATE_AHAT_TEST_DALVIKVM_ARG) \
-	  -cp $(PRIVATE_AHAT_TEST_DUMP_JAR) Main $@ --base
-
-
 # Determine the location of the ri-test-dump.jar and ri-test-dump.hprof.
 AHAT_RI_TEST_DUMP_JAR := $(call intermediates-dir-for,JAVA_LIBRARIES,ahat-ri-test-dump,HOST)/javalib.jar
 AHAT_RI_TEST_DUMP_COMMON := $(call intermediates-dir-for,JAVA_LIBRARIES,ahat-ri-test-dump,HOST,COMMON)
@@ -104,9 +35,9 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := $(call all-java-files-under, src/test)
 LOCAL_JAR_MANIFEST := etc/ahat-tests.mf
 LOCAL_JAVA_RESOURCE_FILES := \
-  $(AHAT_TEST_DUMP_HPROF) \
-  $(AHAT_TEST_DUMP_BASE_HPROF) \
-  $(AHAT_TEST_DUMP_PROGUARD_MAP) \
+  $(LOCAL_PATH)/etc/test-dump.hprof \
+  $(LOCAL_PATH)/etc/test-dump-base.hprof \
+  $(LOCAL_PATH)/etc/test-dump.map \
   $(AHAT_RI_TEST_DUMP_HPROF) \
   $(LOCAL_PATH)/etc/L.hprof \
   $(LOCAL_PATH)/etc/O.hprof \
@@ -123,20 +54,8 @@ LOCAL_COMPATIBILITY_SUITE := general-tests
 include $(BUILD_HOST_JAVA_LIBRARY)
 AHAT_TEST_JAR := $(LOCAL_BUILT_MODULE)
 
-endif # EMMA_INSTRUMENT
-endif # linux
-
 # Clean up local variables.
 AHAT_TEST_JAR :=
-AHAT_TEST_DUMP_JAR :=
-AHAT_TEST_DUMP_JNI :=
-AHAT_TEST_DUMP_COMMON :=
-AHAT_TEST_DUMP_HPROF :=
-AHAT_TEST_DUMP_BASE_HPROF :=
-AHAT_TEST_DUMP_PROGUARD_MAP :=
-AHAT_TEST_DUMP_DEPENDENCIES :=
-AHAT_TEST_DUMP_ANDROID_DATA :=
-AHAT_TEST_DUMP_BASE_ANDROID_DATA :=
 
 AHAT_RI_TEST_DUMP_JAR :=
 AHAT_RI_TEST_DUMP_COMMON :=

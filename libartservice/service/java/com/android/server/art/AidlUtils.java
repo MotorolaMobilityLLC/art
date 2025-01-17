@@ -145,13 +145,20 @@ public final class AidlUtils {
     }
 
     @NonNull
-    public static ProfilePath buildProfilePathForPrimaryCur(
+    public static PrimaryCurProfilePath buildPrimaryCurProfilePath(
             int userId, @NonNull String packageName, @NonNull String profileName) {
         var primaryCurProfilePath = new PrimaryCurProfilePath();
         primaryCurProfilePath.userId = userId;
         primaryCurProfilePath.packageName = packageName;
         primaryCurProfilePath.profileName = profileName;
-        return ProfilePath.primaryCurProfilePath(primaryCurProfilePath);
+        return primaryCurProfilePath;
+    }
+
+    @NonNull
+    public static ProfilePath buildProfilePathForPrimaryCur(
+            int userId, @NonNull String packageName, @NonNull String profileName) {
+        return ProfilePath.primaryCurProfilePath(
+                buildPrimaryCurProfilePath(userId, packageName, profileName));
     }
 
     @NonNull

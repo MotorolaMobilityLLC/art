@@ -16,12 +16,15 @@
 
 package com.android.server.art;
 
+import static android.app.ActivityManager.RunningAppProcessInfo;
+
 import static com.android.server.art.ArtFileManager.ProfileLists;
 import static com.android.server.art.ArtFileManager.UsableArtifactLists;
 import static com.android.server.art.ArtFileManager.WritableArtifactLists;
 import static com.android.server.art.DexMetadataHelper.DexMetadataInfo;
 import static com.android.server.art.PrimaryDexUtils.DetailedPrimaryDexInfo;
 import static com.android.server.art.PrimaryDexUtils.PrimaryDexInfo;
+import static com.android.server.art.ProfilePath.PrimaryCurProfilePath;
 import static com.android.server.art.ProfilePath.WritableProfilePath;
 import static com.android.server.art.ReasonMapping.BatchDexoptReason;
 import static com.android.server.art.ReasonMapping.BootReason;
@@ -37,6 +40,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.SystemApi;
 import android.annotation.SystemService;
+import android.app.ActivityManager;
 import android.app.job.JobInfo;
 import android.apphibernation.AppHibernationManager;
 import android.content.BroadcastReceiver;
@@ -54,6 +58,9 @@ import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.storage.StorageManager;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
 import android.text.TextUtils;
 import android.util.Pair;
 
@@ -1234,6 +1241,57 @@ public final class ArtManagerLocal {
     }
 
     /**
+     * Forces all running processes of the given package to flush profiles to the disk.
+     *
+     * @return true on success; false on timeout or artd crash.
+     *
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    public boolean flushProfiles(
+            @NonNull PackageManagerLocal.FilteredSnapshot snapshot, @NonNull String packageName) {
+        PackageState pkgState = Utils.getPackageStateOrThrow(snapshot, packageName);
+        List<RunningAppProcessInfo> infoList =
+                Utils.getRunningProcessInfoForPackage(mInjector.getActivityManager(), pkgState);
+
+        try (var pin = mInjector.createArtdPin()) {
+            boolean success = true;
+            for (RunningAppProcessInfo info : infoList) {
+                PrimaryCurProfilePath profilePath = AidlUtils.buildPrimaryCurProfilePath(
+                        UserHandle.getUserHandleForUid(info.uid).getIdentifier(), packageName,
+                        PrimaryDexUtils.getProfileName(null /* splitName */));
+                IArtdNotification notification =
+                        mInjector.getArtd().initProfileSaveNotification(profilePath, info.pid);
+
+                // Check if the process is still there.
+                if (!Utils.getRunningProcessInfoForPackage(mInjector.getActivityManager(), pkgState)
+                                .stream()
+                                .anyMatch(running_info -> running_info.pid == info.pid)) {
+                    continue;
+                }
+
+                // Send signal and wait one by one, to avoid the race among processes on the same
+                // profile file.
+                try {
+                    mInjector.kill(info.pid, OsConstants.SIGUSR1);
+                    success &= notification.wait(1000 /* timeoutMs */);
+                } catch (ErrnoException | ServiceSpecificException e) {
+                    if (e instanceof ErrnoException ee) {
+                        if (ee.errno == OsConstants.ESRCH) {
+                            continue;
+                        }
+                    }
+                    AsLog.w("Failed to flush profile on pid " + info.pid, e);
+                }
+            }
+            return success;
+        } catch (RemoteException e) {
+            Utils.logArtdException(e);
+            return false;
+        }
+    }
+
+    /**
      * Should be used by {@link BackgroundDexoptJobService} ONLY.
      *
      * @hide
@@ -1622,6 +1680,7 @@ public final class ArtManagerLocal {
             getUserManager();
             getDexUseManager();
             getStorageManager();
+            getActivityManager();
             GlobalInjector.getInstance().checkArtModuleServiceManager();
 
             // `PreRebootDexoptJob` does not depend on external dependencies, so unlike the calls
@@ -1763,6 +1822,17 @@ public final class ArtManagerLocal {
         @NonNull
         public PreRebootStatsReporter getPreRebootStatsReporter() {
             return new PreRebootStatsReporter();
+        }
+
+        @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        @NonNull
+        public ActivityManager getActivityManager() {
+            return Objects.requireNonNull(mContext.getSystemService(ActivityManager.class));
+        }
+
+        @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        public void kill(int pid, int signal) throws ErrnoException {
+            Os.kill(pid, signal);
         }
     }
 }

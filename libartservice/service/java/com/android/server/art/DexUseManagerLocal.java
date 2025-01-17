@@ -207,7 +207,7 @@ public class DexUseManagerLocal {
                                         .stream()
                                         .map(loader -> loader.loadingPackageName())
                                         .collect(Collectors.toSet())))
-                .collect(Collectors.toList());
+                .toList();
     }
 
     /**
@@ -354,7 +354,7 @@ public class DexUseManagerLocal {
                                         -> !clc.equals(
                                                 SecondaryDexInfo.UNSUPPORTED_CLASS_LOADER_CONTEXT))
                                 .distinct()
-                                .collect(Collectors.toList());
+                                .toList();
                 String clc;
                 if (distinctClcList.size() == 0) {
                     clc = SecondaryDexInfo.UNSUPPORTED_CLASS_LOADER_CONTEXT;

@@ -1105,12 +1105,12 @@ size_t CodeGeneratorX86::RestoreFloatingPointRegister(size_t stack_index, uint32
 
 void CodeGeneratorX86::InvokeRuntime(QuickEntrypointEnum entrypoint,
                                      HInstruction* instruction,
-                                     uint32_t dex_pc,
+                                     [[maybe_unused]] uint32_t dex_pc,
                                      SlowPathCode* slow_path) {
   ValidateInvokeRuntime(entrypoint, instruction, slow_path);
   GenerateInvokeRuntime(GetThreadOffset<kX86PointerSize>(entrypoint).Int32Value());
   if (EntrypointRequiresStackMap(entrypoint)) {
-    RecordPcInfo(instruction, dex_pc, slow_path);
+    RecordPcInfo(instruction, slow_path);
   }
 }
 
@@ -1429,7 +1429,7 @@ void CodeGeneratorX86::GenerateFrameEntry() {
   if (!skip_overflow_check) {
     size_t reserved_bytes = GetStackOverflowReservedBytes(InstructionSet::kX86);
     __ testl(EAX, Address(ESP, -static_cast<int32_t>(reserved_bytes)));
-    RecordPcInfo(nullptr, 0);
+    RecordPcInfoForFrameOrBlockEntry();
   }
 
   if (!HasEmptyFrame()) {
@@ -2944,7 +2944,7 @@ void InstructionCodeGeneratorX86::VisitInvokeInterface(HInvokeInterface* invoke)
                   ArtMethod::EntryPointFromQuickCompiledCodeOffset(kX86PointerSize).Int32Value()));
 
   DCHECK(!codegen_->IsLeafMethod());
-  codegen_->RecordPcInfo(invoke, invoke->GetDexPc());
+  codegen_->RecordPcInfo(invoke);
 }
 
 void LocationsBuilderX86::VisitInvokePolymorphic(HInvokePolymorphic* invoke) {
@@ -5616,7 +5616,7 @@ void CodeGeneratorX86::GenerateStaticOrDirectCall(
     case CodePtrLocation::kCallSelf:
       DCHECK(!GetGraph()->HasShouldDeoptimizeFlag());
       __ call(GetFrameEntryLabel());
-      RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+      RecordPcInfo(invoke, slow_path);
       break;
     case CodePtrLocation::kCallCriticalNative: {
       size_t out_frame_size =
@@ -5633,7 +5633,7 @@ void CodeGeneratorX86::GenerateStaticOrDirectCall(
         __ call(Address(callee_method.AsRegister<Register>(),
                         ArtMethod::EntryPointFromJniOffset(kX86PointerSize).Int32Value()));
       }
-      RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+      RecordPcInfo(invoke, slow_path);
       if (out_frame_size == 0u && DataType::IsFloatingPointType(invoke->GetType())) {
         // Create space for conversion.
         out_frame_size = 8u;
@@ -5679,7 +5679,7 @@ void CodeGeneratorX86::GenerateStaticOrDirectCall(
       __ call(Address(callee_method.AsRegister<Register>(),
                       ArtMethod::EntryPointFromQuickCompiledCodeOffset(
                           kX86PointerSize).Int32Value()));
-      RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+      RecordPcInfo(invoke, slow_path);
       break;
   }
 
@@ -5718,7 +5718,7 @@ void CodeGeneratorX86::GenerateVirtualCall(
   // call temp->GetEntryPoint();
   __ call(Address(
       temp, ArtMethod::EntryPointFromQuickCompiledCodeOffset(kX86PointerSize).Int32Value()));
-  RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+  RecordPcInfo(invoke, slow_path);
 }
 
 void CodeGeneratorX86::RecordBootImageIntrinsicPatch(HX86ComputeBaseMethodAddress* method_address,
@@ -6482,7 +6482,7 @@ void CodeGeneratorX86::GenerateImplicitNullCheck(HNullCheck* instruction) {
   Location obj = locations->InAt(0);
 
   __ testl(EAX, Address(obj.AsRegister<Register>(), 0));
-  RecordPcInfo(instruction, instruction->GetDexPc());
+  RecordPcInfo(instruction);
 }
 
 void CodeGeneratorX86::GenerateExplicitNullCheck(HNullCheck* instruction) {

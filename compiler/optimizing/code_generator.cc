@@ -348,7 +348,7 @@ void CodeGenerator::Compile() {
     // This ensures that we have correct native line mapping for all native instructions.
     // It is necessary to make stepping over a statement work. Otherwise, any initial
     // instructions (e.g. moves) would be assumed to be the start of next statement.
-    MaybeRecordNativeDebugInfo(/* instruction= */ nullptr, block->GetDexPc());
+    MaybeRecordNativeDebugInfoForBlockEntry(block->GetDexPc());
     for (HInstructionIterator it(block->GetInstructions()); !it.Done(); it.Advance()) {
       HInstruction* current = it.Current();
       if (current->HasEnvironment()) {
@@ -1138,11 +1138,24 @@ static bool NeedsVregInfo(HInstruction* instruction, bool osr) {
          instruction->CanThrowIntoCatchBlock();
 }
 
+void CodeGenerator::RecordPcInfoForFrameOrBlockEntry(uint32_t dex_pc) {
+  StackMapStream* stack_map_stream = GetStackMapStream();
+  stack_map_stream->BeginStackMapEntry(dex_pc, GetAssembler()->CodePosition());
+  stack_map_stream->EndStackMapEntry();
+}
+
 void CodeGenerator::RecordPcInfo(HInstruction* instruction,
-                                 uint32_t dex_pc,
                                  SlowPathCode* slow_path,
                                  bool native_debug_info) {
-  RecordPcInfo(instruction, dex_pc, GetAssembler()->CodePosition(), slow_path, native_debug_info);
+  // Only for native debuggable apps we take a look at the dex_pc from the instruction itself. For
+  // the regular case, we retrieve the dex_pc from the instruction's environment.
+  DCHECK_IMPLIES(native_debug_info, GetCompilerOptions().GetNativeDebuggable());
+  DCHECK_IMPLIES(!native_debug_info, instruction->HasEnvironment()) << *instruction;
+  RecordPcInfo(instruction,
+               native_debug_info ? instruction->GetDexPc() : kNoDexPc,
+               GetAssembler()->CodePosition(),
+               slow_path,
+               native_debug_info);
 }
 
 void CodeGenerator::RecordPcInfo(HInstruction* instruction,
@@ -1150,36 +1163,30 @@ void CodeGenerator::RecordPcInfo(HInstruction* instruction,
                                  uint32_t native_pc,
                                  SlowPathCode* slow_path,
                                  bool native_debug_info) {
-  if (instruction != nullptr) {
-    // The code generated for some type conversions
-    // may call the runtime, thus normally requiring a subsequent
-    // call to this method. However, the method verifier does not
-    // produce PC information for certain instructions, which are
-    // considered "atomic" (they cannot join a GC).
-    // Therefore we do not currently record PC information for such
-    // instructions.  As this may change later, we added this special
-    // case so that code generators may nevertheless call
-    // CodeGenerator::RecordPcInfo without triggering an error in
-    // CodeGenerator::BuildNativeGCMap ("Missing ref for dex pc 0x")
-    // thereafter.
-    if (instruction->IsTypeConversion()) {
+  DCHECK(instruction != nullptr);
+  // Only for native debuggable apps we take a look at the dex_pc from the instruction itself. For
+  // the regular case, we retrieve the dex_pc from the instruction's environment.
+  DCHECK_IMPLIES(native_debug_info, GetCompilerOptions().GetNativeDebuggable());
+  DCHECK_IMPLIES(!native_debug_info, instruction->HasEnvironment()) << *instruction;
+  // The code generated for some type conversions
+  // may call the runtime, thus normally requiring a subsequent
+  // call to this method. However, the method verifier does not
+  // produce PC information for certain instructions, which are
+  // considered "atomic" (they cannot join a GC).
+  // Therefore we do not currently record PC information for such
+  // instructions.  As this may change later, we added this special
+  // case so that code generators may nevertheless call
+  // CodeGenerator::RecordPcInfo without triggering an error in
+  // CodeGenerator::BuildNativeGCMap ("Missing ref for dex pc 0x")
+  // thereafter.
+  if (instruction->IsTypeConversion()) {
+    return;
+  }
+  if (instruction->IsRem()) {
+    DataType::Type type = instruction->AsRem()->GetResultType();
+    if ((type == DataType::Type::kFloat32) || (type == DataType::Type::kFloat64)) {
       return;
     }
-    if (instruction->IsRem()) {
-      DataType::Type type = instruction->AsRem()->GetResultType();
-      if ((type == DataType::Type::kFloat32) || (type == DataType::Type::kFloat64)) {
-        return;
-      }
-    }
-  }
-
-  StackMapStream* stack_map_stream = GetStackMapStream();
-  if (instruction == nullptr) {
-    // For stack overflow checks and native-debug-info entries without dex register
-    // mapping (i.e. start of basic block or start of slow path).
-    stack_map_stream->BeginStackMapEntry(dex_pc, native_pc);
-    stack_map_stream->EndStackMapEntry();
-    return;
   }
 
   LocationSummary* locations = instruction->GetLocations();
@@ -1220,6 +1227,7 @@ void CodeGenerator::RecordPcInfo(HInstruction* instruction,
       ? StackMap::Kind::Debug
       : (osr ? StackMap::Kind::OSR : StackMap::Kind::Default);
   bool needs_vreg_info = NeedsVregInfo(instruction, osr);
+  StackMapStream* stack_map_stream = GetStackMapStream();
   stack_map_stream->BeginStackMapEntry(outer_dex_pc,
                                        native_pc,
                                        register_mask,
@@ -1263,6 +1271,16 @@ bool CodeGenerator::HasStackMapAtCurrentPc() {
   return stack_map_stream->GetStackMapNativePcOffset(count - 1) == pc;
 }
 
+void CodeGenerator::MaybeRecordNativeDebugInfoForBlockEntry(uint32_t dex_pc) {
+  if (GetCompilerOptions().GetNativeDebuggable() && dex_pc != kNoDexPc) {
+    if (HasStackMapAtCurrentPc()) {
+      // Ensure that we do not collide with the stack map of the previous instruction.
+      GenerateNop();
+    }
+    RecordPcInfoForFrameOrBlockEntry(dex_pc);
+  }
+}
+
 void CodeGenerator::MaybeRecordNativeDebugInfo(HInstruction* instruction,
                                                uint32_t dex_pc,
                                                SlowPathCode* slow_path) {
@@ -1271,7 +1289,7 @@ void CodeGenerator::MaybeRecordNativeDebugInfo(HInstruction* instruction,
       // Ensure that we do not collide with the stack map of the previous instruction.
       GenerateNop();
     }
-    RecordPcInfo(instruction, dex_pc, slow_path, /* native_debug_info= */ true);
+    RecordPcInfo(instruction, slow_path, /* native_debug_info= */ true);
   }
 }
 
@@ -1572,7 +1590,7 @@ bool CodeGenerator::CanMoveNullCheckToUser(HNullCheck* null_check) {
 void CodeGenerator::MaybeRecordImplicitNullCheck(HInstruction* instr) {
   HNullCheck* null_check = instr->GetImplicitNullCheck();
   if (null_check != nullptr) {
-    RecordPcInfo(null_check, null_check->GetDexPc(), GetAssembler()->CodePosition());
+    RecordPcInfo(null_check);
   }
 }
 

@@ -4207,7 +4207,7 @@ void InstructionCodeGeneratorRISCV64::VisitInvokeInterface(HInvokeInterface* ins
   // RA();
   __ Jalr(RA);
   DCHECK(!codegen_->IsLeafMethod());
-  codegen_->RecordPcInfo(instruction, instruction->GetDexPc());
+  codegen_->RecordPcInfo(instruction);
 }
 
 void LocationsBuilderRISCV64::VisitInvokeStaticOrDirect(HInvokeStaticOrDirect* instruction) {
@@ -6137,7 +6137,7 @@ void CodeGeneratorRISCV64::GenerateFrameEntry() {
     DCHECK(GetCompilerOptions().GetImplicitStackOverflowChecks());
     __ Loadw(
         Zero, SP, -static_cast<int32_t>(GetStackOverflowReservedBytes(InstructionSet::kRiscv64)));
-    RecordPcInfo(nullptr, 0);
+    RecordPcInfoForFrameOrBlockEntry();
   }
 
   if (!HasEmptyFrame()) {
@@ -6511,7 +6511,7 @@ void CodeGeneratorRISCV64::Finalize() {
 // Generate code to invoke a runtime entry point.
 void CodeGeneratorRISCV64::InvokeRuntime(QuickEntrypointEnum entrypoint,
                                          HInstruction* instruction,
-                                         uint32_t dex_pc,
+                                         [[maybe_unused]] uint32_t dex_pc,
                                          SlowPathCode* slow_path) {
   ValidateInvokeRuntime(entrypoint, instruction, slow_path);
 
@@ -6522,7 +6522,7 @@ void CodeGeneratorRISCV64::InvokeRuntime(QuickEntrypointEnum entrypoint,
   __ Loadd(RA, TR, entrypoint_offset.Int32Value());
   __ Jalr(RA);
   if (EntrypointRequiresStackMap(entrypoint)) {
-    RecordPcInfo(instruction, dex_pc, slow_path);
+    RecordPcInfo(instruction, slow_path);
   }
 }
 
@@ -6559,7 +6559,7 @@ void CodeGeneratorRISCV64::GenerateImplicitNullCheck(HNullCheck* instruction) {
   Location obj = instruction->GetLocations()->InAt(0);
 
   __ Lw(Zero, obj.AsRegister<XRegister>(), 0);
-  RecordPcInfo(instruction, instruction->GetDexPc());
+  RecordPcInfo(instruction);
 }
 
 void CodeGeneratorRISCV64::GenerateExplicitNullCheck(HNullCheck* instruction) {
@@ -7035,7 +7035,7 @@ void CodeGeneratorRISCV64::GenerateStaticOrDirectCall(HInvokeStaticOrDirect* inv
     case CodePtrLocation::kCallSelf:
       DCHECK(!GetGraph()->HasShouldDeoptimizeFlag());
       __ Jal(&frame_entry_label_);
-      RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+      RecordPcInfo(invoke, slow_path);
       break;
     case CodePtrLocation::kCallArtMethod:
       // RA = callee_method->entry_point_from_quick_compiled_code_;
@@ -7044,7 +7044,7 @@ void CodeGeneratorRISCV64::GenerateStaticOrDirectCall(HInvokeStaticOrDirect* inv
                ArtMethod::EntryPointFromQuickCompiledCodeOffset(kRiscv64PointerSize).Int32Value());
       // RA()
       __ Jalr(RA);
-      RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+      RecordPcInfo(invoke, slow_path);
       break;
     case CodePtrLocation::kCallCriticalNative: {
       size_t out_frame_size =
@@ -7059,7 +7059,7 @@ void CodeGeneratorRISCV64::GenerateStaticOrDirectCall(HInvokeStaticOrDirect* inv
         __ Loadd(RA, callee_method.AsRegister<XRegister>(), offset.Int32Value());
       }
       __ Jalr(RA);
-      RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+      RecordPcInfo(invoke, slow_path);
       // The result is returned the same way in native ABI and managed ABI. No result conversion is
       // needed, see comments in `Riscv64JniCallingConvention::RequiresSmallResultTypeExtension()`.
       if (out_frame_size != 0u) {
@@ -7143,7 +7143,7 @@ void CodeGeneratorRISCV64::GenerateVirtualCall(HInvokeVirtual* invoke,
   __ Loadd(RA, temp, entry_point.Int32Value());
   // RA();
   __ Jalr(RA);
-  RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+  RecordPcInfo(invoke, slow_path);
 }
 
 void CodeGeneratorRISCV64::MoveFromReturnRegister(Location trg, DataType::Type type) {

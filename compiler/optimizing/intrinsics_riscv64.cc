@@ -5814,7 +5814,7 @@ void IntrinsicCodeGeneratorRISCV64::VisitMethodHandleInvokeExact(HInvoke* invoke
   Offset entry_point = ArtMethod::EntryPointFromQuickCompiledCodeOffset(kRiscv64PointerSize);
   __ Loadd(RA, method, entry_point.SizeValue());
   __ Jalr(RA);
-  codegen_->RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+  codegen_->RecordPcInfo(invoke, slow_path);
   __ Bind(slow_path->GetExitLabel());
 }
 

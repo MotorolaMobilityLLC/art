@@ -632,6 +632,13 @@ ALWAYS_INLINE ArtMethod* FindSuperMethodToCall(uint32_t method_idx,
   }
 
   if (referenced_class->IsInterface()) {
+    if (!resolved_method->GetDeclaringClass()->IsInterface()) {
+      // invoke-super from interface should not resolve to Object methods.
+      DCHECK(resolved_method->GetDeclaringClass()->IsObjectClass());
+      ThrowIncompatibleClassChangeError(
+          kSuper, resolved_method->GetInvokeType(), resolved_method, referrer);
+      return nullptr;
+    }
     // TODO We can do better than this for a (compiled) fastpath.
     ArtMethod* found_method = referenced_class->FindVirtualMethodForInterfaceSuper(
         resolved_method, linker->GetImagePointerSize());

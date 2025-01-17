@@ -1541,12 +1541,14 @@ void HVariableInputSizeInstruction::AddInput(HInstruction* input) {
 
 void HVariableInputSizeInstruction::InsertInputAt(size_t index, HInstruction* input) {
   inputs_.insert(inputs_.begin() + index, HUserRecord<HInstruction*>(input));
-  input->AddUseAt(this, index);
   // Update indexes in use nodes of inputs that have been pushed further back by the insert().
   for (size_t i = index + 1u, e = inputs_.size(); i < e; ++i) {
     DCHECK_EQ(inputs_[i].GetUseNode()->GetIndex(), i - 1u);
     inputs_[i].GetUseNode()->SetIndex(i);
   }
+  // Add the use after updating the indexes. If the `input` is already used by `this`,
+  // the fixup after use insertion can use those indexes.
+  input->AddUseAt(this, index);
 }
 
 void HVariableInputSizeInstruction::RemoveInputAt(size_t index) {

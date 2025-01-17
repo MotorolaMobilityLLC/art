@@ -86,6 +86,12 @@ cc_defaults {
         ":core-icu4j-fuzzer",
         ":conscrypt-fuzzer",
     ],
+
+    whole_static_libs: [
+        // `libsigchain` must be statically linked. ASAN init uses sigaction,
+        // which makes `libsigchain.so` initialize earlier than required.
+        "libsigchain",
+    ],
 }
 
 cc_fuzz {
@@ -118,7 +124,8 @@ cc_fuzz {
     name: "libart_verify_classes_fuzzer",
     defaults: [
         "art_defaults",
-        "libart_static_defaults",
+        "libart-runtime-for-test_static_defaults",
+        "libart-compiler_static_defaults",
         "libart_verify_classes_fuzzer-defaults",
     ],
     // Can not be in defaults due to soong limitations.
@@ -132,7 +139,8 @@ cc_fuzz {
     name: "libart_verify_classes_fuzzerd",
     defaults: [
         "art_debug_defaults",
-        "libartd_static_defaults",
+        "libartd-runtime-for-test_static_defaults",
+        "libartd-compiler_static_defaults",
         "libart_verify_classes_fuzzer-defaults",
     ],
     // Can not be in defaults due to soong limitations.

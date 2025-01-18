@@ -41,8 +41,6 @@ int skipped_gc_iterations = 0;
 // TODO: These values were obtained from local experimenting. They can be changed after
 // further investigation.
 static constexpr int kMaxSkipGCIterations = 100;
-// Global variable to signal LSAN that we are not leaking memory.
-uint8_t* allocated_signal_stack = nullptr;
 
 namespace art {
 // A class to be friends with ClassLinker and access the internal FindDexCacheDataLocked method.
@@ -122,40 +120,23 @@ extern "C" int LLVMFuzzerInitialize([[maybe_unused]] int* argc, [[maybe_unused]]
       std::make_pair("imageinstructionset",
                      reinterpret_cast<const void*>(GetInstructionSetString(art::kRuntimeISA))));
 
-  // No need for sig chain.
-  options.push_back(std::make_pair("-Xno-sig-chain", nullptr));
-
   if (!art::Runtime::Create(options, false)) {
     LOG(FATAL) << "We should always be able to create the runtime";
     UNREACHABLE();
   }
 
-  // Need well-known-classes.
-  art::WellKnownClasses::Init(art::Thread::Current()->GetJniEnv());
-  // Need a class loader. Fake that we're a compiler.
-  // Note: this will run initializers through the unstarted runtime, so make sure it's
-  //       initialized.
   art::interpreter::UnstartedRuntime::Initialize();
-
-  art::Thread::Current()->TransitionFromRunnableToSuspended(art::ThreadState::kNative);
-
-  {
-    art::ScopedObjectAccess soa(art::Thread::Current());
-    art::Runtime::Current()->GetClassLinker()->RunEarlyRootClinits(soa.Self());
-    art::InitializeIntrinsics();
-    art::Runtime::Current()->RunRootClinits(soa.Self());
-  }
+  art::Runtime::Current()->GetClassLinker()->RunEarlyRootClinits(art::Thread::Current());
+  art::InitializeIntrinsics();
+  art::Runtime::Current()->RunRootClinits(art::Thread::Current());
 
   // Check for heap corruption before running the fuzzer.
   art::Runtime::Current()->GetHeap()->VerifyHeap();
 
-  // Query the current stack and add it to the global variable. Otherwise LSAN complains about a
-  // non-existing leak.
-  stack_t ss;
-  if (sigaltstack(nullptr, &ss) == -1) {
-    PLOG(FATAL) << "sigaltstack failed";
-  }
-  allocated_signal_stack = reinterpret_cast<uint8_t*>(ss.ss_sp);
+  // Runtime::Create acquired the mutator_lock_ that is normally given away when we
+  // Runtime::Start, give it away now with `TransitionFromSuspendedToRunnable` until we figure out
+  // how to start a Runtime.
+  art::Thread::Current()->TransitionFromRunnableToSuspended(art::ThreadState::kNative);
 
   return 0;
 }

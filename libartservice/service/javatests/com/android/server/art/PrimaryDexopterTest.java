@@ -62,7 +62,6 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import java.util.zip.ZipFile;
 
 @SmallTest
@@ -693,7 +692,7 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
         assertThat(mPrimaryDexopter.dexopt()
                            .stream()
                            .map(DexContainerFileDexoptResult::getStatus)
-                           .collect(Collectors.toList()))
+                           .toList())
                 .containsExactly(DexoptResult.DEXOPT_CANCELLED);
 
         // It shouldn't continue after being cancelled on the first file.
@@ -734,10 +733,7 @@ public class PrimaryDexopterTest extends PrimaryDexopterTestBase {
 
         mCancellationSignal.cancel();
 
-        assertThat(results.get()
-                           .stream()
-                           .map(DexContainerFileDexoptResult::getStatus)
-                           .collect(Collectors.toList()))
+        assertThat(results.get().stream().map(DexContainerFileDexoptResult::getStatus).toList())
                 .containsExactly(DexoptResult.DEXOPT_CANCELLED);
 
         // It shouldn't continue after being cancelled on the first file.

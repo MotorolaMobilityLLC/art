@@ -82,7 +82,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /**
  * This class handles ART shell commands.
@@ -588,6 +587,20 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         PackageState pkgState = Utils.getPackageStateOrThrow(snapshot, packageName);
         AndroidPackage pkg = Utils.getPackageOrThrow(pkgState);
         try (var tracing = new Utils.Tracing("dump profiles")) {
+            // `flushProfiles` may take time and may have unexpected side-effects (e.g., when the
+            // app has its own thread waiting for SIGUSR1). Therefore, We call it in the shell
+            // command handler instead of in `dumpAppProfile` to prevent existing Java API users
+            // from being impacted by this behavior.
+            pw.println("Waiting for app processes to flush profiles...");
+            pw.flush();
+            long startTimeMs = System.currentTimeMillis();
+            if (mArtManagerLocal.flushProfiles(snapshot, packageName)) {
+                pw.printf("App processes flushed profiles in %dms\n",
+                        System.currentTimeMillis() - startTimeMs);
+            } else {
+                pw.println("Timed out while waiting for app processes to flush profiles");
+            }
+
             for (PrimaryDexInfo dexInfo : PrimaryDexUtils.getDexInfo(pkg)) {
                 String profileName = PrimaryDexUtils.getProfileName(dexInfo.splitName());
                 // The path is intentionally inconsistent with the one for "snapshot-profile". This

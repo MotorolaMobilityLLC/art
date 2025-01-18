@@ -1,4 +1,4 @@
-# Copyright (C) 2023 The Android Open Source Project
+# Copyright (C) 2025 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,18 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.class public LTestCase;
-
+.class public abstract interface LItf;
 .super Ljava/lang/Object;
 
-## CHECK-START: int TestCase.withBranch(boolean) code_flow_simplifier (before)
-## CHECK: If true_count:2 false_count:1
-.method public static withBranch(Z)I
-  .registers 2
-  const/4 v0, 0x1
-  if-nez v1, :return_2
-  return v0
-:return_2
-  const/4 v0, 0x2
-  return v0
+.method public doToString()V
+.registers 1
+       invoke-super {p0}, LItf;->toString()Ljava/lang/String;
+       return-void
 .end method

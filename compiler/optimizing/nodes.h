@@ -6146,7 +6146,10 @@ class HInstanceFieldSet final : public HExpression<2> {
                     declaring_class_def_index,
                     dex_file) {
     SetPackedFlag<kFlagValueCanBeNull>(true);
-    SetPackedField<WriteBarrierKindField>(WriteBarrierKind::kEmitNotBeingReliedOn);
+    SetPackedField<WriteBarrierKindField>(
+        field_type == DataType::Type::kReference
+            ? WriteBarrierKind::kEmitNotBeingReliedOn
+            : WriteBarrierKind::kDontEmit);
     SetRawInputAt(0, object);
     SetRawInputAt(1, value);
   }
@@ -6313,7 +6316,10 @@ class HArraySet final : public HExpression<3> {
     SetPackedFlag<kFlagNeedsTypeCheck>(value->GetType() == DataType::Type::kReference);
     SetPackedFlag<kFlagValueCanBeNull>(true);
     SetPackedFlag<kFlagStaticTypeOfArrayIsObjectArray>(false);
-    SetPackedField<WriteBarrierKindField>(WriteBarrierKind::kEmitNotBeingReliedOn);
+    SetPackedField<WriteBarrierKindField>(
+        value->GetType() == DataType::Type::kReference
+            ? WriteBarrierKind::kEmitNotBeingReliedOn
+            : WriteBarrierKind::kDontEmit);
     SetRawInputAt(0, array);
     SetRawInputAt(1, index);
     SetRawInputAt(2, value);
@@ -7272,7 +7278,10 @@ class HStaticFieldSet final : public HExpression<2> {
                     declaring_class_def_index,
                     dex_file) {
     SetPackedFlag<kFlagValueCanBeNull>(true);
-    SetPackedField<WriteBarrierKindField>(WriteBarrierKind::kEmitNotBeingReliedOn);
+    SetPackedField<WriteBarrierKindField>(
+        field_type == DataType::Type::kReference
+            ? WriteBarrierKind::kEmitNotBeingReliedOn
+            : WriteBarrierKind::kDontEmit);
     SetRawInputAt(0, cls);
     SetRawInputAt(1, value);
   }

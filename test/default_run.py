@@ -978,10 +978,11 @@ def default_run(ctx, args, **kwargs):
       # installation.
       LD_LIBRARY_PATH = f"{ANDROID_ROOT}/{LIBRARY_DIRECTORY}"
 
-    # This adds libarttest(d).so to the default linker namespace when dalvikvm
-    # is run from /apex/com.android.art/bin. Since that namespace is essentially
-    # an alias for the com_android_art namespace, that gives libarttest(d).so
-    # full access to the internal ART libraries.
+    # This adds libarttest(d).so and various other test libraries to the default
+    # linker namespace when dalvikvm is run from /apex/com.android.art/bin.
+    # Since that namespace is essentially an alias for the com_android_art
+    # namespace, that gives libarttest(d).so full access to the internal ART
+    # libraries.
     LD_LIBRARY_PATH = f"/data/{TEST_DIRECTORY}/com.android.art/lib{SUFFIX64}:{LD_LIBRARY_PATH}"
     dlib = ("" if TEST_IS_NDEBUG else "d")
     art_test_internal_libraries = [

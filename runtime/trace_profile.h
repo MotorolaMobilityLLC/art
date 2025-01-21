@@ -31,6 +31,67 @@ class ArtMethod;
 // entries required in the buffer.
 static constexpr size_t kAlwaysOnTraceBufSize = 2048;
 
+// The typical frequency at which the timestamp counters are updated is 24576000.
+// 2^22 (4194304) corresponds to about 170ms at that frequency.
+static constexpr size_t kLongRunningMethodThreshold = 1 << 22;
+
+enum class LowOverheadTraceType {
+  kLongRunningMethods,
+  kAllMethods,
+  kNone
+};
+
+class TraceData {
+ public:
+  explicit TraceData(LowOverheadTraceType trace_type) : trace_type_(trace_type) {
+  }
+
+  LowOverheadTraceType GetTraceType() const {
+    return trace_type_;
+  }
+
+  const std::string& GetLongRunningMethods() const {
+    return long_running_methods_;
+  }
+
+  const std::unordered_set<ArtMethod*>& GetTracedMethods() const {
+    return traced_methods_;
+  }
+
+  const std::unordered_map<size_t, std::string>& GetTracedThreads() const {
+    return traced_threads_;
+  }
+
+  void AppendToLongRunningMethods(const std::string& str) {
+    long_running_methods_.append(str);
+  }
+
+  void AddTracedMethods(std::unordered_set<ArtMethod*>& methods) {
+    traced_methods_.merge(methods);
+  }
+
+  void AddTracedMethod(ArtMethod* method) {
+    traced_methods_.insert(method);
+  }
+
+  void AddTracedThread(Thread* thread);
+
+ private:
+  // This is used to hold the initial methods on stack and also long running methods when there is a
+  // buffer overflow.
+  std::string long_running_methods_;
+
+  LowOverheadTraceType trace_type_;
+
+  // These hold the methods and threads see so far. These are used to generate information about
+  // the methods and threads.
+  std::unordered_set<ArtMethod*> traced_methods_;
+
+  // Threads might exit before we dump the data, so record thread id and name when we see a new
+  // thread.
+  std::unordered_map<size_t, std::string> traced_threads_;
+};
+
 // This class implements low-overhead tracing. This feature is available only when
 // always_enable_profile_code is enabled which is a build time flag defined in
 // build/flags/art-flags.aconfig. When this flag is enabled, AOT and JITed code can record events
@@ -42,12 +103,20 @@ class TraceProfiler {
   // Starts profiling by allocating a per-thread buffer for all the threads.
   static void Start();
 
+  // Starts recording long running methods. A long running method means any
+  // method that executes for more than kLongRunningMethodDuration.
+  static void StartTraceLongRunningMethods(uint64_t trace_duration_ns);
+
   // Releases all the buffers.
   static void Stop();
 
   // Dumps the recorded events in the buffer from all threads in the specified file.
   static void Dump(int fd);
   static void Dump(const char* trace_filename);
+
+  // Get the long running methods as a string. This is used in the sigquit handler to record
+  // information about long running methods.
+  static std::string GetLongRunningMethodsString();
 
   // Called when thread is exiting to release the allocated buffer.
   static void ReleaseThreadBuffer(Thread* self) REQUIRES(Locks::trace_lock_);
@@ -57,9 +126,39 @@ class TraceProfiler {
   // Allocates a buffer for the specified thread.
   static void AllocateBuffer(Thread* thread);
 
+  // Used to flush the long running method buffer when it is full. This method flushes all methods
+  // that have already seen an exit and records them into a string. If we don't have sufficient free
+  // entries after this processing (for example: if we have a really deep call stack) then we record
+  // a placeholder method exit event and flush all events.
+  static void FlushBufferAndRecordTraceEvent(ArtMethod* method, Thread* thread, bool is_entry);
+
+  static LowOverheadTraceType GetTraceType();
+
+  // Callback that is run when the specified duration for the long running trace has elapsed. If the
+  // trace is still running then tracing is stopped and all buffers are released. If the trace
+  // has already stopped then this request is ignored.
+  static void TraceTimeElapsed();
+
  private:
-  // Dumps the events from all threads into the trace_file.
+  // Starts tracing.
+  static void Start(LowOverheadTraceType trace_type, uint64_t trace_duration_ns);
+
+  // Dumps the tracing data into the specified trace_file
   static void Dump(std::unique_ptr<File>&& trace_file);
+
+  // Stops tracing.
+  static void StopLocked() REQUIRES(Locks::trace_lock_);
+
+  // Returns the information about long running methods as a string. Used both by Dump
+  // and GetLongRunningMethodsString.
+  static std::string GetLongRunningMethodsStringLocked() REQUIRES(Locks::trace_lock_);
+
+  // Dumps the events from all threads into the trace_file.
+  static void DumpTrace(std::unique_ptr<File>&& trace_file) REQUIRES(Locks::trace_lock_);
+
+  // Dumps the long running methods from all threads into the trace_file.
+  static void DumpLongRunningMethods(std::unique_ptr<File>&& trace_file)
+      REQUIRES(Locks::trace_lock_);
 
   // This method goes over all the events in the thread_buffer and stores the encoded event in the
   // buffer. It returns the pointer to the next free entry in the buffer.
@@ -71,9 +170,28 @@ class TraceProfiler {
                              uint8_t* buffer /* out */,
                              std::unordered_set<ArtMethod*>& methods /* out */);
 
-  static std::string GetMethodInfoLine(ArtMethod* method) REQUIRES(Locks::mutator_lock_);
+  // Dumps all the events in the buffer into the file. Also records the ArtMethods from the events
+  // which is then used to record information about these methods.
+  static void DumpLongRunningMethodBuffer(uint32_t thread_id,
+                                          uintptr_t* thread_buffer,
+                                          uintptr_t* end_buffer,
+                                          std::unordered_set<ArtMethod*>& methods /* out */,
+                                          std::ostringstream& os);
+
+  // Records the thread and method info.
+  static void DumpThreadMethodInfo(const std::unordered_map<size_t, std::string>& traced_threads,
+                                   const std::unordered_set<ArtMethod*>& traced_methods,
+                                   std::ostringstream& os) REQUIRES(Locks::mutator_lock_);
 
   static bool profile_in_progress_ GUARDED_BY(Locks::trace_lock_);
+
+  // Keeps track of number of outstanding trace stop tasks. We should only stop a trace when the
+  // count is 0. If a trace was already stopped and a new trace has started before the time elapsed
+  // for the previous one we shouldn't stop the new trace.
+  static int num_trace_stop_tasks_ GUARDED_BY(Locks::trace_lock_);
+
+  static TraceData* trace_data_ GUARDED_BY(Locks::trace_lock_);
+
   DISALLOW_COPY_AND_ASSIGN(TraceProfiler);
 };
 

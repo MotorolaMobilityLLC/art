@@ -166,10 +166,10 @@ void InitEntryPoints(JniEntryPoints* jpoints,
                      QuickEntryPoints* qpoints,
                      bool monitor_jni_entry_exit);
 void UpdateReadBarrierEntrypoints(QuickEntryPoints* qpoints, bool is_active);
-void UpdateLowOverheadTraceEntrypoints(QuickEntryPoints* qpoints, bool enable);
+void UpdateLowOverheadTraceEntrypoints(QuickEntryPoints* qpoints, LowOverheadTraceType trace_type);
 
-void Thread::UpdateTlsLowOverheadTraceEntrypoints(bool enable) {
-  UpdateLowOverheadTraceEntrypoints(&tlsPtr_.quick_entrypoints, enable);
+void Thread::UpdateTlsLowOverheadTraceEntrypoints(LowOverheadTraceType trace_type) {
+  UpdateLowOverheadTraceEntrypoints(&tlsPtr_.quick_entrypoints, trace_type);
 }
 
 void Thread::SetIsGcMarkingAndUpdateEntrypoints(bool is_marking) {
@@ -1072,7 +1072,7 @@ bool Thread::Init(ThreadList* thread_list, JavaVMExt* java_vm, JNIEnvExt* jni_en
   ScopedTrace trace3("ThreadList::Register");
   thread_list->Register(this);
   if (art_flags::always_enable_profile_code()) {
-    UpdateTlsLowOverheadTraceEntrypoints(!Trace::IsTracingEnabled());
+    UpdateTlsLowOverheadTraceEntrypoints(TraceProfiler::GetTraceType());
   }
   return true;
 }

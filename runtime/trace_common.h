@@ -27,6 +27,7 @@ using android::base::StringPrintf;
 namespace art HIDDEN {
 
 static std::string GetMethodInfoLine(ArtMethod* method) REQUIRES_SHARED(Locks::mutator_lock_) {
+  method = method->GetInterfaceMethodIfProxy(kRuntimePointerSize);
   return StringPrintf("%s\t%s\t%s\t%s\n",
                       PrettyDescriptor(method->GetDeclaringClassDescriptor()).c_str(),
                       method->GetName(),

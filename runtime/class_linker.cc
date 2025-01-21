@@ -1092,42 +1092,6 @@ void ClassLinker::FinishInit(Thread* self) {
 
   CreateStringInitBindings(self, this);
 
-  // Let the heap know some key offsets into java.lang.ref instances
-  // Note: we hard code the field indexes here rather than using FindInstanceField
-  // as the types of the field can't be resolved prior to the runtime being
-  // fully initialized
-  StackHandleScope<3> hs(self);
-  Handle<mirror::Class> java_lang_ref_Reference =
-      hs.NewHandle(GetClassRoot<mirror::Reference>(this));
-  Handle<mirror::Class> java_lang_ref_FinalizerReference =
-      hs.NewHandle(FindSystemClass(self, "Ljava/lang/ref/FinalizerReference;"));
-
-  ArtField* pendingNext = java_lang_ref_Reference->GetField(1);
-  CHECK(!pendingNext->IsStatic());
-  CHECK_STREQ(pendingNext->GetName(), "pendingNext");
-  CHECK_STREQ(pendingNext->GetTypeDescriptor(), "Ljava/lang/ref/Reference;");
-
-  ArtField* queue = java_lang_ref_Reference->GetField(2);
-  CHECK(!queue->IsStatic());
-  CHECK_STREQ(queue->GetName(), "queue");
-  CHECK_STREQ(queue->GetTypeDescriptor(), "Ljava/lang/ref/ReferenceQueue;");
-
-  ArtField* queueNext = java_lang_ref_Reference->GetField(3);
-  CHECK(!queueNext->IsStatic());
-  CHECK_STREQ(queueNext->GetName(), "queueNext");
-  CHECK_STREQ(queueNext->GetTypeDescriptor(), "Ljava/lang/ref/Reference;");
-
-  ArtField* referent = java_lang_ref_Reference->GetField(4);
-  CHECK(!referent->IsStatic());
-  CHECK_STREQ(referent->GetName(), "referent");
-  CHECK_STREQ(referent->GetTypeDescriptor(), "Ljava/lang/Object;");
-
-  ArtField* zombie = java_lang_ref_FinalizerReference->GetField(
-      java_lang_ref_FinalizerReference->NumFields() - 1);
-  CHECK(!zombie->IsStatic());
-  CHECK_STREQ(zombie->GetName(), "zombie");
-  CHECK_STREQ(zombie->GetTypeDescriptor(), "Ljava/lang/Object;");
-
   // ensure all class_roots_ are initialized
   for (size_t i = 0; i < static_cast<size_t>(ClassRoot::kMax); i++) {
     ClassRoot class_root = static_cast<ClassRoot>(i);
@@ -1149,6 +1113,7 @@ void ClassLinker::FinishInit(Thread* self) {
   // ensure that the class will be initialized.
   if (kMemoryToolIsAvailable && !Runtime::Current()->IsAotCompiler()) {
     ObjPtr<mirror::Class> soe_klass = FindSystemClass(self, "Ljava/lang/StackOverflowError;");
+    StackHandleScope<1> hs(self);
     if (soe_klass == nullptr || !EnsureInitialized(self, hs.NewHandle(soe_klass), true, true)) {
       // Strange, but don't crash.
       LOG(WARNING) << "Could not prepare StackOverflowError.";
@@ -9491,10 +9456,14 @@ bool ClassLinker::LinkFieldsHelper::LinkFields(ClassLinker* class_linker,
       UNLIKELY(!class_linker->init_done_) &&
       klass->DescriptorEquals("Ljava/lang/ref/Reference;")) {
     // We know there are no non-reference fields in the Reference classes, and we know
-    // that 'referent' is alphabetically last, so this is easy...
+    // that 'referent' is alphabetically the last instance field, so this is easy...
+    // Note that we cannot use WellKnownClasses fields yet, as this is not
+    // initialized.
     CHECK_EQ(num_reference_fields, num_fields) << klass->PrettyClass();
     CHECK_STREQ(fields->At(klass->NumFields() - 2).GetName(), "referent");
+    CHECK(!fields->At(klass->NumFields() - 2).IsStatic());
     CHECK_STREQ(fields->At(klass->NumFields() - 1).GetName(), "slowPathEnabled");
+    CHECK(fields->At(klass->NumFields() - 1).IsStatic());
     --num_reference_fields;
   }
 

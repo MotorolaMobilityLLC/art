@@ -106,9 +106,8 @@ public class Main {
   /// CHECK-DAG:   <<Bool2:z\d+>>   ParameterValue
   /// CHECK-DAG:   <<Const10:i\d+>> IntConstant 10
   /// CHECK-DAG:   <<Const20:i\d+>> IntConstant 20
-  /// CHECK-DAG:   <<Select:i\d+>>  Select [<<Const20>>,<<Const20>>,<<Bool2>>]
-  /// CHECK-DAG:   <<Select2:i\d+>> Select [<<Select>>,<<Const10>>,<<Bool1>>]
-  /// CHECK-DAG:                    Return [<<Select2>>]
+  /// CHECK-DAG:   <<Select:i\d+>>  Select [<<Const20>>,<<Const10>>,<<Bool1>>]
+  /// CHECK-DAG:                    Return [<<Select>>]
   private static int $noinline$testDoubleDiamondSameValueButNotAllOuter(boolean bool_param_1, boolean bool_param_2) {
       int return_value;
     if (bool_param_1) {

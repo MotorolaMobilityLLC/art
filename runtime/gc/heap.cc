@@ -2568,6 +2568,9 @@ void Heap::PreZygoteFork() {
         region_space_->GetMarkBitmap()->Clear();
       } else {
         bump_pointer_space_->GetMemMap()->Protect(PROT_READ | PROT_WRITE);
+        if (gUseUserfaultfd && use_generational_cc_) {
+          MarkCompactCollector()->ResetGenerationalState();
+        }
       }
     }
     if (temp_space_ != nullptr) {

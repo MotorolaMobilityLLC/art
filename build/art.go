@@ -54,6 +54,8 @@ func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 		cflags = append(cflags, "-DART_USE_CXX_INTERPRETER=1")
 	}
 
+	// TODO: deprecate and then eventually remove ART_USE_GENERATIONAL_CC in favor of
+	// ART_USE_GENERATIONAL_GC
 	if !ctx.Config().IsEnvFalse("ART_USE_READ_BARRIER") && ctx.Config().ArtUseReadBarrier() {
 		// Used to change the read barrier type. Valid values are BAKER, TABLELOOKUP.
 		// The default is BAKER.
@@ -65,8 +67,9 @@ func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 			"-DART_USE_READ_BARRIER=1",
 			"-DART_READ_BARRIER_TYPE_IS_"+barrierType+"=1")
 
-		if !ctx.Config().IsEnvFalse("ART_USE_GENERATIONAL_CC") {
-			cflags = append(cflags, "-DART_USE_GENERATIONAL_CC=1")
+		if !(ctx.Config().IsEnvFalse("ART_USE_GENERATIONAL_CC") ||
+		     ctx.Config().IsEnvFalse("ART_USE_GENERATIONAL_GC")) {
+			cflags = append(cflags, "-DART_USE_GENERATIONAL_GC=1")
 		}
 		// Force CC only if ART_USE_READ_BARRIER was set to true explicitly during
 		// build time.
@@ -76,6 +79,10 @@ func globalFlags(ctx android.LoadHookContext) ([]string, []string) {
 		tlab = true
 	} else if gcType == "CMC" {
 		tlab = true
+		if !(ctx.Config().IsEnvFalse("ART_USE_GENERATIONAL_CC") ||
+		     ctx.Config().IsEnvFalse("ART_USE_GENERATIONAL_GC")) {
+			cflags = append(cflags, "-DART_USE_GENERATIONAL_GC=1")
+		}
 	}
 
 	if tlab {

@@ -62,6 +62,7 @@
 #ifdef ART_TARGET_ANDROID
 #include "android-modules-utils/sdk_level.h"
 #include "com_android_art.h"
+#include "com_android_art_flags.h"
 #endif
 
 #ifndef __BIONIC__
@@ -318,6 +319,18 @@ static bool ShouldUseUserfaultfd() {
 const bool gUseUserfaultfd = ShouldUseUserfaultfd();
 const bool gUseReadBarrier = !gUseUserfaultfd;
 #endif
+#ifdef ART_TARGET_ANDROID
+bool ShouldUseGenerationalGC() {
+  if (gUseUserfaultfd && !com::android::art::flags::use_generational_cmc()) {
+    return false;
+  }
+  // Generational GC feature doesn't need a reboot. Any process (like dex2oat)
+  // can pick a different values than zygote and will be able to execute.
+  return GetBoolProperty("persist.device_config.runtime_native.use_generational_gc", true);
+}
+#else
+bool ShouldUseGenerationalGC() { return true; }
+#endif
 
 namespace gc {
 namespace collector {
@@ -439,6 +452,33 @@ size_t MarkCompact::InitializeInfoMap(uint8_t* p, size_t moving_space_sz) {
   return total;
 }
 
+YoungMarkCompact::YoungMarkCompact(Heap* heap, MarkCompact* main)
+    : GarbageCollector(heap, "young concurrent mark compact"), main_collector_(main) {
+  // Initialize GC metrics.
+  metrics::ArtMetrics* metrics = GetMetrics();
+  gc_time_histogram_ = metrics->YoungGcCollectionTime();
+  metrics_gc_count_ = metrics->YoungGcCount();
+  metrics_gc_count_delta_ = metrics->YoungGcCountDelta();
+  gc_throughput_histogram_ = metrics->YoungGcThroughput();
+  gc_tracing_throughput_hist_ = metrics->YoungGcTracingThroughput();
+  gc_throughput_avg_ = metrics->YoungGcThroughputAvg();
+  gc_tracing_throughput_avg_ = metrics->YoungGcTracingThroughputAvg();
+  gc_scanned_bytes_ = metrics->YoungGcScannedBytes();
+  gc_scanned_bytes_delta_ = metrics->YoungGcScannedBytesDelta();
+  gc_freed_bytes_ = metrics->YoungGcFreedBytes();
+  gc_freed_bytes_delta_ = metrics->YoungGcFreedBytesDelta();
+  gc_duration_ = metrics->YoungGcDuration();
+  gc_duration_delta_ = metrics->YoungGcDurationDelta();
+  are_metrics_initialized_ = true;
+}
+
+void YoungMarkCompact::RunPhases() {
+  DCHECK(!main_collector_->young_gen_);
+  main_collector_->young_gen_ = true;
+  main_collector_->RunPhases();
+  main_collector_->young_gen_ = false;
+}
+
 MarkCompact::MarkCompact(Heap* heap)
     : GarbageCollector(heap, "concurrent mark compact"),
       gc_barrier_(0),
@@ -448,7 +488,7 @@ MarkCompact::MarkCompact(Heap* heap)
       bump_pointer_space_(heap->GetBumpPointerSpace()),
       post_compact_end_(nullptr),
       young_gen_(false),
-      use_generational_(false),
+      use_generational_(heap->GetUseGenerational()),
       compacting_(false),
       moving_space_bitmap_(bump_pointer_space_->GetMarkBitmap()),
       moving_space_begin_(bump_pointer_space_->Begin()),
@@ -530,7 +570,6 @@ MarkCompact::MarkCompact(Heap* heap)
 
   // Initialize GC metrics.
   metrics::ArtMetrics* metrics = GetMetrics();
-  // The mark-compact collector supports only full-heap collections at the moment.
   gc_time_histogram_ = metrics->FullGcCollectionTime();
   metrics_gc_count_ = metrics->FullGcCount();
   metrics_gc_count_delta_ = metrics->FullGcCountDelta();

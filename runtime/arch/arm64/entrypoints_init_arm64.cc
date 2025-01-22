@@ -29,6 +29,7 @@
 #include "entrypoints/quick/runtime_entrypoints_list.h"
 #include "entrypoints/runtime_asm_entrypoints.h"
 #include "interpreter/interpreter.h"
+#include "trace_profile.h"
 
 namespace art_flags = com::android::art::flags;
 
@@ -78,6 +79,9 @@ extern "C" mirror::Object* art_quick_read_barrier_mark_introspection_gc_roots(mi
 
 extern "C" void art_quick_record_entry_trace_event();
 extern "C" void art_quick_record_exit_trace_event();
+
+extern "C" void art_quick_record_long_running_entry_trace_event();
+extern "C" void art_quick_record_long_running_exit_trace_event();
 
 extern "C" void art_quick_nop_record_entry_trace_event() {
   return;
@@ -218,13 +222,20 @@ void InitEntryPoints(JniEntryPoints* jpoints,
   }
 }
 
-void UpdateLowOverheadTraceEntrypoints(QuickEntryPoints* qpoints, bool enable) {
-  if (enable) {
-    qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
-    qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
-  } else {
-    qpoints->SetRecordEntryTraceEvent(art_quick_nop_record_entry_trace_event);
-    qpoints->SetRecordExitTraceEvent(art_quick_nop_record_exit_trace_event);
+void UpdateLowOverheadTraceEntrypoints(QuickEntryPoints* qpoints, LowOverheadTraceType type) {
+  switch (type) {
+    case LowOverheadTraceType::kAllMethods:
+      qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
+      qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
+      break;
+    case LowOverheadTraceType::kLongRunningMethods:
+      qpoints->SetRecordEntryTraceEvent(art_quick_record_long_running_entry_trace_event);
+      qpoints->SetRecordExitTraceEvent(art_quick_record_long_running_exit_trace_event);
+      break;
+    case LowOverheadTraceType::kNone:
+      qpoints->SetRecordEntryTraceEvent(art_quick_nop_record_entry_trace_event);
+      qpoints->SetRecordExitTraceEvent(art_quick_nop_record_exit_trace_event);
+      break;
   }
 }
 

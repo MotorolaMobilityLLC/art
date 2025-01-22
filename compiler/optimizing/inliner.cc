@@ -801,11 +801,9 @@ HInliner::InlineCacheType HInliner::GetInlineCacheAOT(
   return GetInlineCacheType(*classes);
 }
 
-HInstanceFieldGet* HInliner::BuildGetReceiverClass(ClassLinker* class_linker,
-                                                   HInstruction* receiver,
+HInstanceFieldGet* HInliner::BuildGetReceiverClass(HInstruction* receiver,
                                                    uint32_t dex_pc) const {
-  ArtField* field = GetClassRoot<mirror::Object>(class_linker)->GetField(0);
-  DCHECK_EQ(std::string(field->GetName()), "shadow$_klass_");
+  ArtField* field = WellKnownClasses::java_lang_Object_shadowKlass;
   HInstanceFieldGet* result = new (graph_->GetAllocator()) HInstanceFieldGet(
       receiver,
       field,
@@ -955,7 +953,7 @@ HInstruction* HInliner::AddTypeGuard(HInstruction* receiver,
                                      bool with_deoptimization) {
   ClassLinker* class_linker = caller_compilation_unit_.GetClassLinker();
   HInstanceFieldGet* receiver_class = BuildGetReceiverClass(
-      class_linker, receiver, invoke_instruction->GetDexPc());
+      receiver, invoke_instruction->GetDexPc());
   if (cursor != nullptr) {
     bb_cursor->InsertInstructionAfter(receiver_class, cursor);
   } else {
@@ -1270,7 +1268,7 @@ bool HInliner::TryInlinePolymorphicCallToSameTarget(
 
   // We successfully inlined, now add a guard.
   HInstanceFieldGet* receiver_class = BuildGetReceiverClass(
-      class_linker, receiver, invoke_instruction->GetDexPc());
+      receiver, invoke_instruction->GetDexPc());
 
   DataType::Type type = Is64BitInstructionSet(graph_->GetInstructionSet())
       ? DataType::Type::kInt64
@@ -2452,7 +2450,8 @@ bool HInliner::ReturnTypeMoreSpecific(HInstruction* return_replacement,
         return true;
       } else if (return_replacement->IsInstanceFieldGet()) {
         HInstanceFieldGet* field_get = return_replacement->AsInstanceFieldGet();
-        if (field_get->GetFieldInfo().GetField() == GetClassRoot<mirror::Object>()->GetField(0)) {
+        ArtField* cls_field = WellKnownClasses::java_lang_Object_shadowKlass;
+        if (field_get->GetFieldInfo().GetField() == cls_field) {
           return true;
         }
       }

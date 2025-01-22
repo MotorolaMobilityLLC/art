@@ -538,31 +538,6 @@ java_defaults {
     ],
 }
 
-art_cc_test_library {
-    name: "libarttest",
-    defaults: ["libarttest-defaults"],
-    shared_libs: [
-        "libart",
-        "libdexfile#impl",
-        "libprofile",
-        "libartbase",
-    ],
-}
-
-art_cc_test_library {
-    name: "libarttestd",
-    defaults: [
-        "art_debug_defaults",
-        "libarttest-defaults",
-    ],
-    shared_libs: [
-        "libartd",
-        "libdexfiled#impl",
-        "libprofiled",
-        "libartbased",
-    ],
-}
-
 art_cc_defaults {
     name: "libnativebridgetest-defaults",
     defaults: ["art_test_defaults"],
@@ -944,7 +919,7 @@ cc_defaults {
         "692-vdex-inmem-loader/vdex_inmem_loader.cc",
         "720-thread-priority/thread_priority.cc",
         "800-smali/jni.cc",
-        "817-hiddenapi/test_native.cc",
+        "817-hiddenapi/libarttest_api.cc",
         "855-native/throws_exception.cc",
         "909-attach-agent/disallow_debugging.cc",
         "993-breakpoints-non-debuggable/native_attach_agent.cc",
@@ -974,6 +949,65 @@ cc_defaults {
         "libnativehelper",
         "libunwindstack",
     ],
+}
+
+art_cc_test_library {
+    name: "libarttest",
+    defaults: ["libarttest-defaults"],
+    shared_libs: [
+        "libart",
+        "libdexfile#impl",
+        "libprofile",
+        "libartbase",
+    ],
+}
+
+art_cc_test_library {
+    name: "libarttestd",
+    defaults: [
+        "art_debug_defaults",
+        "libarttest-defaults",
+    ],
+    shared_libs: [
+        "libartd",
+        "libdexfiled#impl",
+        "libprofiled",
+        "libartbased",
+    ],
+}
+
+// "External" native code for run tests. Unlike libarttest(d), this library is
+// not installed in the com_android_art namespace, so it cannot access ART
+// internals. It's instead installed in a location that will be available as
+// java.library.path in run tests, and it can call functions in
+// libarttest(d).so.
+cc_defaults {
+    name: "libarttest_external-defaults",
+    defaults: ["art_test_defaults"],
+    srcs: [
+        "817-hiddenapi/test_native.cc",
+        "common/libarttest_external.cc",
+    ],
+    shared_libs: [
+        "libbase",
+        "liblog",
+        "libnativehelper",
+    ],
+}
+
+art_cc_test_library {
+    name: "libarttest_external",
+    defaults: ["libarttest_external-defaults"],
+    shared_libs: ["libarttest"],
+}
+
+art_cc_test_library {
+    name: "libarttestd_external",
+    defaults: [
+        "art_debug_defaults",
+        "libarttest_external-defaults",
+    ],
+    shared_libs: ["libarttestd"],
 }
 
 java_library {

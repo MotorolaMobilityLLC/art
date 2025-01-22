@@ -32,8 +32,8 @@
 #include "base/unix_file/fd_file.h"
 #include "base/utils.h"
 #include "class_linker.h"
-#include "common_throws.h"
 #include "com_android_art_flags.h"
+#include "common_throws.h"
 #include "debugger.h"
 #include "dex/descriptors_names.h"
 #include "dex/dex_file-inl.h"
@@ -51,6 +51,7 @@
 #include "stack.h"
 #include "thread.h"
 #include "thread_list.h"
+#include "trace_common.h"
 #include "trace_profile.h"
 
 namespace art_flags = com::android::art::flags;
@@ -94,6 +95,8 @@ static constexpr size_t kScalingFactorEncodedEntries = 6;
 // The key identifying the tracer to update instrumentation.
 static constexpr const char* kTracerInstrumentationKey = "Tracer";
 
+double TimestampCounter::tsc_to_microsec_scaling_factor = -1;
+
 Trace* Trace::the_trace_ = nullptr;
 pthread_t Trace::sampling_pthread_ = 0U;
 std::unique_ptr<std::vector<ArtMethod*>> Trace::temp_stack_trace_;
@@ -104,131 +107,6 @@ static TraceAction DecodeTraceAction(uint32_t tmid) {
 }
 
 namespace {
-// Scaling factor to convert timestamp counter into wall clock time reported in micro seconds.
-// This is initialized at the start of tracing using the timestamp counter update frequency.
-// See InitializeTimestampCounters for more details.
-double tsc_to_microsec_scaling_factor = -1.0;
-
-uint64_t GetTimestamp() {
-  uint64_t t = 0;
-#if defined(__arm__)
-  // On ARM 32 bit, we don't always have access to the timestamp counters from user space. There is
-  // no easy way to check if it is safe to read the timestamp counters. There is HWCAP_EVTSTRM which
-  // is set when generic timer is available but not necessarily from the user space. Kernel disables
-  // access to generic timer when there are known problems on the target CPUs. Sometimes access is
-  // disabled only for 32-bit processes even when 64-bit processes can accesses the timer from user
-  // space. These are not reflected in the HWCAP_EVTSTRM capability.So just fallback to
-  // clock_gettime on these processes. See b/289178149 for more discussion.
-  t = MicroTime();
-#elif defined(__aarch64__)
-  // See Arm Architecture Registers  Armv8 section System Registers
-  asm volatile("mrs %0, cntvct_el0" : "=r"(t));
-#elif defined(__i386__) || defined(__x86_64__)
-  // rdtsc returns two 32-bit values in rax and rdx even on 64-bit architectures.
-  unsigned int lo, hi;
-  asm volatile("rdtsc" : "=a"(lo), "=d"(hi));
-  t = (static_cast<uint64_t>(hi) << 32) | lo;
-#elif defined(__riscv)
-  asm volatile("rdtime %0" : "=r"(t));
-#else
-  t = MicroTime();
-#endif
-  return t;
-}
-
-#if defined(__i386__) || defined(__x86_64__) || defined(__aarch64__)
-// Here we compute the scaling factor by sleeping for a millisecond. Alternatively, we could
-// generate raw timestamp counter and also time using clock_gettime at the start and the end of the
-// trace. We can compute the frequency of timestamp counter upadtes in the post processing step
-// using these two samples. However, that would require a change in Android Studio which is the main
-// consumer of these profiles. For now, just compute the frequency of tsc updates here.
-double computeScalingFactor() {
-  uint64_t start = MicroTime();
-  uint64_t start_tsc = GetTimestamp();
-  // Sleep for one millisecond.
-  usleep(1000);
-  uint64_t diff_tsc = GetTimestamp() - start_tsc;
-  uint64_t diff_time = MicroTime() - start;
-  double scaling_factor = static_cast<double>(diff_time) / diff_tsc;
-  DCHECK(scaling_factor > 0.0) << scaling_factor;
-  return scaling_factor;
-}
-#endif
-
-#if defined(__i386__) || defined(__x86_64__)
-double GetScalingFactorForX86() {
-  uint32_t eax, ebx, ecx;
-  asm volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx) : "a"(0x0), "c"(0));
-  if (eax < 0x15) {
-    // There is no 15H - Timestamp counter and core crystal clock information
-    // leaf. Just compute the frequency.
-    return computeScalingFactor();
-  }
-
-  // From Intel architecture-instruction-set-extensions-programming-reference:
-  // EBX[31:0]/EAX[31:0] indicates the ratio of the TSC frequency and the
-  // core crystal clock frequency.
-  // If EBX[31:0] is 0, the TSC and "core crystal clock" ratio is not enumerated.
-  // If ECX is 0, the nominal core crystal clock frequency is not enumerated.
-  // "TSC frequency" = "core crystal clock frequency" * EBX/EAX.
-  // The core crystal clock may differ from the reference clock, bus clock, or core clock
-  // frequencies.
-  // EAX Bits 31 - 00: An unsigned integer which is the denominator of the
-  //                   TSC/"core crystal clock" ratio.
-  // EBX Bits 31 - 00: An unsigned integer which is the numerator of the
-  //                   TSC/"core crystal clock" ratio.
-  // ECX Bits 31 - 00: An unsigned integer which is the nominal frequency of the core
-  //                   crystal clock in Hz.
-  // EDX Bits 31 - 00: Reserved = 0.
-  asm volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx) : "a"(0x15), "c"(0));
-  if (ebx == 0 || ecx == 0) {
-    return computeScalingFactor();
-  }
-  double coreCrystalFreq = ecx;
-  // frequency = coreCrystalFreq * (ebx / eax)
-  // scaling_factor = seconds_to_microseconds / frequency
-  //                = seconds_to_microseconds * eax / (coreCrystalFreq * ebx)
-  double seconds_to_microseconds = 1000 * 1000;
-  double scaling_factor = (seconds_to_microseconds * eax) / (coreCrystalFreq * ebx);
-  return scaling_factor;
-}
-#endif
-
-void InitializeTimestampCounters() {
-  // It is sufficient to initialize this once for the entire execution. Just return if it is
-  // already initialized.
-  if (tsc_to_microsec_scaling_factor > 0.0) {
-    return;
-  }
-
-#if defined(__arm__)
-  // On ARM 32 bit, we don't always have access to the timestamp counters from
-  // user space. Seem comment in GetTimestamp for more details.
-  tsc_to_microsec_scaling_factor = 1.0;
-#elif defined(__aarch64__)
-  double seconds_to_microseconds = 1000 * 1000;
-  uint64_t freq = 0;
-  // See Arm Architecture Registers  Armv8 section System Registers
-  asm volatile("mrs %0,  cntfrq_el0" : "=r"(freq));
-  if (freq == 0) {
-    // It is expected that cntfrq_el0 is correctly setup during system initialization but some
-    // devices don't do this. In such cases fall back to computing the frequency. See b/315139000.
-    tsc_to_microsec_scaling_factor = computeScalingFactor();
-  } else {
-    tsc_to_microsec_scaling_factor = seconds_to_microseconds / static_cast<double>(freq);
-  }
-#elif defined(__i386__) || defined(__x86_64__)
-  tsc_to_microsec_scaling_factor = GetScalingFactorForX86();
-#else
-  tsc_to_microsec_scaling_factor = 1.0;
-#endif
-}
-
-ALWAYS_INLINE uint64_t GetMicroTime(uint64_t counter) {
-  DCHECK(tsc_to_microsec_scaling_factor > 0.0) << tsc_to_microsec_scaling_factor;
-  return tsc_to_microsec_scaling_factor * counter;
-}
-
 TraceClockSource GetClockSourceFromFlags(int flags) {
   bool need_wall = flags & Trace::TraceFlag::kTraceClockSourceWallClock;
   bool need_thread_cpu = flags & Trace::TraceFlag::kTraceClockSourceThreadCpu;
@@ -402,7 +280,7 @@ bool UseFastTraceListeners(TraceClockSource clock_source) {
   bool is_fast_trace = !UseThreadCpuClock(clock_source);
 #if defined(__arm__)
   // On ARM 32 bit, we don't always have access to the timestamp counters from
-  // user space. See comment in GetTimestamp for more details.
+  // user space. See comment in TimestampCounter::GetTimestamp for more details.
   is_fast_trace = false;
 #endif
   return is_fast_trace;
@@ -413,7 +291,7 @@ void Trace::MeasureClockOverhead() {
     Thread::Current()->GetCpuMicroTime();
   }
   if (UseWallClock(clock_source_)) {
-    GetTimestamp();
+    TimestampCounter::GetTimestamp();
   }
 }
 
@@ -766,7 +644,7 @@ void Trace::Start(std::unique_ptr<File>&& trace_file_in,
 
   // Initialize the frequency of timestamp counter updates here. This is needed
   // to get wallclock time from timestamp counter values.
-  InitializeTimestampCounters();
+  TimestampCounter::InitializeTimestampCounters();
 
   Runtime* runtime = Runtime::Current();
 
@@ -837,14 +715,6 @@ void Trace::Start(std::unique_ptr<File>&& trace_file_in,
       runtime->GetInstrumentation()->EnableMethodTracing(kTracerInstrumentationKey,
                                                          the_trace_,
                                                          /*needs_interpreter=*/false);
-    }
-
-    if (art_flags::always_enable_profile_code()) {
-      // Reset the trace low overhead trace entry points to be a nop.
-      MutexLock thread_list_mutex(self, *Locks::thread_list_lock_);
-      for (Thread* thread : Runtime::Current()->GetThreadList()->GetList()) {
-        thread->UpdateTlsLowOverheadTraceEntrypoints(/*enable= */ false);
-      }
     }
   }
 
@@ -924,10 +794,6 @@ void Trace::StopTracing(bool flush_entries) {
           // processed in order.
           the_trace->trace_writer_->FlushBuffer(
               thread, /* is_sync= */ false, /* free_buffer= */ true);
-        }
-
-        if (art_flags::always_enable_profile_code()) {
-          thread->UpdateTlsLowOverheadTraceEntrypoints(/*enable= */ true);
         }
       }
       the_trace_ = nullptr;
@@ -1037,7 +903,7 @@ TraceWriter::TraceWriter(File* trace_file,
       buf_(new uint8_t[std::max(kMinBufSize, buffer_size)]()),
       buffer_size_(std::max(kMinBufSize, buffer_size)),
       trace_format_version_(trace_format_version),
-      start_time_(GetMicroTime(GetTimestamp())),
+      start_time_(TimestampCounter::GetMicroTime(TimestampCounter::GetTimestamp())),
       overflow_(false),
       num_records_(0),
       clock_overhead_ns_(clock_overhead_ns),
@@ -1053,7 +919,9 @@ TraceWriter::TraceWriter(File* trace_file,
   // We record monotonic time at the start of the trace, because Android Studio
   // fetches the monotonic timer from other places and matches these times to
   // construct a cpu profile. See b/318052824 for more context.
-  uint64_t start_time_monotonic = start_time_ + (MicroTime() - GetMicroTime(GetTimestamp()));
+  uint64_t start_time_monotonic =
+      start_time_ +
+      (MicroTime() - TimestampCounter::GetMicroTime(TimestampCounter::GetTimestamp()));
   uint16_t trace_version = GetTraceVersion(clock_source_, trace_format_version_);
   if (output_mode == TraceOutputMode::kStreaming) {
     trace_version |= 0xF0U;
@@ -1136,7 +1004,7 @@ Trace::Trace(File* trace_file,
 std::string TraceWriter::CreateSummary(int flags) {
   std::ostringstream os;
   // Compute elapsed time.
-  uint64_t elapsed = GetMicroTime(GetTimestamp()) - start_time_;
+  uint64_t elapsed = TimestampCounter::GetMicroTime(TimestampCounter::GetTimestamp()) - start_time_;
   os << StringPrintf("%cversion\n", kTraceTokenChar);
   os << StringPrintf("%d\n", GetTraceVersion(clock_source_, trace_format_version_));
   os << StringPrintf("data-file-overflow=%s\n", overflow_ ? "true" : "false");
@@ -1363,21 +1231,12 @@ void Trace::ReadClocks(Thread* thread, uint32_t* thread_clock_diff, uint64_t* ti
     }
   }
   if (UseWallClock(clock_source_)) {
-    *timestamp_counter = GetTimestamp();
+    *timestamp_counter = TimestampCounter::GetTimestamp();
   }
 }
 
 std::string TraceWriter::GetMethodLine(const std::string& method_line, uint32_t method_index) {
   return StringPrintf("%#x\t%s", (method_index << TraceActionBits), method_line.c_str());
-}
-
-std::string TraceWriter::GetMethodInfoLine(ArtMethod* method) {
-  method = method->GetInterfaceMethodIfProxy(kRuntimePointerSize);
-  return StringPrintf("%s\t%s\t%s\t%s\n",
-                      PrettyDescriptor(method->GetDeclaringClassDescriptor()).c_str(),
-                      method->GetName(),
-                      method->GetSignature().ToString().c_str(),
-                      method->GetDeclaringClassSourceFile());
 }
 
 void TraceWriter::RecordThreadInfo(Thread* thread) {
@@ -1691,7 +1550,7 @@ void TraceWriter::ReadValuesFromRecord(uintptr_t* method_trace_entries,
       uint64_t high_timestamp = method_trace_entries[record_index++];
       timestamp = (high_timestamp << 32 | timestamp);
     }
-    record.wall_clock_time = GetMicroTime(timestamp) - start_time_;
+    record.wall_clock_time = TimestampCounter::GetMicroTime(timestamp) - start_time_;
   }
 }
 

@@ -389,6 +389,56 @@ class OptimizingUnitTestHelper {
     return {pre_header, loop};
   }
 
+  // Insert blocks for an irreducible loop before the `loop_exit`:
+  //
+  //      <loop_exit's old predecessor>
+  //                    |
+  //                  split
+  //                 /     \
+  //   left_preheader       right_preheader
+  //         |                     |
+  //    left_header <------- right_header <-+
+  //     |  |                               |
+  //     |  +------------> body ------------+
+  //     |
+  //    loop_exit
+  //
+  // Note that `left_preheader`, `right_preheader` and `body` are needed to avoid critical edges.
+  //
+  // `HGoto` instructions are added to `left_preheader`, `right_preheader`, `body`
+  // and `right_header`. To complete the control flow, the caller should add `HIf`
+  // to `split` and `left_header`.
+  //
+  // Returns `{split, left_header, right_header, body}`.
+  std::tuple<HBasicBlock*, HBasicBlock*, HBasicBlock*, HBasicBlock*> CreateIrreducibleLoop(
+      HBasicBlock* loop_exit) {
+    HBasicBlock* split = AddNewBlock();
+    HBasicBlock* left_preheader = AddNewBlock();
+    HBasicBlock* right_preheader = AddNewBlock();
+    HBasicBlock* left_header = AddNewBlock();
+    HBasicBlock* right_header = AddNewBlock();
+    HBasicBlock* body = AddNewBlock();
+
+    HBasicBlock* predecessor = loop_exit->GetSinglePredecessor();
+    predecessor->ReplaceSuccessor(loop_exit, split);
+
+    split->AddSuccessor(left_preheader);  // true successor
+    split->AddSuccessor(right_preheader);  // false successor
+    left_preheader->AddSuccessor(left_header);
+    right_preheader->AddSuccessor(right_header);
+    left_header->AddSuccessor(loop_exit);  // true successor
+    left_header->AddSuccessor(body);  // false successor
+    body->AddSuccessor(right_header);
+    right_header->AddSuccessor(left_header);
+
+    MakeGoto(left_preheader);
+    MakeGoto(right_preheader);
+    MakeGoto(body);
+    MakeGoto(right_header);
+
+    return {split, left_header, right_header, body};
+  }
+
   HBasicBlock* AddNewBlock() {
     HBasicBlock* block = new (GetAllocator()) HBasicBlock(graph_);
     graph_->AddBlock(block);

@@ -71,4 +71,44 @@ TEST_F(CodeFlowSimplifierTest, testSelectWithAdd) {
   EXPECT_TRUE(phi->GetBlock() == nullptr);
 }
 
+// Test `HSelect` optimization in an irreducible loop.
+TEST_F(CodeFlowSimplifierTest, testSelectInIrreducibleLoop) {
+  HBasicBlock* return_block = InitEntryMainExitGraphWithReturnVoid();
+  auto [split, left_header, right_header, body] = CreateIrreducibleLoop(return_block);
+
+  HParameterValue* split_param = MakeParam(DataType::Type::kBool);
+  HParameterValue* bool_param = MakeParam(DataType::Type::kBool);
+  HParameterValue* n_param = MakeParam(DataType::Type::kInt32);
+
+  MakeIf(split, split_param);
+
+  HInstruction* const0 = graph_->GetIntConstant(0);
+  HInstruction* const1 = graph_->GetIntConstant(1);
+  HPhi* right_phi = MakePhi(right_header, {const0, /* placeholder */ const0});
+  HPhi* left_phi = MakePhi(left_header, {const1, right_phi});
+  HAdd* add = MakeBinOp<HAdd>(body, DataType::Type::kInt32, left_phi, const1);
+  right_phi->ReplaceInput(add, 1u);  // Update back-edge input.
+  HCondition* condition = MakeCondition(left_header, kCondGE, left_phi, n_param);
+  MakeIf(left_header, condition);
+
+  auto [if_block, then_block, else_block] = CreateDiamondPattern(body, bool_param);
+  HPhi* phi = MakePhi(body, {const1, const0});
+
+  EXPECT_TRUE(CheckGraphAndTryCodeFlowSimplifier());
+  HLoopInformation* loop_info = left_header->GetLoopInformation();
+  ASSERT_TRUE(loop_info != nullptr);
+  ASSERT_TRUE(loop_info->IsIrreducible());
+
+  EXPECT_TRUE(phi->GetBlock() == nullptr);
+  ASSERT_TRUE(if_block->GetFirstInstruction()->IsSelect());
+
+  ASSERT_EQ(if_block, add->GetBlock());  // Moved when merging blocks.
+
+  for (HBasicBlock* removed_block : {then_block, else_block, body}) {
+    uint32_t removed_block_id = removed_block->GetBlockId();
+    ASSERT_TRUE(removed_block->GetGraph() == nullptr) << removed_block_id;
+    ASSERT_FALSE(loop_info->GetBlocks().IsBitSet(removed_block_id)) << removed_block_id;
+  }
+}
+
 }  // namespace art

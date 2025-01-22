@@ -32,6 +32,7 @@ namespace accounting {
 
 template<size_t kAlignment>
 inline bool SpaceBitmap<kAlignment>::AtomicTestAndSet(const mirror::Object* obj) {
+  DCHECK(obj != nullptr);
   uintptr_t addr = reinterpret_cast<uintptr_t>(obj);
   DCHECK_GE(addr, heap_begin_);
   const uintptr_t offset = addr - heap_begin_;
@@ -232,6 +233,7 @@ void SpaceBitmap<kAlignment>::Walk(Visitor&& visitor) {
 template<size_t kAlignment>
 template<bool kSetBit>
 inline bool SpaceBitmap<kAlignment>::Modify(const mirror::Object* obj) {
+  DCHECK(obj != nullptr);
   uintptr_t addr = reinterpret_cast<uintptr_t>(obj);
   DCHECK_GE(addr, heap_begin_);
   DCHECK(HasAddress(obj)) << obj;

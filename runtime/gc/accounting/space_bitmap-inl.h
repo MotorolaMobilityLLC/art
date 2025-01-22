@@ -115,6 +115,7 @@ inline void SpaceBitmap<kAlignment>::VisitMarkedRange(uintptr_t visit_begin,
   }
 #else
   DCHECK_LE(heap_begin_, visit_begin);
+  DCHECK_LT(visit_begin, HeapLimit());
   DCHECK_LE(visit_end, HeapLimit());
 
   const uintptr_t offset_start = visit_begin - heap_begin_;

@@ -54,6 +54,64 @@ class BumpPointerSpace;
 }  // namespace space
 
 namespace collector {
+class MarkCompact;
+
+// The actual young GC code is also implemented in MarkCompact class. However,
+// using this class saves us from creating duplicate data-structures, which
+// would have happened with two instances of MarkCompact.
+class YoungMarkCompact final : public GarbageCollector {
+ public:
+  YoungMarkCompact(Heap* heap, MarkCompact* main);
+
+  void RunPhases() override REQUIRES(!Locks::mutator_lock_);
+
+  GcType GetGcType() const override { return kGcTypeSticky; }
+
+  CollectorType GetCollectorType() const override { return kCollectorTypeCMC; }
+
+  // None of the following methods are ever called as actual GC is performed by MarkCompact.
+
+  mirror::Object* MarkObject([[maybe_unused]] mirror::Object* obj) override {
+    UNIMPLEMENTED(FATAL);
+    UNREACHABLE();
+  }
+  void MarkHeapReference([[maybe_unused]] mirror::HeapReference<mirror::Object>* obj,
+                         [[maybe_unused]] bool do_atomic_update) override {
+    UNIMPLEMENTED(FATAL);
+  }
+  void VisitRoots([[maybe_unused]] mirror::Object*** roots,
+                  [[maybe_unused]] size_t count,
+                  [[maybe_unused]] const RootInfo& info) override {
+    UNIMPLEMENTED(FATAL);
+  }
+  void VisitRoots([[maybe_unused]] mirror::CompressedReference<mirror::Object>** roots,
+                  [[maybe_unused]] size_t count,
+                  [[maybe_unused]] const RootInfo& info) override {
+    UNIMPLEMENTED(FATAL);
+  }
+  bool IsNullOrMarkedHeapReference([[maybe_unused]] mirror::HeapReference<mirror::Object>* obj,
+                                   [[maybe_unused]] bool do_atomic_update) override {
+    UNIMPLEMENTED(FATAL);
+    UNREACHABLE();
+  }
+  void RevokeAllThreadLocalBuffers() override { UNIMPLEMENTED(FATAL); }
+
+  void DelayReferenceReferent([[maybe_unused]] ObjPtr<mirror::Class> klass,
+                              [[maybe_unused]] ObjPtr<mirror::Reference> reference) override {
+    UNIMPLEMENTED(FATAL);
+  }
+  mirror::Object* IsMarked([[maybe_unused]] mirror::Object* obj) override {
+    UNIMPLEMENTED(FATAL);
+    UNREACHABLE();
+  }
+  void ProcessMarkStack() override { UNIMPLEMENTED(FATAL); }
+
+ private:
+  MarkCompact* const main_collector_;
+
+  DISALLOW_IMPLICIT_CONSTRUCTORS(YoungMarkCompact);
+};
+
 class MarkCompact final : public GarbageCollector {
  public:
   using SigbusCounterType = uint32_t;
@@ -84,9 +142,7 @@ class MarkCompact final : public GarbageCollector {
   // is asserted in the function.
   bool SigbusHandler(siginfo_t* info) REQUIRES(!lock_) NO_THREAD_SAFETY_ANALYSIS;
 
-  GcType GetGcType() const override {
-    return kGcTypeFull;
-  }
+  GcType GetGcType() const override { return kGcTypePartial; }
 
   CollectorType GetCollectorType() const override {
     return kCollectorTypeCMC;
@@ -176,6 +232,8 @@ class MarkCompact final : public GarbageCollector {
     kClampInfoPending,
     kClampInfoFinished
   };
+
+  friend void YoungMarkCompact::RunPhases();
 
  private:
   using ObjReference = mirror::CompressedReference<mirror::Object>;

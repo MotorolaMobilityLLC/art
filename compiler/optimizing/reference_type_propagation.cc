@@ -276,12 +276,8 @@ static void BoundTypeForClassCheck(HInstruction* check) {
     return;
   }
 
-  {
-    ScopedObjectAccess soa(Thread::Current());
-    ArtField* field = WellKnownClasses::java_lang_Object_shadowKlass;
-    if (field_get->GetFieldInfo().GetField() != field) {
-      return;
-    }
+  if (field_get->GetFieldInfo().GetField() != WellKnownClasses::java_lang_Object_shadowKlass) {
+    return;
   }
 
   if (check->IsIf()) {

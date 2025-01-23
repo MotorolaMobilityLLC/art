@@ -78,6 +78,8 @@ void ImageWriteReadTest::TestWriteRead(ImageHeader::StorageMode storage_mode,
     return;
   }
   runtime_.reset(Runtime::Current());
+  // Need well-known-classes.
+  WellKnownClasses::Init(Thread::Current()->GetJniEnv());
   // Runtime::Create acquired the mutator_lock_ that is normally given away when we Runtime::Start,
   // give it away now and then switch to a more managable ScopedObjectAccess.
   Thread::Current()->TransitionFromRunnableToSuspended(ThreadState::kNative);

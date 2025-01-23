@@ -4530,21 +4530,15 @@ void MarkCompact::ScanObject(mirror::Object* obj) {
       usleep(1000);
       klass = obj->GetClass<kVerifyNone, kWithoutReadBarrier>();
       if (klass != nullptr) {
-        std::ostringstream oss;
-        klass->DumpClass(oss, mirror::Class::kDumpClassFullDetail);
-        LOG(FATAL_WITHOUT_ABORT) << "klass pointer for obj: " << obj
-                                 << " found to be null first. Reloading after " << i
-                                 << " iterations of 1ms sleep fetched klass: " << oss.str();
         break;
       }
     }
-
-    if (UNLIKELY(klass == nullptr)) {
+    if (klass == nullptr) {
       // It must be heap corruption.
       LOG(FATAL_WITHOUT_ABORT) << "klass pointer for obj: " << obj << " found to be null.";
+      heap_->GetVerification()->LogHeapCorruption(
+          obj, mirror::Object::ClassOffset(), klass, /*fatal=*/true);
     }
-    heap_->GetVerification()->LogHeapCorruption(
-        obj, mirror::Object::ClassOffset(), klass, /*fatal=*/true);
   }
   // The size of `obj` is used both here (to update `bytes_scanned_`) and in
   // `UpdateLivenessInfo`. As fetching this value can be expensive, do it once

@@ -217,8 +217,8 @@ void InitEntryPoints(JniEntryPoints* jpoints,
   if (art_flags::always_enable_profile_code()) {
     // These are used for always-on-tracing, currently only supported on arm64
     // devices.
-    qpoints->SetRecordEntryTraceEvent(art_quick_record_entry_trace_event);
-    qpoints->SetRecordExitTraceEvent(art_quick_record_exit_trace_event);
+    qpoints->SetRecordEntryTraceEvent(art_quick_nop_record_entry_trace_event);
+    qpoints->SetRecordExitTraceEvent(art_quick_nop_record_exit_trace_event);
   }
 }
 

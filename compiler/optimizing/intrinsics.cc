@@ -172,15 +172,11 @@ IntrinsicVisitor::ValueOfInfo IntrinsicVisitor::ComputeValueOfInfo(
 }
 
 MemberOffset IntrinsicVisitor::GetReferenceDisableIntrinsicOffset() {
-  ScopedObjectAccess soa(Thread::Current());
-  ArtField* field = WellKnownClasses::java_lang_ref_Reference_disableIntrinsic;
-  return field->GetOffset();
+  return WellKnownClasses::java_lang_ref_Reference_disableIntrinsic->GetOffset();
 }
 
 MemberOffset IntrinsicVisitor::GetReferenceSlowPathEnabledOffset() {
-  ScopedObjectAccess soa(Thread::Current());
-  ArtField* field = WellKnownClasses::java_lang_ref_Reference_slowPathEnabled;
-  return field->GetOffset();
+  return WellKnownClasses::java_lang_ref_Reference_slowPathEnabled->GetOffset();
 }
 
 void IntrinsicVisitor::CreateReferenceGetReferentLocations(HInvoke* invoke,

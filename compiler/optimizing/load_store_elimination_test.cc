@@ -123,7 +123,7 @@ class LoadStoreEliminationTestBase : public SuperTest, public OptimizingUnitTest
   // Return the pre-header and loop block.
   std::tuple<HBasicBlock*, HBasicBlock*> CreateDoWhileLoopWithInstructions(
       HBasicBlock* loop_exit, std::initializer_list<HInstruction*> suspend_check_env = {}) {
-    auto [pre_header, loop] = CreateDoWhileLoop(loop_exit);
+    auto [pre_header, loop, back_edge] = CreateWhileLoop(loop_exit);
     MakeSimpleLoopInstructions(loop, loop, suspend_check_env);
     return {pre_header, loop};
   }

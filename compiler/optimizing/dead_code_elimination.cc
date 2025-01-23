@@ -526,10 +526,10 @@ void HDeadCodeElimination::MaybeAddPhi(HBasicBlock* block) {
       //         |
       //         8
       // `7` (which would be `block` in this example), and `6` will come from both the true path and
-      // the false path of `1`. We bumped into something similar in `HCodeFlowSimplifier`. See
-      // `HCodeFlowSimplifier::TryFixupDoubleDiamondPattern()`.
+      // the false path of `1`. We bumped into something similar in `HControlFlowSimplifier`. See
+      // `HControlFlowSimplifier::TryFixupDoubleDiamondPattern()`.
       // TODO(solanes): Figure out if we can fix up the graph into a double diamond in a generic way
-      // so that `HDeadCodeElimination` and `HCodeFlowSimplifier` can take advantage of it.
+      // so that `HDeadCodeElimination` and `HControlFlowSimplifier` can take advantage of it.
 
       if (!same_input) {
         // `1` and `7` having the opposite condition is a case we are missing. We could potentially

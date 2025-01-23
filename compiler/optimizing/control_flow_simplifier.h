@@ -54,8 +54,8 @@
  * run after the instruction simplifier has removed redundant suspend checks.
  */
 
-#ifndef ART_COMPILER_OPTIMIZING_CODE_FLOW_SIMPLIFIER_H_
-#define ART_COMPILER_OPTIMIZING_CODE_FLOW_SIMPLIFIER_H_
+#ifndef ART_COMPILER_OPTIMIZING_CONTROL_FLOW_SIMPLIFIER_H_
+#define ART_COMPILER_OPTIMIZING_CONTROL_FLOW_SIMPLIFIER_H_
 
 #include "base/macros.h"
 #include "base/scoped_arena_containers.h"
@@ -64,15 +64,15 @@
 
 namespace art HIDDEN {
 
-class HCodeFlowSimplifier : public HOptimization {
+class HControlFlowSimplifier : public HOptimization {
  public:
-  HCodeFlowSimplifier(HGraph* graph,
-                      OptimizingCompilerStats* stats,
-                      const char* name = kCodeFlowSimplifierPassName);
+  HControlFlowSimplifier(HGraph* graph,
+                         OptimizingCompilerStats* stats,
+                         const char* name = kControlFlowSimplifierPassName);
 
   bool Run() override;
 
-  static constexpr const char* kCodeFlowSimplifierPassName = "code_flow_simplifier";
+  static constexpr const char* kControlFlowSimplifierPassName = "control_flow_simplifier";
 
  private:
   bool TryGenerateSelectSimpleDiamondPattern(HBasicBlock* block,
@@ -112,9 +112,9 @@ class HCodeFlowSimplifier : public HOptimization {
   // when that gets resolved we get another one with the outer if.
   HBasicBlock* TryFixupDoubleDiamondPattern(HBasicBlock* block);
 
-  DISALLOW_COPY_AND_ASSIGN(HCodeFlowSimplifier);
+  DISALLOW_COPY_AND_ASSIGN(HControlFlowSimplifier);
 };
 
 }  // namespace art
 
-#endif  // ART_COMPILER_OPTIMIZING_CODE_FLOW_SIMPLIFIER_H_
+#endif  // ART_COMPILER_OPTIMIZING_CONTROL_FLOW_SIMPLIFIER_H_

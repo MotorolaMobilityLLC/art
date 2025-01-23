@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "code_flow_simplifier.h"
+#include "control_flow_simplifier.h"
 
 #include "base/arena_allocator.h"
 #include "base/macros.h"
@@ -25,7 +25,7 @@
 
 namespace art HIDDEN {
 
-class CodeFlowSimplifierTest : public OptimizingUnitTest {
+class ControlFlowSimplifierTest : public OptimizingUnitTest {
  protected:
   HPhi* ConstructBasicGraphForSelect(HBasicBlock* return_block, HInstruction* instr) {
     HParameterValue* bool_param = MakeParam(DataType::Type::kBool);
@@ -38,18 +38,18 @@ class CodeFlowSimplifierTest : public OptimizingUnitTest {
     return phi;
   }
 
-  bool CheckGraphAndTryCodeFlowSimplifier() {
+  bool CheckGraphAndTryControlFlowSimplifier() {
     graph_->BuildDominatorTree();
     EXPECT_TRUE(CheckGraph());
 
     SideEffectsAnalysis side_effects(graph_);
     side_effects.Run();
-    return HCodeFlowSimplifier(graph_, /*handles*/ nullptr, /*stats*/ nullptr).Run();
+    return HControlFlowSimplifier(graph_, /*handles*/ nullptr, /*stats*/ nullptr).Run();
   }
 };
 
 // HDivZeroCheck might throw and should not be hoisted from the conditional to an unconditional.
-TEST_F(CodeFlowSimplifierTest, testZeroCheckPreventsSelect) {
+TEST_F(ControlFlowSimplifierTest, testZeroCheckPreventsSelect) {
   HBasicBlock* return_block = InitEntryMainExitGraphWithReturnVoid();
   HParameterValue* param = MakeParam(DataType::Type::kInt32);
   HDivZeroCheck* instr = new (GetAllocator()) HDivZeroCheck(param, 0);
@@ -57,22 +57,22 @@ TEST_F(CodeFlowSimplifierTest, testZeroCheckPreventsSelect) {
 
   ManuallyBuildEnvFor(instr, {param, graph_->GetIntConstant(1)});
 
-  EXPECT_FALSE(CheckGraphAndTryCodeFlowSimplifier());
+  EXPECT_FALSE(CheckGraphAndTryControlFlowSimplifier());
   EXPECT_INS_RETAINED(phi);
 }
 
-// Test that CodeFlowSimplifier succeeds with HAdd.
-TEST_F(CodeFlowSimplifierTest, testSelectWithAdd) {
+// Test that ControlFlowSimplifier succeeds with HAdd.
+TEST_F(ControlFlowSimplifierTest, testSelectWithAdd) {
   HBasicBlock* return_block = InitEntryMainExitGraphWithReturnVoid();
   HParameterValue* param = MakeParam(DataType::Type::kInt32);
   HAdd* instr = new (GetAllocator()) HAdd(DataType::Type::kInt32, param, param, /*dex_pc=*/ 0);
   HPhi* phi = ConstructBasicGraphForSelect(return_block, instr);
-  EXPECT_TRUE(CheckGraphAndTryCodeFlowSimplifier());
+  EXPECT_TRUE(CheckGraphAndTryControlFlowSimplifier());
   EXPECT_INS_REMOVED(phi);
 }
 
-// Test that CodeFlowSimplifier succeeds if there is an additional `HPhi` with identical inputs.
-TEST_F(CodeFlowSimplifierTest, testSelectWithAddAndExtraPhi) {
+// Test that ControlFlowSimplifier succeeds if there is an additional `HPhi` with identical inputs.
+TEST_F(ControlFlowSimplifierTest, testSelectWithAddAndExtraPhi) {
   // Create a graph with three blocks merging to the `return_block`.
   HBasicBlock* return_block = InitEntryMainExitGraphWithReturnVoid();
   HParameterValue* bool_param1 = MakeParam(DataType::Type::kBool);
@@ -96,7 +96,7 @@ TEST_F(CodeFlowSimplifierTest, testSelectWithAddAndExtraPhi) {
   // Prevent second `HSelect` match. Do not rely on the "instructions per branch" limit.
   MakeInvokeStatic(left, DataType::Type::kVoid, {}, {});
 
-  EXPECT_TRUE(CheckGraphAndTryCodeFlowSimplifier());
+  EXPECT_TRUE(CheckGraphAndTryControlFlowSimplifier());
 
   ASSERT_BLOCK_RETAINED(left);
   ASSERT_BLOCK_REMOVED(mid);
@@ -110,7 +110,7 @@ TEST_F(CodeFlowSimplifierTest, testSelectWithAddAndExtraPhi) {
 }
 
 // Test `HSelect` optimization in an irreducible loop.
-TEST_F(CodeFlowSimplifierTest, testSelectInIrreducibleLoop) {
+TEST_F(ControlFlowSimplifierTest, testSelectInIrreducibleLoop) {
   HBasicBlock* return_block = InitEntryMainExitGraphWithReturnVoid();
   auto [split, left_header, right_header, body] = CreateIrreducibleLoop(return_block);
 
@@ -130,7 +130,7 @@ TEST_F(CodeFlowSimplifierTest, testSelectInIrreducibleLoop) {
   auto [if_block, then_block, else_block] = CreateDiamondPattern(body, bool_param);
   HPhi* phi = MakePhi(body, {const1, const0});
 
-  EXPECT_TRUE(CheckGraphAndTryCodeFlowSimplifier());
+  EXPECT_TRUE(CheckGraphAndTryControlFlowSimplifier());
   HLoopInformation* loop_info = left_header->GetLoopInformation();
   ASSERT_TRUE(loop_info != nullptr);
   ASSERT_TRUE(loop_info->IsIrreducible());

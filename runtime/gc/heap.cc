@@ -2688,7 +2688,7 @@ void Heap::MarkAllocStack(accounting::ContinuousSpaceBitmap* bitmap1,
   const auto* limit = stack->End();
   for (auto* it = stack->Begin(); it != limit; ++it) {
     const mirror::Object* obj = it->AsMirrorPtr();
-    if (!kUseThreadLocalAllocationStack || obj != nullptr) {
+    if (obj != nullptr) {
       if (bitmap1->HasAddress(obj)) {
         bitmap1->Set(obj);
       } else if (bitmap2->HasAddress(obj)) {

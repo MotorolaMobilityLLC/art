@@ -231,11 +231,11 @@
 ## CHECK-DAG:     <<Const1:i\d+>>   IntConstant 1
 ## CHECK-DAG:     <<Const13:i\d+>>  IntConstant 13
 ## CHECK-DAG:     <<Const42:i\d+>>  IntConstant 42
-## CHECK-DAG:     <<PhiX:i\d+>>     Phi [<<Const0>>,<<Const13>>,<<Const42>>]
-## CHECK-DAG:     <<PhiY:i\d+>>     Phi [<<Const1>>,<<Add:i\d+>>,<<Add>>]
+## CHECK-DAG:     <<PhiX:i\d+>>     Phi [<<Const0>>,<<Select:i\d+>>]
+## CHECK-DAG:     <<PhiY:i\d+>>     Phi [<<Const1>>,<<Add:i\d+>>]
 ## CHECK-DAG:     <<Add>>           Add [<<PhiY>>,<<Const1>>]
 ## CHECK-DAG:     <<Cond:z\d+>>     LessThanOrEqual [<<Add>>,<<Const1>>]
-## CHECK-DAG:                       If [<<Cond>>]
+## CHECK-DAG:     <<Select>>        Select [<<Const13>>,<<Const42>>,<<Cond>>]
 ## CHECK-DAG:                       Return [<<PhiX>>]
 
 # The original java source of this method:

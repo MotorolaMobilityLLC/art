@@ -957,6 +957,16 @@ class OptimizingUnitTestHelper {
     return val;
   }
 
+  static bool PredecessorsEqual(HBasicBlock* block,
+                                std::initializer_list<HBasicBlock*> expected) {
+    return RangeEquals(block->GetPredecessors(), expected);
+  }
+
+  static bool InputsEqual(HInstruction* instruction,
+                          std::initializer_list<HInstruction*> expected) {
+    return RangeEquals(instruction->GetInputs(), expected);
+  }
+
   // Returns if the `instruction` is removed from the graph.
   static inline bool IsRemoved(HInstruction* instruction) {
     return instruction->GetBlock() == nullptr;
@@ -973,6 +983,12 @@ class OptimizingUnitTestHelper {
     checker.Run();
     checker.Dump(oss);
     return checker.IsValid();
+  }
+
+  template <typename Range, typename ElementType>
+  static bool RangeEquals(Range&& range, std::initializer_list<ElementType> expected) {
+    return std::distance(range.begin(), range.end()) == expected.size() &&
+           std::equal(range.begin(), range.end(), expected.begin());
   }
 
   std::vector<std::unique_ptr<const StandardDexFile>> dex_files_;

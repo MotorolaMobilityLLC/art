@@ -1112,6 +1112,25 @@ ENTRY art_quick_invoke_polymorphic
     RETURN_OR_DELIVER_PENDING_EXCEPTION_REG  t0
 END art_quick_invoke_polymorphic
 
+    /*
+     * Slow path for MethodHandle.invokeExact intrinsic.
+     * That intrinsic has a custom calling convention: the argument allocation doesn't start from
+     * the receiver (MethodHandle) object, but from the argument following it. That's done to match
+     * expectation of the underlying method when MethodHandle targets a method. That also affects
+     * the way arguments are spilled onto the stack.
+     */
+.extern artInvokePolymorphicWithHiddenReceiver
+ENTRY art_quick_invoke_polymorphic_with_hidden_receiver
+                                        // On entry: a0 := receiver
+    SETUP_SAVE_REFS_AND_ARGS_FRAME      // Save callee saves in case allocation triggers GC.
+    mv     a1, xSELF                    // Pass Thread::Current()
+    mv     a2, sp                       // Pass pointer to the saved frame context.
+    call   artInvokePolymorphicWithHiddenReceiver // invoke with (receiver, thread, save_area)
+    RESTORE_SAVE_REFS_AND_ARGS_FRAME
+    fmv.d.x fa0, a0                     // Copy the result also to the FP return register.
+    RETURN_OR_DELIVER_PENDING_EXCEPTION_REG  t0
+END art_quick_invoke_polymorphic_with_hidden_receiver
+
 /*
      * InvokeCustom invocation.
      * On entry:

@@ -90,6 +90,39 @@ class ReadBarrierSystemArrayCopySlowPathRISCV64 : public SlowPathCodeRISCV64 {
   DISALLOW_COPY_AND_ASSIGN(ReadBarrierSystemArrayCopySlowPathRISCV64);
 };
 
+// The MethodHandle.invokeExact intrinsic sets up arguments to match the target method call. If we
+// need to go to the slow path, we call art_quick_invoke_polymorphic_with_hidden_receiver, which
+// expects the MethodHandle object in a0 (in place of the actual ArtMethod).
+class InvokePolymorphicSlowPathRISCV64 : public SlowPathCodeRISCV64 {
+ public:
+  InvokePolymorphicSlowPathRISCV64(HInstruction* instruction, XRegister method_handle)
+      : SlowPathCodeRISCV64(instruction), method_handle_(method_handle) {
+    DCHECK(instruction->IsInvokePolymorphic());
+  }
+
+  void EmitNativeCode(CodeGenerator* codegen_in) override {
+    CodeGeneratorRISCV64* codegen = down_cast<CodeGeneratorRISCV64*>(codegen_in);
+    Riscv64Assembler* assembler = codegen->GetAssembler();
+    __ Bind(GetEntryLabel());
+
+    SaveLiveRegisters(codegen, instruction_->GetLocations());
+    // Passing `MethodHandle` object as hidden argument.
+    __ Mv(A0, method_handle_);
+    codegen->InvokeRuntime(QuickEntrypointEnum::kQuickInvokePolymorphicWithHiddenReceiver,
+                           instruction_,
+                           instruction_->GetDexPc());
+
+    RestoreLiveRegisters(codegen, instruction_->GetLocations());
+    __ J(GetExitLabel());
+  }
+
+  const char* GetDescription() const override { return "InvokePolymorphicSlowPathRISCV64"; }
+
+ private:
+  const XRegister method_handle_;
+  DISALLOW_COPY_AND_ASSIGN(InvokePolymorphicSlowPathRISCV64);
+};
+
 bool IntrinsicLocationsBuilderRISCV64::TryDispatch(HInvoke* invoke) {
   Dispatch(invoke);
   LocationSummary* res = invoke->GetLocations();
@@ -5731,6 +5764,58 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathCopySignFloat(HInvoke* invoke) {
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathCopySignFloat(HInvoke* invoke) {
   GenMathCopySign(codegen_, invoke, DataType::Type::kFloat32);
+}
+
+void IntrinsicLocationsBuilderRISCV64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
+  ArenaAllocator* allocator = invoke->GetBlock()->GetGraph()->GetAllocator();
+  LocationSummary* locations = new (allocator)
+      LocationSummary(invoke, LocationSummary::kCallOnMainAndSlowPath, kIntrinsified);
+
+  InvokeDexCallingConventionVisitorRISCV64 calling_convention;
+  locations->SetOut(calling_convention.GetReturnLocation(invoke->GetType()));
+  locations->SetInAt(0, Location::RequiresRegister());
+
+  // Accomodating LocationSummary for underlying invoke-* call.
+  uint32_t number_of_args = invoke->GetNumberOfArguments();
+  for (uint32_t i = 1; i < number_of_args; ++i) {
+    locations->SetInAt(i, calling_convention.GetNextLocation(invoke->InputAt(i)->GetType()));
+  }
+
+  // The last input is MethodType object corresponding to the call-site.
+  locations->SetInAt(number_of_args, Location::RequiresRegister());
+
+  locations->AddTemp(Location::RequiresRegister());
+  locations->AddTemp(calling_convention.GetMethodLocation());
+}
+
+void IntrinsicCodeGeneratorRISCV64::VisitMethodHandleInvokeExact(HInvoke* invoke) {
+  LocationSummary* locations = invoke->GetLocations();
+  XRegister method_handle = locations->InAt(0).AsRegister<XRegister>();
+  SlowPathCodeRISCV64* slow_path =
+      new (codegen_->GetScopedAllocator()) InvokePolymorphicSlowPathRISCV64(invoke, method_handle);
+
+  codegen_->AddSlowPath(slow_path);
+  Riscv64Assembler* assembler = GetAssembler();
+  XRegister call_site_type =
+      locations->InAt(invoke->GetNumberOfArguments()).AsRegister<XRegister>();
+
+  // Call site should match with MethodHandle's type.
+  XRegister temp = locations->GetTemp(0).AsRegister<XRegister>();
+  __ Loadwu(temp, method_handle, mirror::MethodHandle::MethodTypeOffset().Int32Value());
+  codegen_->MaybeUnpoisonHeapReference(temp);
+  __ Bne(call_site_type, temp, slow_path->GetEntryLabel());
+
+  __ Loadwu(temp, method_handle, mirror::MethodHandle::HandleKindOffset().Int32Value());
+  __ AddConst32(temp, temp, -mirror::MethodHandle::Kind::kInvokeStatic);
+  __ Bnez(temp, slow_path->GetEntryLabel());
+
+  XRegister method = locations->GetTemp(1).AsRegister<XRegister>();
+  __ Loadd(method, method_handle, mirror::MethodHandle::ArtFieldOrMethodOffset().Int32Value());
+  Offset entry_point = ArtMethod::EntryPointFromQuickCompiledCodeOffset(kRiscv64PointerSize);
+  __ Loadd(RA, method, entry_point.SizeValue());
+  __ Jalr(RA);
+  codegen_->RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+  __ Bind(slow_path->GetExitLabel());
 }
 
 #define MARK_UNIMPLEMENTED(Name) UNIMPLEMENTED_INTRINSIC(RISCV64, Name)

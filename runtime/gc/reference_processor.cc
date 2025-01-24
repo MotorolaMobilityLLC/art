@@ -54,8 +54,11 @@ ReferenceProcessor::ReferenceProcessor()
 static inline MemberOffset GetSlowPathFlagOffset(ObjPtr<mirror::Class> reference_class)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(reference_class == GetClassRoot<mirror::Reference>());
-  ArtField* field = WellKnownClasses::java_lang_ref_Reference_slowPathEnabled;
+  // Don't use WellKnownClasses here as it may not be initialized at the point
+  // we're being called.
+  ArtField* field = reference_class->GetField(reference_class->NumFields() - 1);
   DCHECK(field->IsStatic());
+  DCHECK_STREQ(field->GetName(), "slowPathEnabled");
   return field->GetOffset();
 }
 

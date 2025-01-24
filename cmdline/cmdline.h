@@ -33,11 +33,9 @@
 #include "base/logging.h"
 #include "base/mutex.h"
 #include "base/utils.h"
-#include "jni/jni_env_ext.h"
 #include "noop_compiler_callbacks.h"
 #include "oat/oat_file_assistant_context.h"
 #include "runtime.h"
-#include "well_known_classes.h"
 
 #if !defined(NDEBUG)
 #define DBG_LOG LOG(INFO)
@@ -86,9 +84,6 @@ static Runtime* StartRuntime(const std::vector<std::string>& boot_image_location
     fprintf(stderr, "Failed to create runtime\n");
     return nullptr;
   }
-
-  // Need well-known-classes.
-  WellKnownClasses::Init(Thread::Current()->GetJniEnv());
 
   // Runtime::Create acquired the mutator_lock_ that is normally given away when we Runtime::Start,
   // give it away now and then switch to a more manageable ScopedObjectAccess.

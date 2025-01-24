@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "code_flow_simplifier.h"
+#include "control_flow_simplifier.h"
 
 #include "optimizing/nodes.h"
 #include "reference_type_propagation.h"
@@ -23,9 +23,9 @@ namespace art HIDDEN {
 
 static constexpr size_t kMaxInstructionsInBranch = 1u;
 
-HCodeFlowSimplifier::HCodeFlowSimplifier(HGraph* graph,
-                                         OptimizingCompilerStats* stats,
-                                         const char* name)
+HControlFlowSimplifier::HControlFlowSimplifier(HGraph* graph,
+                                               OptimizingCompilerStats* stats,
+                                               const char* name)
     : HOptimization(graph, name, stats) {
 }
 
@@ -95,7 +95,7 @@ static std::pair<bool, HPhi*> HasAtMostOnePhiWithDifferentInputs(HBasicBlock* bl
   return {true, select_phi};
 }
 
-bool HCodeFlowSimplifier::TryGenerateSelectSimpleDiamondPattern(
+bool HControlFlowSimplifier::TryGenerateSelectSimpleDiamondPattern(
     HBasicBlock* block, ScopedArenaSafeMap<HInstruction*, HSelect*>* cache) {
   DCHECK(block->GetLastInstruction()->IsIf());
   HIf* if_instruction = block->GetLastInstruction()->AsIf();
@@ -230,7 +230,7 @@ bool HCodeFlowSimplifier::TryGenerateSelectSimpleDiamondPattern(
   return true;
 }
 
-HBasicBlock* HCodeFlowSimplifier::TryFixupDoubleDiamondPattern(HBasicBlock* block) {
+HBasicBlock* HControlFlowSimplifier::TryFixupDoubleDiamondPattern(HBasicBlock* block) {
   DCHECK(block->GetLastInstruction()->IsIf());
   HIf* if_instruction = block->GetLastInstruction()->AsIf();
   HBasicBlock* true_block = if_instruction->IfTrueSuccessor();
@@ -323,12 +323,12 @@ HBasicBlock* HCodeFlowSimplifier::TryFixupDoubleDiamondPattern(HBasicBlock* bloc
   return inner_if_block;
 }
 
-bool HCodeFlowSimplifier::Run() {
+bool HControlFlowSimplifier::Run() {
   bool did_select = false;
   // Select cache with local allocator.
   ScopedArenaAllocator allocator(graph_->GetArenaStack());
   ScopedArenaSafeMap<HInstruction*, HSelect*> cache(
-      std::less<HInstruction*>(), allocator.Adapter(kArenaAllocCodeFlowSimplifier));
+      std::less<HInstruction*>(), allocator.Adapter(kArenaAllocControlFlowSimplifier));
 
   // Iterate in post order in the unlikely case that removing one occurrence of
   // the selection pattern empties a branch block of another occurrence.

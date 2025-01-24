@@ -411,17 +411,17 @@ size_t GetOsThreadStat(pid_t tid, char* buf, size_t len) {
 }
 
 std::string GetOsThreadStatQuick(pid_t tid) {
+#if defined(__linux__)
   static constexpr int BUF_SIZE = 100;
   char buf[BUF_SIZE];
-#if defined(__linux__)
   if (GetOsThreadStat(tid, buf, BUF_SIZE) == 0) {
     snprintf(buf, BUF_SIZE, "Unknown state: %d", tid);
   }
+  return buf;
 #else
   UNUSED(tid);
-  strcpy(buf, "Unknown state");  // snprintf may not be usable.
+  return "Unknown state";
 #endif
-  return buf;
 }
 
 std::string GetOtherThreadOsStats() {

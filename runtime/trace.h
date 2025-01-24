@@ -200,7 +200,7 @@ class TraceWriter {
               size_t buffer_size,
               int num_trace_buffers,
               int trace_format_version,
-              uint64_t clock_overhead_ns);
+              uint32_t clock_overhead_ns);
 
   // This encodes all the events in the per-thread trace buffer and writes it to the trace file /
   // buffer. This acquires streaming lock to prevent any other threads writing concurrently. It is
@@ -342,8 +342,8 @@ class TraceWriter {
                         uint16_t thread_id,
                         uint32_t method_index,
                         TraceAction action,
-                        uint64_t thread_clock_diff,
-                        uint64_t wall_clock_diff) REQUIRES(trace_writer_lock_);
+                        uint32_t thread_clock_diff,
+                        uint32_t wall_clock_diff) REQUIRES(trace_writer_lock_);
 
   // Encodes the header for the events block. This assumes that there is enough space reserved to
   // encode the entry.
@@ -417,7 +417,7 @@ class TraceWriter {
   size_t num_records_;
 
   // Clock overhead.
-  const uint64_t clock_overhead_ns_;
+  const uint32_t clock_overhead_ns_;
 
   std::vector<std::atomic<size_t>> owner_tids_;
   std::unique_ptr<uintptr_t[]> trace_buffer_;
@@ -519,7 +519,7 @@ class Trace final : public instrumentation::InstrumentationListener, public Clas
   static void RemoveListeners() REQUIRES(Locks::mutator_lock_);
 
   void MeasureClockOverhead();
-  uint64_t GetClockOverheadNanoSeconds();
+  uint32_t GetClockOverheadNanoSeconds();
 
   void CompareAndUpdateStackTrace(Thread* thread, std::vector<ArtMethod*>* stack_trace)
       REQUIRES_SHARED(Locks::mutator_lock_);
@@ -605,12 +605,12 @@ class Trace final : public instrumentation::InstrumentationListener, public Clas
       // how to annotate this.
       NO_THREAD_SAFETY_ANALYSIS;
 
-  void ReadClocks(Thread* thread, uint64_t* thread_clock_diff, uint64_t* timestamp_counter);
+  void ReadClocks(Thread* thread, uint32_t* thread_clock_diff, uint64_t* timestamp_counter);
 
   void LogMethodTraceEvent(Thread* thread,
                            ArtMethod* method,
                            TraceAction action,
-                           uint64_t thread_clock_diff,
+                           uint32_t thread_clock_diff,
                            uint64_t timestamp_counter) REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Singleton instance of the Trace or null when no method tracing is active.

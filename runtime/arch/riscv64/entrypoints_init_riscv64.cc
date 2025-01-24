@@ -145,6 +145,10 @@ void InitEntryPoints(JniEntryPoints* jpoints,
   qpoints->SetIndexOf(art_quick_indexof);
   // TODO(riscv64): More intrinsics.
 
+  // Invoke
+  qpoints->SetInvokePolymorphicWithHiddenReceiver(
+      art_quick_invoke_polymorphic_with_hidden_receiver);
+
   // Read barrier.
   UpdateReadBarrierEntrypoints(qpoints, /*is_active=*/ false);
   qpoints->SetReadBarrierSlow(artReadBarrierSlow);

@@ -22,6 +22,8 @@
 #include "base/locks.h"
 #include "base/macros.h"
 #include "base/os.h"
+#include "thread.h"
+#include "thread_pool.h"
 
 namespace art HIDDEN {
 
@@ -43,34 +45,30 @@ enum class LowOverheadTraceType {
 
 class TraceData {
  public:
-  explicit TraceData(LowOverheadTraceType trace_type) : trace_type_(trace_type) {
-  }
+  explicit TraceData(LowOverheadTraceType trace_type)
+      : trace_type_(trace_type),
+        trace_data_lock_("Trace Data lock", LockLevel::kGenericBottomLock) {}
 
   LowOverheadTraceType GetTraceType() const {
     return trace_type_;
   }
 
-  const std::string& GetLongRunningMethods() const {
-    return long_running_methods_;
-  }
-
-  const std::unordered_set<ArtMethod*>& GetTracedMethods() const {
-    return traced_methods_;
-  }
-
-  const std::unordered_map<size_t, std::string>& GetTracedThreads() const {
-    return traced_threads_;
-  }
+  // Dumps events collected in long_running_methods_ and the information about
+  // threads and methods into the output stream.
+  void DumpData(std::ostringstream& os);
 
   void AppendToLongRunningMethods(const std::string& str) {
+    MutexLock mu(Thread::Current(), trace_data_lock_);
     long_running_methods_.append(str);
   }
 
   void AddTracedMethods(std::unordered_set<ArtMethod*>& methods) {
+    MutexLock mu(Thread::Current(), trace_data_lock_);
     traced_methods_.merge(methods);
   }
 
   void AddTracedMethod(ArtMethod* method) {
+    MutexLock mu(Thread::Current(), trace_data_lock_);
     traced_methods_.insert(method);
   }
 
@@ -79,17 +77,36 @@ class TraceData {
  private:
   // This is used to hold the initial methods on stack and also long running methods when there is a
   // buffer overflow.
-  std::string long_running_methods_;
+  std::string long_running_methods_ GUARDED_BY(trace_data_lock_);
 
   LowOverheadTraceType trace_type_;
 
   // These hold the methods and threads see so far. These are used to generate information about
   // the methods and threads.
-  std::unordered_set<ArtMethod*> traced_methods_;
+  std::unordered_set<ArtMethod*> traced_methods_ GUARDED_BY(trace_data_lock_);
 
   // Threads might exit before we dump the data, so record thread id and name when we see a new
   // thread.
-  std::unordered_map<size_t, std::string> traced_threads_;
+  std::unordered_map<size_t, std::string> traced_threads_ GUARDED_BY(trace_data_lock_);
+
+  // Lock to synchronize access to traced_methods_, traced_threads_ and long_running_methods_ which
+  // can be accessed simultaneously by multiple threads when running TraceDumpCheckpoint.
+  Mutex trace_data_lock_;
+};
+
+class TraceDumpCheckpoint final : public Closure {
+ public:
+  explicit TraceDumpCheckpoint(TraceData* trace_data) : barrier_(0), trace_data_(trace_data) {}
+
+  void Run(Thread* thread) override REQUIRES_SHARED(Locks::mutator_lock_);
+  void WaitForThreadsToRunThroughCheckpoint(size_t threads_running_checkpoint);
+
+ private:
+  // The barrier to be passed through and for the requestor to wait upon.
+  Barrier barrier_;
+
+  // Trace data to record the data from each thread.
+  TraceData* trace_data_;
 };
 
 // This class implements low-overhead tracing. This feature is available only when
@@ -178,11 +195,6 @@ class TraceProfiler {
                                           std::unordered_set<ArtMethod*>& methods /* out */,
                                           std::ostringstream& os);
 
-  // Records the thread and method info.
-  static void DumpThreadMethodInfo(const std::unordered_map<size_t, std::string>& traced_threads,
-                                   const std::unordered_set<ArtMethod*>& traced_methods,
-                                   std::ostringstream& os) REQUIRES(Locks::mutator_lock_);
-
   static bool profile_in_progress_ GUARDED_BY(Locks::trace_lock_);
 
   // Keeps track of number of outstanding trace stop tasks. We should only stop a trace when the
@@ -192,6 +204,7 @@ class TraceProfiler {
 
   static TraceData* trace_data_ GUARDED_BY(Locks::trace_lock_);
 
+  friend class TraceDumpCheckpoint;
   DISALLOW_COPY_AND_ASSIGN(TraceProfiler);
 };
 

@@ -354,6 +354,10 @@ TEST_F(MemMapTest, MapAnonymousEmpty) {
 }
 
 TEST_F(MemMapTest, MapAnonymousFailNullError) {
+  // Host system's mmap_min_addr configuration could allow for arbitrarily low addresses to be
+  // successfully mapped, breaking the expectation that the MapAnonymous call should fail.
+  TEST_DISABLED_FOR_HOST();
+
   CommonInit();
   uint8_t* invalid_page[16];  // Use this address as mmap hint address.
   const size_t page_size = MemMap::GetPageSize();

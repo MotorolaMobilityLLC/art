@@ -67,6 +67,7 @@ int TraceProfiler::num_trace_stop_tasks_ = 0;
 TraceData* TraceProfiler::trace_data_ = nullptr;
 
 void TraceData::AddTracedThread(Thread* thread) {
+  MutexLock mu(Thread::Current(), trace_data_lock_);
   size_t thread_id = thread->GetTid();
   if (traced_threads_.find(thread_id) != traced_threads_.end()) {
     return;
@@ -105,10 +106,8 @@ LowOverheadTraceType TraceProfiler::GetTraceType() {
 }
 
 namespace {
-void RecordMethodsOnThreadStack(Thread* thread, TraceData* trace_data)
-    REQUIRES(Locks::mutator_lock_) {
-  Locks::mutator_lock_->AssertExclusiveHeld(Thread::Current());
-
+void RecordMethodsOnThreadStack(Thread* thread, uintptr_t* method_trace_buffer)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
   struct MethodEntryStackVisitor final : public StackVisitor {
     MethodEntryStackVisitor(Thread* thread_in, Context* context)
         : StackVisitor(thread_in, context, StackVisitor::StackWalkKind::kSkipInlinedFrames) {}
@@ -141,23 +140,48 @@ void RecordMethodsOnThreadStack(Thread* thread, TraceData* trace_data)
   visitor.WalkStack(true);
 
   // Create method entry events for all methods currently on the thread's stack.
-  // Annotate them with an 'S' to indicate they are methods at startup and the entry timestamp
-  // isn't accurate.
-  uintptr_t* method_trace_buffer = thread->GetMethodTraceBuffer();
   uint64_t init_time = TimestampCounter::GetMicroTime(TimestampCounter::GetTimestamp());
+  // Set the lsb to 0 to indicate method entry.
+  init_time = init_time & ~1;
   std::ostringstream os;
   os << "Thread:" << thread->GetTid() << "\n";
+  size_t index = kAlwaysOnTraceBufSize - 1;
   for (auto smi = visitor.stack_methods_.rbegin(); smi != visitor.stack_methods_.rend(); smi++) {
-    os << "S->" << *smi << " " << init_time << "\n";
-    trace_data->AddTracedMethod(*smi);
+    method_trace_buffer[index--] = reinterpret_cast<uintptr_t>(*smi);
+    method_trace_buffer[index--] = init_time;
+
+    if (index < kMaxEntriesAfterFlush) {
+      // To keep the implementation simple, ignore methods deep down the stack. If the call stack
+      // unwinds beyond this point then we will see method exits without corresponding method
+      // entries.
+      break;
+    }
   }
 
   // Record a placeholder method exit event into the buffer so we record method exits for the
   // methods that are currently on stack.
-  method_trace_buffer[kAlwaysOnTraceBufSize - 1] = 0x1;
-  thread->SetMethodTraceBufferCurrentEntry(kAlwaysOnTraceBufSize - 1);
-  trace_data->AppendToLongRunningMethods(os.str());
-  trace_data->AddTracedThread(thread);
+  method_trace_buffer[index] = 0x1;
+  thread->SetMethodTraceBufferCurrentEntry(index);
+}
+
+// Records the thread and method info.
+void DumpThreadMethodInfo(const std::unordered_map<size_t, std::string>& traced_threads,
+                          const std::unordered_set<ArtMethod*>& traced_methods,
+                          std::ostringstream& os) REQUIRES_SHARED(Locks::mutator_lock_) {
+  // Dump data about thread information.
+  os << "\n*threads\n";
+  for (const auto& it : traced_threads) {
+    os << it.first << "\t" << it.second << "\n";
+  }
+
+  // Dump data about method information.
+  os << "*methods\n";
+  for (ArtMethod* method : traced_methods) {
+    ArtMethod* method_ptr = reinterpret_cast<ArtMethod*>(method);
+    os << method_ptr << "\t" << GetMethodInfoLine(method);
+  }
+
+  os << "*end";
 }
 }  // namespace
 
@@ -166,6 +190,40 @@ class TraceStopTask : public gc::HeapTask {
   explicit TraceStopTask(uint64_t target_run_time) : gc::HeapTask(target_run_time) {}
 
   void Run([[maybe_unused]] Thread* self) override { TraceProfiler::TraceTimeElapsed(); }
+};
+
+class TraceStartCheckpoint final : public Closure {
+ public:
+  explicit TraceStartCheckpoint(LowOverheadTraceType type) : trace_type_(type), barrier_(0) {}
+
+  void Run(Thread* thread) override REQUIRES_SHARED(Locks::mutator_lock_) {
+    auto buffer = new uintptr_t[kAlwaysOnTraceBufSize];
+
+    if (trace_type_ == LowOverheadTraceType::kLongRunningMethods) {
+      // Record methods that are currently on stack.
+      RecordMethodsOnThreadStack(thread, buffer);
+      thread->UpdateTlsLowOverheadTraceEntrypoints(LowOverheadTraceType::kLongRunningMethods);
+    } else {
+      memset(buffer, 0, kAlwaysOnTraceBufSize * sizeof(uintptr_t));
+      thread->UpdateTlsLowOverheadTraceEntrypoints(LowOverheadTraceType::kAllMethods);
+    }
+    thread->SetMethodTraceBuffer(buffer, kAlwaysOnTraceBufSize);
+    barrier_.Pass(Thread::Current());
+  }
+
+  void WaitForThreadsToRunThroughCheckpoint(size_t threads_running_checkpoint) {
+    Thread* self = Thread::Current();
+    ScopedThreadStateChange tsc(self, ThreadState::kWaitingForCheckPointsToRun);
+    barrier_.Increment(self, threads_running_checkpoint);
+  }
+
+ private:
+  LowOverheadTraceType trace_type_;
+
+  // The barrier to be passed through and for the requestor to wait upon.
+  Barrier barrier_;
+
+  DISALLOW_COPY_AND_ASSIGN(TraceStartCheckpoint);
 };
 
 void TraceProfiler::Start(LowOverheadTraceType trace_type, uint64_t trace_duration_ns) {
@@ -190,26 +248,16 @@ void TraceProfiler::Start(LowOverheadTraceType trace_type, uint64_t trace_durati
   profile_in_progress_ = true;
   trace_data_ = new TraceData(trace_type);
 
-  {
-    ScopedSuspendAll ssa(__FUNCTION__);
-    MutexLock tl(self, *Locks::thread_list_lock_);
-    for (Thread* thread : Runtime::Current()->GetThreadList()->GetList()) {
-      auto buffer = new uintptr_t[kAlwaysOnTraceBufSize];
-      memset(buffer, 0, kAlwaysOnTraceBufSize * sizeof(uintptr_t));
-      thread->SetMethodTraceBuffer(buffer, kAlwaysOnTraceBufSize);
-      if (trace_type == LowOverheadTraceType::kLongRunningMethods) {
-        // Record methods that are currently on stack.
-        RecordMethodsOnThreadStack(thread, trace_data_);
-        thread->UpdateTlsLowOverheadTraceEntrypoints(LowOverheadTraceType::kLongRunningMethods);
-      } else {
-        thread->UpdateTlsLowOverheadTraceEntrypoints(LowOverheadTraceType::kAllMethods);
-      }
-    }
+  Runtime* runtime = Runtime::Current();
+  TraceStartCheckpoint checkpoint(trace_type);
+  size_t threads_running_checkpoint = runtime->GetThreadList()->RunCheckpoint(&checkpoint);
+  if (threads_running_checkpoint != 0) {
+    checkpoint.WaitForThreadsToRunThroughCheckpoint(threads_running_checkpoint);
   }
 
   if (trace_type == LowOverheadTraceType::kLongRunningMethods) {
     // Add a Task that stops the tracing after trace_duration.
-    Runtime::Current()->GetHeap()->AddHeapTask(new TraceStopTask(NanoTime() + trace_duration_ns));
+    runtime->GetHeap()->AddHeapTask(new TraceStopTask(NanoTime() + trace_duration_ns));
     num_trace_stop_tasks_++;
   }
 }
@@ -235,7 +283,7 @@ void TraceProfiler::StopLocked() {
     return;
   }
 
-  FunctionClosure reset_buffer([](Thread* thread) {
+  static FunctionClosure reset_buffer([](Thread* thread) {
     auto buffer = thread->GetMethodTraceBuffer();
     if (buffer != nullptr) {
       delete[] buffer;
@@ -251,25 +299,7 @@ void TraceProfiler::StopLocked() {
   trace_data_ = nullptr;
 }
 
-void TraceProfiler::DumpThreadMethodInfo(
-    const std::unordered_map<size_t, std::string>& traced_threads,
-    const std::unordered_set<ArtMethod*>& traced_methods,
-    std::ostringstream& os) {
-  // Dump data about thread information.
-  os << "\n*threads\n";
-  for (const auto& it : traced_threads) {
-    os << it.first << "\t" << it.second << "\n";
-  }
 
-  // Dump data about method information.
-  os << "*methods\n";
-  for (ArtMethod* method : traced_methods) {
-    ArtMethod* method_ptr = reinterpret_cast<ArtMethod*>(method);
-    os << method_ptr << "\t" << GetMethodInfoLine(method);
-  }
-
-  os << "*end";
-}
 
 uint8_t* TraceProfiler::DumpBuffer(uint32_t thread_id,
                                    uintptr_t* method_trace_entries,
@@ -558,37 +588,53 @@ std::string TraceProfiler::GetLongRunningMethodsString() {
   return GetLongRunningMethodsStringLocked();
 }
 
+void TraceDumpCheckpoint::Run(Thread* thread) {
+  auto method_trace_entries = thread->GetMethodTraceBuffer();
+  if (method_trace_entries != nullptr) {
+    std::unordered_set<ArtMethod*> traced_methods;
+    uintptr_t* method_trace_curr_ptr = *(thread->GetTraceBufferCurrEntryPtr());
+    std::ostringstream os;
+    TraceProfiler::DumpLongRunningMethodBuffer(
+        thread->GetTid(), method_trace_entries, method_trace_curr_ptr, traced_methods, os);
+    trace_data_->AddTracedThread(thread);
+    trace_data_->AddTracedMethods(traced_methods);
+    trace_data_->AppendToLongRunningMethods(os.str());
+  }
+  barrier_.Pass(Thread::Current());
+}
+
+void TraceDumpCheckpoint::WaitForThreadsToRunThroughCheckpoint(size_t threads_running_checkpoint) {
+  Thread* self = Thread::Current();
+  ScopedThreadStateChange tsc(self, ThreadState::kWaitingForCheckPointsToRun);
+  barrier_.Increment(self, threads_running_checkpoint);
+}
+
 std::string TraceProfiler::GetLongRunningMethodsStringLocked() {
   Thread* self = Thread::Current();
   std::ostringstream os;
-  ScopedSuspendAll ssa(__FUNCTION__);
-  MutexLock tl(self, *Locks::thread_list_lock_);
-
-  // Get any data that was previously flushed.
-  const std::string& old_data = trace_data_->GetLongRunningMethods();
-  if (old_data.length() > 0) {
-    os << trace_data_->GetLongRunningMethods();
-  }
-
   // Collect long running methods from all the threads;
-  std::unordered_set<ArtMethod*> traced_methods;
-  for (Thread* thread : Runtime::Current()->GetThreadList()->GetList()) {
-    auto method_trace_entries = thread->GetMethodTraceBuffer();
-    if (method_trace_entries == nullptr) {
-      continue;
-    }
-
-    trace_data_->AddTracedThread(thread);
-    uintptr_t* method_trace_curr_ptr = *(thread->GetTraceBufferCurrEntryPtr());
-    DumpLongRunningMethodBuffer(
-        thread->GetTid(), method_trace_entries, method_trace_curr_ptr, traced_methods, os);
+  Runtime* runtime = Runtime::Current();
+  TraceDumpCheckpoint checkpoint(trace_data_);
+  size_t threads_running_checkpoint = runtime->GetThreadList()->RunCheckpoint(&checkpoint);
+  if (threads_running_checkpoint != 0) {
+    checkpoint.WaitForThreadsToRunThroughCheckpoint(threads_running_checkpoint);
   }
 
-  trace_data_->AddTracedMethods(traced_methods);
+  trace_data_->DumpData(os);
+  return os.str();
+}
+
+void TraceData::DumpData(std::ostringstream& os) {
+  MutexLock mu(Thread::Current(), trace_data_lock_);
+  if (long_running_methods_.length() > 0) {
+    os << long_running_methods_;
+  }
 
   // Dump the information about traced_methods and threads
-  DumpThreadMethodInfo(trace_data_->GetTracedThreads(), trace_data_->GetTracedMethods(), os);
-  return os.str();
+  {
+    ScopedObjectAccess soa(Thread::Current());
+    DumpThreadMethodInfo(traced_threads_, traced_methods_, os);
+  }
 }
 
 void TraceProfiler::DumpLongRunningMethods(std::unique_ptr<File>&& trace_file) {

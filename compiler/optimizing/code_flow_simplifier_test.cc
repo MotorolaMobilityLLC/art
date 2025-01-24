@@ -58,7 +58,7 @@ TEST_F(CodeFlowSimplifierTest, testZeroCheckPreventsSelect) {
   ManuallyBuildEnvFor(instr, {param, graph_->GetIntConstant(1)});
 
   EXPECT_FALSE(CheckGraphAndTryCodeFlowSimplifier());
-  EXPECT_FALSE(phi->GetBlock() == nullptr);
+  EXPECT_INS_RETAINED(phi);
 }
 
 // Test that CodeFlowSimplifier succeeds with HAdd.
@@ -68,7 +68,45 @@ TEST_F(CodeFlowSimplifierTest, testSelectWithAdd) {
   HAdd* instr = new (GetAllocator()) HAdd(DataType::Type::kInt32, param, param, /*dex_pc=*/ 0);
   HPhi* phi = ConstructBasicGraphForSelect(return_block, instr);
   EXPECT_TRUE(CheckGraphAndTryCodeFlowSimplifier());
-  EXPECT_TRUE(phi->GetBlock() == nullptr);
+  EXPECT_INS_REMOVED(phi);
+}
+
+// Test that CodeFlowSimplifier succeeds if there is an additional `HPhi` with identical inputs.
+TEST_F(CodeFlowSimplifierTest, testSelectWithAddAndExtraPhi) {
+  // Create a graph with three blocks merging to the `return_block`.
+  HBasicBlock* return_block = InitEntryMainExitGraphWithReturnVoid();
+  HParameterValue* bool_param1 = MakeParam(DataType::Type::kBool);
+  HParameterValue* bool_param2 = MakeParam(DataType::Type::kBool);
+  HParameterValue* param = MakeParam(DataType::Type::kInt32);
+  HInstruction* const0 = graph_->GetIntConstant(0);
+  auto [if_block1, left, mid] = CreateDiamondPattern(return_block, bool_param1);
+  HBasicBlock* if_block2 = AddNewBlock();
+  if_block1->ReplaceSuccessor(mid, if_block2);
+  HBasicBlock* right = AddNewBlock();
+  if_block2->AddSuccessor(mid);
+  if_block2->AddSuccessor(right);
+  HIf* if2 = MakeIf(if_block2, bool_param2);
+  right->AddSuccessor(return_block);
+  MakeGoto(right);
+  ASSERT_TRUE(PredecessorsEqual(return_block, {left, mid, right}));
+  HAdd* add = MakeBinOp<HAdd>(right, DataType::Type::kInt32, param, param);
+  HPhi* phi1 = MakePhi(return_block, {param, param, add});
+  HPhi* phi2 = MakePhi(return_block, {param, const0, const0});
+
+  // Prevent second `HSelect` match. Do not rely on the "instructions per branch" limit.
+  MakeInvokeStatic(left, DataType::Type::kVoid, {}, {});
+
+  EXPECT_TRUE(CheckGraphAndTryCodeFlowSimplifier());
+
+  ASSERT_BLOCK_RETAINED(left);
+  ASSERT_BLOCK_REMOVED(mid);
+  ASSERT_BLOCK_REMOVED(right);
+  HInstruction* select = if2->GetPrevious();  // `HSelect` is inserted before `HIf`.
+  ASSERT_TRUE(select->IsSelect());
+  ASSERT_INS_RETAINED(phi1);
+  ASSERT_TRUE(InputsEqual(phi1, {param, select}));
+  ASSERT_INS_RETAINED(phi2);
+  ASSERT_TRUE(InputsEqual(phi2, {param, const0}));
 }
 
 // Test `HSelect` optimization in an irreducible loop.
@@ -84,10 +122,8 @@ TEST_F(CodeFlowSimplifierTest, testSelectInIrreducibleLoop) {
 
   HInstruction* const0 = graph_->GetIntConstant(0);
   HInstruction* const1 = graph_->GetIntConstant(1);
-  HPhi* right_phi = MakePhi(right_header, {const0, /* placeholder */ const0});
-  HPhi* left_phi = MakePhi(left_header, {const1, right_phi});
-  HAdd* add = MakeBinOp<HAdd>(body, DataType::Type::kInt32, left_phi, const1);
-  right_phi->ReplaceInput(add, 1u);  // Update back-edge input.
+  auto [left_phi, right_phi, add] =
+      MakeLinearIrreducibleLoopVar(left_header, right_header, body, const1, const0, const1);
   HCondition* condition = MakeCondition(left_header, kCondGE, left_phi, n_param);
   MakeIf(left_header, condition);
 
@@ -99,14 +135,14 @@ TEST_F(CodeFlowSimplifierTest, testSelectInIrreducibleLoop) {
   ASSERT_TRUE(loop_info != nullptr);
   ASSERT_TRUE(loop_info->IsIrreducible());
 
-  EXPECT_TRUE(phi->GetBlock() == nullptr);
+  EXPECT_INS_REMOVED(phi);
   ASSERT_TRUE(if_block->GetFirstInstruction()->IsSelect());
 
   ASSERT_EQ(if_block, add->GetBlock());  // Moved when merging blocks.
 
   for (HBasicBlock* removed_block : {then_block, else_block, body}) {
+    ASSERT_BLOCK_REMOVED(removed_block);
     uint32_t removed_block_id = removed_block->GetBlockId();
-    ASSERT_TRUE(removed_block->GetGraph() == nullptr) << removed_block_id;
     ASSERT_FALSE(loop_info->GetBlocks().IsBitSet(removed_block_id)) << removed_block_id;
   }
 }

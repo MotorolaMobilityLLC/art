@@ -228,7 +228,7 @@ class CommonArtTestImpl {
 
  protected:
   static bool IsHost() {
-    return !kIsTargetBuild;
+    return !art::kIsTargetBuild;
   }
 
   // Returns ${ANDROID_BUILD_TOP}. Ensure it has tailing /.
@@ -310,44 +310,44 @@ using CommonArtTestWithParam = CommonArtTestBase<testing::TestWithParam<Param>>;
 std::vector<pid_t> GetPidByName(const std::string& process_name);
 
 #define TEST_DISABLED_FOR_TARGET()                       \
-  if (kIsTargetBuild) {                                  \
+  if (art::kIsTargetBuild) {                                  \
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR TARGET"; \
   }
 
 #define TEST_DISABLED_FOR_HOST()                       \
-  if (!kIsTargetBuild) {                               \
+  if (!art::kIsTargetBuild) {                               \
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR HOST"; \
   }
 
 #define TEST_DISABLED_FOR_NON_STATIC_HOST_BUILDS()                       \
-  if (!kHostStaticBuildEnabled) {                                        \
+  if (!art::kHostStaticBuildEnabled) {                                        \
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR NON-STATIC HOST BUILDS"; \
   }
 
 #define TEST_DISABLED_FOR_DEBUG_BUILD()                       \
-  if (kIsDebugBuild) {                                        \
+  if (art::kIsDebugBuild) {                                        \
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR DEBUG BUILD"; \
   }
 
 #define TEST_DISABLED_FOR_MEMORY_TOOL()                       \
-  if (kRunningOnMemoryTool) {                                 \
+  if (art::kRunningOnMemoryTool) {                                 \
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR MEMORY TOOL"; \
   }
 
 #define TEST_DISABLED_FOR_HEAP_POISONING()                       \
-  if (kPoisonHeapReferences) {                                   \
+  if (art::kPoisonHeapReferences) {                                   \
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR HEAP POISONING"; \
   }
 }  // namespace art
 
 #define TEST_DISABLED_FOR_MEMORY_TOOL_WITH_HEAP_POISONING()                       \
-  if (kRunningOnMemoryTool && kPoisonHeapReferences) {                            \
+  if (art::kRunningOnMemoryTool && art::kPoisonHeapReferences) {                            \
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR MEMORY TOOL WITH HEAP POISONING"; \
   }
 
 #define TEST_DISABLED_FOR_USER_BUILD()                                          \
   if (std::string build_type = android::base::GetProperty("ro.build.type", ""); \
-      kIsTargetBuild && build_type != "userdebug" && build_type != "eng") {     \
+      art::kIsTargetBuild && build_type != "userdebug" && build_type != "eng") {     \
     GTEST_SKIP() << "WARNING: TEST DISABLED FOR USER BUILD";                    \
   }
 

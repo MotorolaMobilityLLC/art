@@ -845,8 +845,8 @@ void MarkCompact::RunPhases() {
   Thread* self = Thread::Current();
   thread_running_gc_ = self;
   Runtime* runtime = Runtime::Current();
-  InitializePhase();
   GetHeap()->PreGcVerification(this);
+  InitializePhase();
   {
     ReaderMutexLock mu(self, *Locks::mutator_lock_);
     MarkingPhase();
@@ -4842,7 +4842,7 @@ void MarkCompact::FinishPhase() {
       size_t index = (old_gen_end_ - moving_space_begin_) / kObjectAlignment / BitVector::kWordBits;
       mid_to_old_promo_bit_vec_->CopyTo(&bitmap_begin[index],
                                         mid_to_old_promo_bit_vec_->GetSizeOf());
-      mid_to_old_promo_bit_vec_.release();
+      mid_to_old_promo_bit_vec_.reset(nullptr);
     }
     // Promote all mid-gen objects to old-gen and young-gen objects to mid-gen
     // for next GC cycle.

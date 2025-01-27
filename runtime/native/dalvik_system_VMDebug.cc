@@ -192,8 +192,10 @@ static void VMDebug_startLowOverheadTraceForAllMethodsImpl(JNIEnv*, jclass) {
   TraceProfiler::Start();
 }
 
-static void VMDebug_startLowOverheadTraceForLongMethodsImpl(JNIEnv*, jclass, jlong trace_duration) {
-  TraceProfiler::StartTraceLongRunningMethods(trace_duration);
+static void VMDebug_startLowOverheadTraceForLongRunningMethodsImpl(JNIEnv*,
+                                                                   jclass,
+                                                                   jlong traceDuration) {
+  TraceProfiler::StartTraceLongRunningMethods(traceDuration);
 }
 
 static jboolean VMDebug_isDebuggerConnected(JNIEnv*, jclass) {
@@ -703,7 +705,7 @@ static JNINativeMethod gMethods[] = {
     NATIVE_METHOD(VMDebug, removeApplication, "(Ljava/lang/String;)V"),
     NATIVE_METHOD(VMDebug, setUserId, "(I)V"),
     NATIVE_METHOD(VMDebug, startLowOverheadTraceForAllMethodsImpl, "()V"),
-    NATIVE_METHOD(VMDebug, startLowOverheadTraceForLongMethodsImpl, "(J)V"),
+    NATIVE_METHOD(VMDebug, startLowOverheadTraceForLongRunningMethodsImpl, "(J)V"),
     NATIVE_METHOD(VMDebug, stopLowOverheadTraceImpl, "()V"),
     NATIVE_METHOD(VMDebug, dumpLowOverheadTraceImpl, "(Ljava/lang/String;)V"),
     NATIVE_METHOD(VMDebug, dumpLowOverheadTraceFdImpl, "(I)V"),

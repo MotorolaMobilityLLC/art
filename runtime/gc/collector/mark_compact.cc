@@ -326,7 +326,7 @@ bool ShouldUseGenerationalGC() {
   }
   // Generational GC feature doesn't need a reboot. Any process (like dex2oat)
   // can pick a different values than zygote and will be able to execute.
-  return GetBoolProperty("persist.device_config.runtime_native.use_generational_gc", true);
+  return GetBoolProperty("persist.device_config.runtime_native_boot.use_generational_gc", true);
 }
 #else
 bool ShouldUseGenerationalGC() { return true; }

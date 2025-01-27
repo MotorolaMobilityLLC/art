@@ -62,3 +62,12 @@ flag {
   is_fixed_read_only: true
   is_exported: true
 }
+
+flag {
+  name: "fast_baseline_compiler"
+  namespace: "art_performance"
+  description: "Flag to enable the fast ARM64 baseline compiler"
+  bug: "384433113"
+  is_fixed_read_only: true
+  is_exported: false
+}

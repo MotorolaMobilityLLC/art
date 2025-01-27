@@ -3179,12 +3179,6 @@ class HIntConstant final : public HConstant {
   bool IsTrue() const { return GetValue() == 1; }
   bool IsFalse() const { return GetValue() == 0; }
 
-  DECLARE_INSTRUCTION(IntConstant);
-
- protected:
-  DEFAULT_COPY_CONSTRUCTOR(IntConstant);
-
- private:
   explicit HIntConstant(int32_t value)
       : HConstant(kIntConstant, DataType::Type::kInt32), value_(value) {
   }
@@ -3193,6 +3187,12 @@ class HIntConstant final : public HConstant {
         value_(value ? 1 : 0) {
   }
 
+  DECLARE_INSTRUCTION(IntConstant);
+
+ protected:
+  DEFAULT_COPY_CONSTRUCTOR(IntConstant);
+
+ private:
   const int32_t value_;
 
   friend class HGraph;

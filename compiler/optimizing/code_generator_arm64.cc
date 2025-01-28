@@ -1491,7 +1491,7 @@ void CodeGeneratorARM64::GenerateFrameEntry() {
                              kInstructionSize,
                              CodeBufferCheckScope::kExactSize);
       __ ldr(wzr, MemOperand(temp, 0));
-      RecordPcInfo(nullptr, 0);
+      RecordPcInfoForFrameOrBlockEntry();
     }
   }
 
@@ -2152,7 +2152,7 @@ void CodeGeneratorARM64::StoreRelease(HInstruction* instruction,
 
 void CodeGeneratorARM64::InvokeRuntime(QuickEntrypointEnum entrypoint,
                                        HInstruction* instruction,
-                                       uint32_t dex_pc,
+                                       [[maybe_unused]] uint32_t dex_pc,
                                        SlowPathCode* slow_path) {
   ValidateInvokeRuntime(entrypoint, instruction, slow_path);
 
@@ -2166,14 +2166,14 @@ void CodeGeneratorARM64::InvokeRuntime(QuickEntrypointEnum entrypoint,
     ExactAssemblyScope eas(GetVIXLAssembler(), kInstructionSize, CodeBufferCheckScope::kExactSize);
     __ blr(lr);
     if (EntrypointRequiresStackMap(entrypoint)) {
-      RecordPcInfo(instruction, dex_pc, slow_path);
+      RecordPcInfo(instruction, slow_path);
     }
   } else {
     // Ensure the pc position is recorded immediately after the `bl` instruction.
     ExactAssemblyScope eas(GetVIXLAssembler(), kInstructionSize, CodeBufferCheckScope::kExactSize);
     EmitEntrypointThunkCall(entrypoint_offset);
     if (EntrypointRequiresStackMap(entrypoint)) {
-      RecordPcInfo(instruction, dex_pc, slow_path);
+      RecordPcInfo(instruction, slow_path);
     }
   }
 }
@@ -2264,7 +2264,7 @@ void InstructionCodeGeneratorARM64::GenerateSuspendCheck(HSuspendCheck* instruct
 
   if (codegen_->CanUseImplicitSuspendCheck()) {
     __ Ldr(kImplicitSuspendCheckRegister, MemOperand(kImplicitSuspendCheckRegister));
-    codegen_->RecordPcInfo(instruction, instruction->GetDexPc());
+    codegen_->RecordPcInfo(instruction);
     if (successor != nullptr) {
       __ B(codegen_->GetLabelOf(successor));
     }
@@ -4953,7 +4953,7 @@ void InstructionCodeGeneratorARM64::VisitInvokeInterface(HInvokeInterface* invok
     // lr();
     __ blr(lr);
     DCHECK(!codegen_->IsLeafMethod());
-    codegen_->RecordPcInfo(invoke, invoke->GetDexPc());
+    codegen_->RecordPcInfo(invoke);
   }
 
   codegen_->MaybeGenerateMarkingRegisterCheck(/* code= */ __LINE__);
@@ -5110,7 +5110,7 @@ void CodeGeneratorARM64::GenerateStaticOrDirectCall(
                            CodeBufferCheckScope::kExactSize);
     // lr()
     __ blr(lr);
-    RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+    RecordPcInfo(invoke, slow_path);
   };
   switch (invoke->GetCodePtrLocation()) {
     case CodePtrLocation::kCallSelf:
@@ -5121,7 +5121,7 @@ void CodeGeneratorARM64::GenerateStaticOrDirectCall(
                                kInstructionSize,
                                CodeBufferCheckScope::kExactSize);
         __ bl(&frame_entry_label_);
-        RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+        RecordPcInfo(invoke, slow_path);
       }
       break;
     case CodePtrLocation::kCallCriticalNative: {
@@ -5224,7 +5224,7 @@ void CodeGeneratorARM64::GenerateVirtualCall(
     ExactAssemblyScope eas(GetVIXLAssembler(), kInstructionSize, CodeBufferCheckScope::kExactSize);
     // lr();
     __ blr(lr);
-    RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+    RecordPcInfo(invoke, slow_path);
   }
 }
 
@@ -6276,7 +6276,7 @@ void CodeGeneratorARM64::GenerateImplicitNullCheck(HNullCheck* instruction) {
     EmissionCheckScope guard(GetVIXLAssembler(), kMaxMacroInstructionSizeInBytes);
     Location obj = instruction->GetLocations()->InAt(0);
     __ Ldr(wzr, HeapOperandFrom(obj, Offset(0)));
-    RecordPcInfo(instruction, instruction->GetDexPc());
+    RecordPcInfo(instruction);
   }
 }
 

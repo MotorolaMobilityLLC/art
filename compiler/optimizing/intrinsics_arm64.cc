@@ -6118,7 +6118,7 @@ void IntrinsicCodeGeneratorARM64::VisitMethodHandleInvokeExact(HInvoke* invoke) 
   Offset entry_point = ArtMethod::EntryPointFromQuickCompiledCodeOffset(kArm64PointerSize);
   __ Ldr(lr, MemOperand(method, entry_point.SizeValue()));
   __ Blr(lr);
-  codegen_->RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+  codegen_->RecordPcInfo(invoke, slow_path);
   __ Bind(slow_path->GetExitLabel());
 }
 

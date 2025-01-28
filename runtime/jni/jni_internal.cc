@@ -494,7 +494,7 @@ ArtMethod* FindMethodJNI(const ScopedObjectAccess& soa,
     method = c->FindClassMethod(name, sig, pointer_size);
   }
   if (method != nullptr &&
-      ShouldDenyAccessToMember(method, soa.Self(), hiddenapi::AccessMethod::kNone)) {
+      ShouldDenyAccessToMember(method, soa.Self(), hiddenapi::AccessMethod::kCheckWithPolicy)) {
     // The resolved method that we have found cannot be accessed due to
     // hiddenapi (typically it is declared up the hierarchy and is not an SDK
     // method). Try to find an interface method from the implemented interfaces which is

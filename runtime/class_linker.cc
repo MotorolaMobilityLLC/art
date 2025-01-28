@@ -5796,7 +5796,7 @@ bool ClassLinker::InitializeClass(Thread* self,
         DCHECK(!hiddenapi::ShouldDenyAccessToMember(
             field,
             hiddenapi::AccessContext(class_loader.Get(), dex_cache.Get()),
-            hiddenapi::AccessMethod::kNone));
+            hiddenapi::AccessMethod::kCheckWithPolicy));
         dex_cache->SetResolvedField(field_idx, field);
       } else {
         DCHECK_EQ(field, resolved_field);
@@ -10003,12 +10003,12 @@ ArtMethod* ClassLinker::FindResolvedMethod(ObjPtr<mirror::Class> klass,
   }
   DCHECK(resolved == nullptr || resolved->GetDeclaringClassUnchecked() != nullptr);
   if (resolved != nullptr &&
-      // We pass AccessMethod::kNone instead of kLinking to not warn yet on the
+      // We pass AccessMethod::kCheck instead of kLinking to not warn yet on the
       // access, as we'll be looking if the method can be accessed through an
       // interface.
       hiddenapi::ShouldDenyAccessToMember(resolved,
                                           hiddenapi::AccessContext(class_loader, dex_cache),
-                                          hiddenapi::AccessMethod::kNone)) {
+                                          hiddenapi::AccessMethod::kCheck)) {
     // The resolved method that we have found cannot be accessed due to
     // hiddenapi (typically it is declared up the hierarchy and is not an SDK
     // method). Try to find an interface method from the implemented interfaces which is
@@ -10017,11 +10017,12 @@ ArtMethod* ClassLinker::FindResolvedMethod(ObjPtr<mirror::Class> klass,
     if (itf_method == nullptr) {
       // No interface method. Call ShouldDenyAccessToMember again but this time
       // with AccessMethod::kLinking to ensure that an appropriate warning is
-      // logged.
-      hiddenapi::ShouldDenyAccessToMember(resolved,
-                                          hiddenapi::AccessContext(class_loader, dex_cache),
-                                          hiddenapi::AccessMethod::kLinking);
-      resolved = nullptr;
+      // logged and the enforcement policy is applied.
+      if (hiddenapi::ShouldDenyAccessToMember(resolved,
+                                              hiddenapi::AccessContext(class_loader, dex_cache),
+                                              hiddenapi::AccessMethod::kLinking)) {
+        resolved = nullptr;
+      }
     } else {
       // We found an interface method that is accessible, continue with the resolved method.
     }
@@ -10054,10 +10055,10 @@ static bool CheckNoSuchMethod(ArtMethod* method,
                               ObjPtr<mirror::ClassLoader> class_loader)
       REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(dex_cache->GetClassLoader().Ptr() == class_loader.Ptr());
-  return method == nullptr ||
-         hiddenapi::ShouldDenyAccessToMember(method,
-                                             hiddenapi::AccessContext(class_loader, dex_cache),
-                                             hiddenapi::AccessMethod::kNone);  // no warnings
+  return method == nullptr || hiddenapi::ShouldDenyAccessToMember(
+                                  method,
+                                  hiddenapi::AccessContext(class_loader, dex_cache),
+                                  hiddenapi::AccessMethod::kCheckWithPolicy);  // no warnings
 }
 
 ArtMethod* ClassLinker::FindIncompatibleMethod(ObjPtr<mirror::Class> klass,

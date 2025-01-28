@@ -70,7 +70,8 @@ static const std::vector<std::string> kWarningExemptions = {
 
 static inline std::ostream& operator<<(std::ostream& os, AccessMethod value) {
   switch (value) {
-    case AccessMethod::kNone:
+    case AccessMethod::kCheck:
+    case AccessMethod::kCheckWithPolicy:
       LOG(FATAL) << "Internal access to hidden API should not be logged";
       UNREACHABLE();
     case AccessMethod::kReflection:
@@ -394,11 +395,12 @@ void MemberSignature::LogAccessToEventLog(uint32_t sampled_value,
                                           AccessMethod access_method,
                                           bool access_denied) {
 #ifdef ART_TARGET_ANDROID
-  if (access_method == AccessMethod::kLinking || access_method == AccessMethod::kNone) {
+  if (access_method == AccessMethod::kCheck || access_method == AccessMethod::kCheckWithPolicy ||
+      access_method == AccessMethod::kLinking) {
+    // Checks do not correspond to actual accesses, so should be ignored.
     // Linking warnings come from static analysis/compilation of the bytecode
-    // and can contain false positives (i.e. code that is never run). We choose
-    // not to log these in the event log.
-    // None does not correspond to actual access, so should also be ignored.
+    // and can contain false positives (i.e. code that is never run). Hence we
+    // choose to not log those either in the event log.
     return;
   }
   Runtime* runtime = Runtime::Current();
@@ -595,7 +597,13 @@ bool HandleCorePlatformApiViolation(T* member,
   DCHECK(policy != EnforcementPolicy::kDisabled)
       << "Should never enter this function when access checks are completely disabled";
 
-  if (access_method != AccessMethod::kNone) {
+  if (access_method == AccessMethod::kCheck) {
+    // Always return true for internal checks, so the current enforcement policy
+    // won't affect the caller.
+    return true;
+  }
+
+  if (access_method != AccessMethod::kCheckWithPolicy) {
     LOG(policy == EnforcementPolicy::kEnabled ? ERROR : WARNING)
         << "hiddenapi: Core platform API violation: "
         << Dumpable<MemberSignature>(MemberSignature(member))
@@ -664,7 +672,7 @@ bool ShouldDenyAccessToMemberImpl(T* member,
     }
   }
 
-  if (access_method != AccessMethod::kNone) {
+  if (access_method != AccessMethod::kCheck && access_method != AccessMethod::kCheckWithPolicy) {
     // Warn if blocked signature is being accessed or it is not exempted.
     if (deny_access || !member_signature.DoesPrefixMatchAny(kWarningExemptions)) {
       // Print a log message with information about this class member access.

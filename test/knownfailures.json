@@ -1443,7 +1443,6 @@
     {
         "tests": ["150-loadlibrary",
                   "656-annotation-lookup-generic-jni",
-                  "674-hiddenapi",
                   "900-hello-plugin"],
         "variant": "target",
         "bug": "b/186654484",

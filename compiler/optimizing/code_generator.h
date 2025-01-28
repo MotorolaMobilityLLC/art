@@ -641,11 +641,12 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
       DataType::Type field_type,
       const FieldAccessCallingConvention& calling_convention);
 
+// TODO(solanes): Remove dex_pc from this method
   void GenerateUnresolvedFieldAccess(
       HInstruction* field_access,
       DataType::Type field_type,
       uint32_t field_index,
-      uint32_t dex_pc,
+      [[maybe_unused]] uint32_t dex_pc,
       const FieldAccessCallingConvention& calling_convention);
 
   static void CreateLoadClassRuntimeCallLocationSummary(HLoadClass* cls,
@@ -677,10 +678,8 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
   void SetDisassemblyInformation(DisassemblyInformation* info) { disasm_info_ = info; }
   DisassemblyInformation* GetDisassemblyInformation() const { return disasm_info_; }
 
-  // TODO(solanes): Remove `dex_pc` now that it is unused.
   virtual void InvokeRuntime(QuickEntrypointEnum entrypoint,
                              HInstruction* instruction,
-                             uint32_t dex_pc,
                              SlowPathCode* slow_path = nullptr) = 0;
 
   // Check if the desired_string_load_kind is supported. If it is, return it,

@@ -313,7 +313,7 @@ class SuspendCheckSlowPathRISCV64 : public SlowPathCodeRISCV64 {
     CodeGeneratorRISCV64* riscv64_codegen = down_cast<CodeGeneratorRISCV64*>(codegen);
     __ Bind(GetEntryLabel());
     SaveLiveRegisters(codegen, locations);  // Only saves live vector registers for SIMD.
-    riscv64_codegen->InvokeRuntime(kQuickTestSuspend, instruction_, instruction_->GetDexPc(), this);
+    riscv64_codegen->InvokeRuntime(kQuickTestSuspend, instruction_, this);
     CheckEntrypointTypes<kQuickTestSuspend, void, void>();
     RestoreLiveRegisters(codegen, locations);  // Only restores live vector registers for SIMD.
     if (successor_ == nullptr) {
@@ -353,8 +353,7 @@ class NullCheckSlowPathRISCV64 : public SlowPathCodeRISCV64 {
       // Live registers will be restored in the catch block if caught.
       SaveLiveRegisters(codegen, instruction_->GetLocations());
     }
-    riscv64_codegen->InvokeRuntime(
-        kQuickThrowNullPointer, instruction_, instruction_->GetDexPc(), this);
+    riscv64_codegen->InvokeRuntime(kQuickThrowNullPointer, instruction_, this);
     CheckEntrypointTypes<kQuickThrowNullPointer, void, void>();
   }
 
@@ -391,7 +390,7 @@ class BoundsCheckSlowPathRISCV64 : public SlowPathCodeRISCV64 {
     QuickEntrypointEnum entrypoint = instruction_->AsBoundsCheck()->IsStringCharAt() ?
                                          kQuickThrowStringBounds :
                                          kQuickThrowArrayBounds;
-    riscv64_codegen->InvokeRuntime(entrypoint, instruction_, instruction_->GetDexPc(), this);
+    riscv64_codegen->InvokeRuntime(entrypoint, instruction_, this);
     CheckEntrypointTypes<kQuickThrowStringBounds, void, int32_t, int32_t>();
     CheckEntrypointTypes<kQuickThrowArrayBounds, void, int32_t, int32_t>();
   }
@@ -414,7 +413,6 @@ class LoadClassSlowPathRISCV64 : public SlowPathCodeRISCV64 {
   void EmitNativeCode(CodeGenerator* codegen) override {
     LocationSummary* locations = instruction_->GetLocations();
     Location out = locations->Out();
-    const uint32_t dex_pc = instruction_->GetDexPc();
     bool must_resolve_type = instruction_->IsLoadClass() && cls_->MustResolveTypeOnSlowPath();
     bool must_do_clinit = instruction_->IsClinitCheck() || cls_->MustGenerateClinitCheck();
 
@@ -432,11 +430,10 @@ class LoadClassSlowPathRISCV64 : public SlowPathCodeRISCV64 {
       __ LoadConst32(calling_convention.GetRegisterAt(0), type_index.index_);
       if (cls_->NeedsAccessCheck()) {
         CheckEntrypointTypes<kQuickResolveTypeAndVerifyAccess, void*, uint32_t>();
-        riscv64_codegen->InvokeRuntime(
-            kQuickResolveTypeAndVerifyAccess, instruction_, dex_pc, this);
+        riscv64_codegen->InvokeRuntime(kQuickResolveTypeAndVerifyAccess, instruction_, this);
       } else {
         CheckEntrypointTypes<kQuickResolveType, void*, uint32_t>();
-        riscv64_codegen->InvokeRuntime(kQuickResolveType, instruction_, dex_pc, this);
+        riscv64_codegen->InvokeRuntime(kQuickResolveType, instruction_, this);
       }
       // If we also must_do_clinit, the resolved type is now in the correct register.
     } else {
@@ -446,7 +443,7 @@ class LoadClassSlowPathRISCV64 : public SlowPathCodeRISCV64 {
           Location::RegisterLocation(calling_convention.GetRegisterAt(0)), source, cls_->GetType());
     }
     if (must_do_clinit) {
-      riscv64_codegen->InvokeRuntime(kQuickInitializeStaticStorage, instruction_, dex_pc, this);
+      riscv64_codegen->InvokeRuntime(kQuickInitializeStaticStorage, instruction_, this);
       CheckEntrypointTypes<kQuickInitializeStaticStorage, void*, mirror::Class*>();
     }
 
@@ -484,7 +481,7 @@ class DeoptimizationSlowPathRISCV64 : public SlowPathCodeRISCV64 {
     InvokeRuntimeCallingConvention calling_convention;
     __ LoadConst32(calling_convention.GetRegisterAt(0),
                    static_cast<uint32_t>(instruction_->AsDeoptimize()->GetDeoptimizationKind()));
-    riscv64_codegen->InvokeRuntime(kQuickDeoptimize, instruction_, instruction_->GetDexPc(), this);
+    riscv64_codegen->InvokeRuntime(kQuickDeoptimize, instruction_, this);
     CheckEntrypointTypes<kQuickDeoptimize, void, DeoptimizationKind>();
   }
 
@@ -522,10 +519,7 @@ class ReadBarrierForRootSlowPathRISCV64 : public SlowPathCodeRISCV64 {
     riscv64_codegen->MoveLocation(Location::RegisterLocation(calling_convention.GetRegisterAt(0)),
                                   root_,
                                   DataType::Type::kReference);
-    riscv64_codegen->InvokeRuntime(kQuickReadBarrierForRootSlow,
-                                   instruction_,
-                                   instruction_->GetDexPc(),
-                                   this);
+    riscv64_codegen->InvokeRuntime(kQuickReadBarrierForRootSlow, instruction_, this);
     CheckEntrypointTypes<kQuickReadBarrierForRootSlow, mirror::Object*, GcRoot<mirror::Object>*>();
     riscv64_codegen->MoveLocation(out_, calling_convention.GetReturnLocation(type), type);
 
@@ -557,7 +551,7 @@ class MethodEntryExitHooksSlowPathRISCV64 : public SlowPathCodeRISCV64 {
     if (instruction_->IsMethodExitHook()) {
       __ Li(A4, riscv64_codegen->GetFrameSize());
     }
-    riscv64_codegen->InvokeRuntime(entry_point, instruction_, instruction_->GetDexPc(), this);
+    riscv64_codegen->InvokeRuntime(entry_point, instruction_, this);
     RestoreLiveRegisters(codegen, locations);
     __ J(GetExitLabel());
   }
@@ -599,7 +593,7 @@ class ArraySetSlowPathRISCV64 : public SlowPathCodeRISCV64 {
     codegen->GetMoveResolver()->EmitNativeCode(&parallel_move);
 
     CodeGeneratorRISCV64* riscv64_codegen = down_cast<CodeGeneratorRISCV64*>(codegen);
-    riscv64_codegen->InvokeRuntime(kQuickAputObject, instruction_, instruction_->GetDexPc(), this);
+    riscv64_codegen->InvokeRuntime(kQuickAputObject, instruction_, this);
     CheckEntrypointTypes<kQuickAputObject, void, mirror::Array*, int32_t, mirror::Object*>();
     RestoreLiveRegisters(codegen, locations);
     __ J(GetExitLabel());
@@ -619,7 +613,6 @@ class TypeCheckSlowPathRISCV64 : public SlowPathCodeRISCV64 {
   void EmitNativeCode(CodeGenerator* codegen) override {
     LocationSummary* locations = instruction_->GetLocations();
 
-    uint32_t dex_pc = instruction_->GetDexPc();
     DCHECK(instruction_->IsCheckCast()
            || !locations->GetLiveRegisters()->ContainsCoreRegister(locations->Out().reg()));
     CodeGeneratorRISCV64* riscv64_codegen = down_cast<CodeGeneratorRISCV64*>(codegen);
@@ -639,14 +632,14 @@ class TypeCheckSlowPathRISCV64 : public SlowPathCodeRISCV64 {
                                Location::RegisterLocation(calling_convention.GetRegisterAt(1)),
                                DataType::Type::kReference);
     if (instruction_->IsInstanceOf()) {
-      riscv64_codegen->InvokeRuntime(kQuickInstanceofNonTrivial, instruction_, dex_pc, this);
+      riscv64_codegen->InvokeRuntime(kQuickInstanceofNonTrivial, instruction_, this);
       CheckEntrypointTypes<kQuickInstanceofNonTrivial, size_t, mirror::Object*, mirror::Class*>();
       DataType::Type ret_type = instruction_->GetType();
       Location ret_loc = calling_convention.GetReturnLocation(ret_type);
       riscv64_codegen->MoveLocation(locations->Out(), ret_loc, ret_type);
     } else {
       DCHECK(instruction_->IsCheckCast());
-      riscv64_codegen->InvokeRuntime(kQuickCheckInstanceOf, instruction_, dex_pc, this);
+      riscv64_codegen->InvokeRuntime(kQuickCheckInstanceOf, instruction_, this);
       CheckEntrypointTypes<kQuickCheckInstanceOf, void, mirror::Object*, mirror::Class*>();
     }
 
@@ -674,8 +667,7 @@ class DivZeroCheckSlowPathRISCV64 : public SlowPathCodeRISCV64 {
   void EmitNativeCode(CodeGenerator* codegen) override {
     CodeGeneratorRISCV64* riscv64_codegen = down_cast<CodeGeneratorRISCV64*>(codegen);
     __ Bind(GetEntryLabel());
-    riscv64_codegen->InvokeRuntime(
-        kQuickThrowDivZero, instruction_, instruction_->GetDexPc(), this);
+    riscv64_codegen->InvokeRuntime(kQuickThrowDivZero, instruction_, this);
     CheckEntrypointTypes<kQuickThrowDivZero, void, void>();
   }
 
@@ -768,8 +760,7 @@ class LoadStringSlowPathRISCV64 : public SlowPathCodeRISCV64 {
     SaveLiveRegisters(codegen, locations);
 
     __ LoadConst32(calling_convention.GetRegisterAt(0), string_index.index_);
-    riscv64_codegen->InvokeRuntime(
-        kQuickResolveString, instruction_, instruction_->GetDexPc(), this);
+    riscv64_codegen->InvokeRuntime(kQuickResolveString, instruction_, this);
     CheckEntrypointTypes<kQuickResolveString, void*, uint32_t>();
 
     DataType::Type type = DataType::Type::kReference;
@@ -4586,7 +4577,7 @@ void InstructionCodeGeneratorRISCV64::VisitLoadString(HLoadString* instruction)
   InvokeRuntimeCallingConvention calling_convention;
   DCHECK(calling_convention.GetReturnLocation(DataType::Type::kReference).Equals(out_loc));
   __ LoadConst32(calling_convention.GetRegisterAt(0), instruction->GetStringIndex().index_);
-  codegen_->InvokeRuntime(kQuickResolveString, instruction, instruction->GetDexPc());
+  codegen_->InvokeRuntime(kQuickResolveString, instruction);
   CheckEntrypointTypes<kQuickResolveString, void*, uint32_t>();
 }
 
@@ -4656,8 +4647,7 @@ void LocationsBuilderRISCV64::VisitMonitorOperation(HMonitorOperation* instructi
 
 void InstructionCodeGeneratorRISCV64::VisitMonitorOperation(HMonitorOperation* instruction) {
   codegen_->InvokeRuntime(instruction->IsEnter() ? kQuickLockObject : kQuickUnlockObject,
-                          instruction,
-                          instruction->GetDexPc());
+                          instruction);
   if (instruction->IsEnter()) {
     CheckEntrypointTypes<kQuickLockObject, void, mirror::Object*>();
   } else {
@@ -4772,7 +4762,7 @@ void LocationsBuilderRISCV64::VisitNewArray(HNewArray* instruction) {
 
 void InstructionCodeGeneratorRISCV64::VisitNewArray(HNewArray* instruction) {
   QuickEntrypointEnum entrypoint = CodeGenerator::GetArrayAllocationEntrypoint(instruction);
-  codegen_->InvokeRuntime(entrypoint, instruction, instruction->GetDexPc());
+  codegen_->InvokeRuntime(entrypoint, instruction);
   CheckEntrypointTypes<kQuickAllocArrayResolved, void*, mirror::Class*, int32_t>();
   DCHECK(!codegen_->IsLeafMethod());
 }
@@ -4786,7 +4776,7 @@ void LocationsBuilderRISCV64::VisitNewInstance(HNewInstance* instruction) {
 }
 
 void InstructionCodeGeneratorRISCV64::VisitNewInstance(HNewInstance* instruction) {
-  codegen_->InvokeRuntime(instruction->GetEntrypoint(), instruction, instruction->GetDexPc());
+  codegen_->InvokeRuntime(instruction->GetEntrypoint(), instruction);
   CheckEntrypointTypes<kQuickAllocObjectWithChecks, void*, mirror::Class*>();
 }
 
@@ -4981,7 +4971,7 @@ void InstructionCodeGeneratorRISCV64::VisitRem(HRem* instruction) {
     case DataType::Type::kFloat64: {
       QuickEntrypointEnum entrypoint =
           (type == DataType::Type::kFloat32) ? kQuickFmodf : kQuickFmod;
-      codegen_->InvokeRuntime(entrypoint, instruction, instruction->GetDexPc());
+      codegen_->InvokeRuntime(entrypoint, instruction);
       if (type == DataType::Type::kFloat32) {
         CheckEntrypointTypes<kQuickFmodf, float, float, float>();
       } else {
@@ -5079,7 +5069,7 @@ void LocationsBuilderRISCV64::VisitStringBuilderAppend(HStringBuilderAppend* ins
 
 void InstructionCodeGeneratorRISCV64::VisitStringBuilderAppend(HStringBuilderAppend* instruction) {
   __ LoadConst32(A0, instruction->GetFormat()->GetValue());
-  codegen_->InvokeRuntime(kQuickStringBuilderAppend, instruction, instruction->GetDexPc());
+  codegen_->InvokeRuntime(kQuickStringBuilderAppend, instruction);
 }
 
 void LocationsBuilderRISCV64::VisitUnresolvedInstanceFieldGet(
@@ -5288,7 +5278,7 @@ void LocationsBuilderRISCV64::VisitThrow(HThrow* instruction) {
 }
 
 void InstructionCodeGeneratorRISCV64::VisitThrow(HThrow* instruction) {
-  codegen_->InvokeRuntime(kQuickDeliverException, instruction, instruction->GetDexPc());
+  codegen_->InvokeRuntime(kQuickDeliverException, instruction);
   CheckEntrypointTypes<kQuickDeliverException, void, mirror::Object*>();
 }
 
@@ -6511,7 +6501,6 @@ void CodeGeneratorRISCV64::Finalize() {
 // Generate code to invoke a runtime entry point.
 void CodeGeneratorRISCV64::InvokeRuntime(QuickEntrypointEnum entrypoint,
                                          HInstruction* instruction,
-                                         [[maybe_unused]] uint32_t dex_pc,
                                          SlowPathCode* slow_path) {
   ValidateInvokeRuntime(entrypoint, instruction, slow_path);
 
@@ -7096,7 +7085,7 @@ void CodeGeneratorRISCV64::MaybeGenerateInlineCacheCheck(HInstruction* instructi
         // Fast path for a monomorphic cache.
         __ Beq(klass, tmp, &done);
       }
-      InvokeRuntime(kQuickUpdateInlineCache, instruction, instruction->GetDexPc());
+      InvokeRuntime(kQuickUpdateInlineCache, instruction);
       __ Bind(&done);
     } else {
       // This is unexpected, but we don't guarantee stable compilation across

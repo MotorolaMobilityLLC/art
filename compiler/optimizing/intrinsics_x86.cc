@@ -471,7 +471,7 @@ static void GenFPToFPCall(HInvoke* invoke, CodeGeneratorX86* codegen, QuickEntry
   }
 
   // Now do the actual call.
-  codegen->InvokeRuntime(entry, invoke, invoke->GetDexPc());
+  codegen->InvokeRuntime(entry, invoke);
 
   // Extract the return value from the FP stack.
   __ fstpl(Address(ESP, 0));
@@ -1012,7 +1012,7 @@ void IntrinsicCodeGeneratorX86::VisitStringCompareTo(HInvoke* invoke) {
   codegen_->AddSlowPath(slow_path);
   __ j(kEqual, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickStringCompareTo, invoke, invoke->GetDexPc(), slow_path);
+  codegen_->InvokeRuntime(kQuickStringCompareTo, invoke, slow_path);
   __ Bind(slow_path->GetExitLabel());
 }
 
@@ -1351,7 +1351,7 @@ void IntrinsicCodeGeneratorX86::VisitStringNewStringFromBytes(HInvoke* invoke) {
   codegen_->AddSlowPath(slow_path);
   __ j(kEqual, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickAllocStringFromBytes, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAllocStringFromBytes, invoke);
   CheckEntrypointTypes<kQuickAllocStringFromBytes, void*, void*, int32_t, int32_t, int32_t>();
   __ Bind(slow_path->GetExitLabel());
 }
@@ -1373,7 +1373,7 @@ void IntrinsicCodeGeneratorX86::VisitStringNewStringFromChars(HInvoke* invoke) {
   //   java.lang.StringFactory.newStringFromChars(int offset, int charCount, char[] data)
   //
   // all include a null check on `data` before calling that method.
-  codegen_->InvokeRuntime(kQuickAllocStringFromChars, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAllocStringFromChars, invoke);
   CheckEntrypointTypes<kQuickAllocStringFromChars, void*, int32_t, int32_t, void*>();
 }
 
@@ -1395,7 +1395,7 @@ void IntrinsicCodeGeneratorX86::VisitStringNewStringFromString(HInvoke* invoke) 
   codegen_->AddSlowPath(slow_path);
   __ j(kEqual, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickAllocStringFromString, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAllocStringFromString, invoke);
   CheckEntrypointTypes<kQuickAllocStringFromString, void*, void*>();
   __ Bind(slow_path->GetExitLabel());
 }
@@ -3606,7 +3606,7 @@ void IntrinsicCodeGeneratorX86::HandleValueOf(HInvoke* invoke,
   auto allocate_instance = [&]() {
     DCHECK_EQ(out, InvokeRuntimeCallingConvention().GetRegisterAt(0));
     codegen_->LoadIntrinsicDeclaringClass(out, invoke->AsInvokeStaticOrDirect());
-    codegen_->InvokeRuntime(kQuickAllocObjectInitialized, invoke, invoke->GetDexPc());
+    codegen_->InvokeRuntime(kQuickAllocObjectInitialized, invoke);
     CheckEntrypointTypes<kQuickAllocObjectWithChecks, void*, mirror::Class*>();
   };
   if (invoke->InputAt(0)->IsIntConstant()) {

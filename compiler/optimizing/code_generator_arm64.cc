@@ -1549,39 +1549,54 @@ void CodeGeneratorARM64::GenerateFrameEntry() {
 }
 
 void CodeGeneratorARM64::GenerateFrameExit() {
-  GetAssembler()->cfi().RememberState();
   if (!HasEmptyFrame()) {
     MaybeRecordTraceEvent(/* is_method_entry= */ false);
-
-    int32_t frame_size = dchecked_integral_cast<int32_t>(GetFrameSize());
-    uint32_t core_spills_offset = frame_size - GetCoreSpillSize();
-    CPURegList preserved_core_registers = GetFramePreservedCoreRegisters();
-    DCHECK(!preserved_core_registers.IsEmpty());
-    uint32_t fp_spills_offset = frame_size - FrameEntrySpillSize();
-    CPURegList preserved_fp_registers = GetFramePreservedFPRegisters();
-
-    CPURegister lowest_spill;
-    if (core_spills_offset == kXRegSizeInBytes) {
-      // If there is no gap between the method and the lowest core spill, use
-      // aligned LDP pre-index to pop both. Max difference is 504. We do
-      // that to reduce code size even though the loaded method is unused.
-      DCHECK_LE(frame_size, 504);  // 32 core registers are only 256 bytes.
-      lowest_spill = preserved_core_registers.PopLowestIndex();
-      core_spills_offset += kXRegSizeInBytes;
-    }
-    GetAssembler()->UnspillRegisters(preserved_fp_registers, fp_spills_offset);
-    GetAssembler()->UnspillRegisters(preserved_core_registers, core_spills_offset);
-    if (lowest_spill.IsValid()) {
-      __ Ldp(xzr, lowest_spill, MemOperand(sp, frame_size, PostIndex));
-      GetAssembler()->cfi().Restore(DWARFReg(lowest_spill));
-    } else {
-      __ Drop(frame_size);
-    }
-    GetAssembler()->cfi().AdjustCFAOffset(-frame_size);
+    DropFrameAndReturn(GetAssembler(),
+                       GetVIXLAssembler(),
+                       dchecked_integral_cast<int32_t>(GetFrameSize()),
+                       GetCoreSpillSize(),
+                       GetFramePreservedCoreRegisters(),
+                       FrameEntrySpillSize(),
+                       GetFramePreservedFPRegisters());
+  } else {
+    __ Ret();
   }
-  __ Ret();
-  GetAssembler()->cfi().RestoreState();
-  GetAssembler()->cfi().DefCFAOffset(GetFrameSize());
+}
+
+void CodeGeneratorARM64::DropFrameAndReturn(Arm64Assembler* assembler,
+                                            vixl::aarch64::MacroAssembler* vixl_assembler,
+                                            int32_t frame_size,
+                                            uint32_t core_spill_size,
+                                            CPURegList preserved_core_registers,
+                                            uint32_t frame_entry_spill_size,
+                                            CPURegList preserved_fp_registers) {
+  DCHECK(!preserved_core_registers.IsEmpty());
+  uint32_t core_spills_offset = frame_size - core_spill_size;
+  uint32_t fp_spills_offset = frame_size - frame_entry_spill_size;
+
+  CPURegister lowest_spill;
+  if (core_spills_offset == kXRegSizeInBytes) {
+    // If there is no gap between the method and the lowest core spill, use
+    // aligned LDP pre-index to pop both. Max difference is 504. We do
+    // that to reduce code size even though the loaded method is unused.
+    DCHECK_LE(frame_size, 504);  // 32 core registers are only 256 bytes.
+    lowest_spill = preserved_core_registers.PopLowestIndex();
+    core_spills_offset += kXRegSizeInBytes;
+  }
+
+  assembler->cfi().RememberState();
+  assembler->UnspillRegisters(preserved_fp_registers, fp_spills_offset);
+  assembler->UnspillRegisters(preserved_core_registers, core_spills_offset);
+  if (lowest_spill.IsValid()) {
+    vixl_assembler->Ldp(xzr, lowest_spill, MemOperand(sp, frame_size, PostIndex));
+    assembler->cfi().Restore(DWARFReg(lowest_spill));
+  } else {
+    vixl_assembler->Drop(frame_size);
+  }
+  assembler->cfi().AdjustCFAOffset(-frame_size);
+  vixl_assembler->Ret();
+  assembler->cfi().RestoreState();
+  assembler->cfi().DefCFAOffset(frame_size);
 }
 
 CPURegList CodeGeneratorARM64::GetFramePreservedCoreRegisters() const {

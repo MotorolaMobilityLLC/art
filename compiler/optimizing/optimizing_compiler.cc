@@ -35,12 +35,14 @@
 #include "builder.h"
 #include "code_generator.h"
 #include "compiler.h"
+#include "com_android_art_flags.h"
 #include "debug/elf_debug_writer.h"
 #include "debug/method_debug_info.h"
 #include "dex/dex_file_types.h"
 #include "driver/compiled_code_storage.h"
 #include "driver/compiler_options.h"
 #include "driver/dex_compilation_unit.h"
+#include "fast_compiler.h"
 #include "graph_checker.h"
 #include "graph_visualizer.h"
 #include "inliner.h"
@@ -1220,10 +1222,7 @@ CompiledMethod* OptimizingCompiler::JniCompile(uint32_t access_flags,
                               method,
                               &handles));
       if (codegen != nullptr) {
-        return Emit(&allocator,
-                    codegen.get(),
-                    /*is_intrinsic=*/ true,
-                    /*item=*/ nullptr);
+        return Emit(&allocator, codegen.get(), /*is_intrinsic=*/ true, /*item=*/ nullptr);
       }
     }
   }
@@ -1281,6 +1280,22 @@ bool OptimizingCompiler::JitCompile(Thread* self,
   Runtime* runtime = Runtime::Current();
   ArenaAllocator allocator(runtime->GetJitArenaPool());
 
+  std::vector<uint8_t> debug_info;
+  debug::MethodDebugInfo method_debug_info = {};
+  if (compiler_options.GenerateAnyDebugInfo()) {
+    DCHECK(method_debug_info.custom_name.empty());
+    method_debug_info.dex_file = dex_file;
+    method_debug_info.class_def_index = class_def_idx;
+    method_debug_info.dex_method_index = method_idx;
+    method_debug_info.access_flags = access_flags;
+    method_debug_info.code_item = code_item;
+    method_debug_info.isa = compiler_options.GetInstructionSet();
+    method_debug_info.deduped = false;
+    method_debug_info.is_native_debuggable = compiler_options.GetNativeDebuggable();
+    method_debug_info.is_code_address_text_relative = false;
+    method_debug_info.is_optimized = true;
+  }
+
   if (UNLIKELY(method->IsNative())) {
     // Use GenericJniTrampoline for critical native methods in debuggable runtimes. We don't
     // support calling method entry / exit hooks for critical native methods yet.
@@ -1325,27 +1340,15 @@ bool OptimizingCompiler::JitCompile(Thread* self,
     const uint8_t* code = reserved_code.data() + OatQuickMethodHeader::InstructionAlignedSize();
 
     // Add debug info after we know the code location but before we update entry-point.
-    std::vector<uint8_t> debug_info;
     if (compiler_options.GenerateAnyDebugInfo()) {
-      debug::MethodDebugInfo info = {};
       // Simpleperf relies on art_jni_trampoline to detect jni methods.
-      info.custom_name = "art_jni_trampoline";
-      info.dex_file = dex_file;
-      info.class_def_index = class_def_idx;
-      info.dex_method_index = method_idx;
-      info.access_flags = access_flags;
-      info.code_item = code_item;
-      info.isa = jni_compiled_method.GetInstructionSet();
-      info.deduped = false;
-      info.is_native_debuggable = compiler_options.GetNativeDebuggable();
-      info.is_optimized = true;
-      info.is_code_address_text_relative = false;
-      info.code_address = reinterpret_cast<uintptr_t>(code);
-      info.code_size = jni_compiled_method.GetCode().size();
-      info.frame_size_in_bytes = jni_compiled_method.GetFrameSize();
-      info.code_info = nullptr;
-      info.cfi = jni_compiled_method.GetCfi();
-      debug_info = GenerateJitDebugInfo(info);
+      method_debug_info.custom_name = "art_jni_trampoline";
+      method_debug_info.code_address = reinterpret_cast<uintptr_t>(code);
+      method_debug_info.code_size = jni_compiled_method.GetCode().size();
+      method_debug_info.frame_size_in_bytes = jni_compiled_method.GetFrameSize();
+      method_debug_info.code_info = nullptr;
+      method_debug_info.cfi = jni_compiled_method.GetCfi();
+      debug_info = GenerateJitDebugInfo(method_debug_info);
     }
 
     if (!code_cache->Commit(self,
@@ -1375,113 +1378,173 @@ bool OptimizingCompiler::JitCompile(Thread* self,
   VariableSizedHandleScope handles(self);
 
   std::unique_ptr<CodeGenerator> codegen;
+  std::unique_ptr<FastCompiler> fast_compiler;
+  Handle<mirror::Class> compiling_class = handles.NewHandle(method->GetDeclaringClass());
+  DexCompilationUnit dex_compilation_unit(
+      class_loader,
+      runtime->GetClassLinker(),
+      *dex_file,
+      code_item,
+      class_def_idx,
+      method_idx,
+      access_flags,
+      /*verified_method=*/ nullptr,
+      dex_cache,
+      compiling_class);
   {
-    Handle<mirror::Class> compiling_class = handles.NewHandle(method->GetDeclaringClass());
-    DexCompilationUnit dex_compilation_unit(
-        class_loader,
-        runtime->GetClassLinker(),
-        *dex_file,
-        code_item,
-        class_def_idx,
-        method_idx,
-        access_flags,
-        /*verified_method=*/ nullptr,
-        dex_cache,
-        compiling_class);
-
     // Go to native so that we don't block GC during compilation.
     ScopedThreadSuspension sts(self, ThreadState::kNative);
-    codegen.reset(
-        TryCompile(&allocator,
-                   &arena_stack,
-                   dex_compilation_unit,
-                   method,
-                   compilation_kind,
-                   &handles));
-    if (codegen.get() == nullptr) {
-      return false;
+    if (com::android::art::flags::fast_baseline_compiler() &&
+        compilation_kind == CompilationKind::kBaseline &&
+        !compiler_options.GetDebuggable()) {
+      fast_compiler = FastCompiler::Compile(method,
+                                            &allocator,
+                                            &arena_stack,
+                                            &handles,
+                                            compiler_options,
+                                            dex_compilation_unit);
+    }
+    if (fast_compiler == nullptr) {
+      codegen.reset(
+          TryCompile(&allocator,
+                     &arena_stack,
+                     dex_compilation_unit,
+                     method,
+                     compilation_kind,
+                     &handles));
+      if (codegen.get() == nullptr) {
+        return false;
+      }
     }
   }
 
-  ScopedArenaVector<uint8_t> stack_map = codegen->BuildStackMaps(code_item);
+  if (fast_compiler != nullptr) {
+    ArrayRef<const uint8_t> reserved_code;
+    ArrayRef<const uint8_t> reserved_data;
+    if (!code_cache->Reserve(self,
+                             region,
+                             fast_compiler->GetCode().size(),
+                             fast_compiler->GetStackMaps().size(),
+                             fast_compiler->GetNumberOfJitRoots(),
+                             method,
+                             /*out*/ &reserved_code,
+                             /*out*/ &reserved_data)) {
+      MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kJitOutOfMemoryForCommit);
+      return false;
+    }
+    const uint8_t* code = reserved_code.data() + OatQuickMethodHeader::InstructionAlignedSize();
+    if (compiler_options.GenerateAnyDebugInfo()) {
+      method_debug_info.code_address = reinterpret_cast<uintptr_t>(code);
+      method_debug_info.code_size = fast_compiler->GetCode().size();
+      method_debug_info.frame_size_in_bytes = fast_compiler->GetFrameSize();
+      method_debug_info.code_info = fast_compiler->GetStackMaps().size() == 0
+          ? nullptr : fast_compiler->GetStackMaps().data();
+      method_debug_info.cfi = ArrayRef<const uint8_t>(fast_compiler->GetCfiData());
+      debug_info = GenerateJitDebugInfo(method_debug_info);
+    }
 
-  ArrayRef<const uint8_t> reserved_code;
-  ArrayRef<const uint8_t> reserved_data;
-  if (!code_cache->Reserve(self,
-                           region,
-                           codegen->GetAssembler()->CodeSize(),
-                           stack_map.size(),
-                           /*number_of_roots=*/codegen->GetNumberOfJitRoots(),
-                           method,
-                           /*out*/ &reserved_code,
-                           /*out*/ &reserved_data)) {
-    MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kJitOutOfMemoryForCommit);
-    return false;
-  }
-  const uint8_t* code = reserved_code.data() + OatQuickMethodHeader::InstructionAlignedSize();
-  const uint8_t* roots_data = reserved_data.data();
+    const uint8_t* roots_data = reserved_data.data();
+    std::vector<Handle<mirror::Object>> roots;
+    fast_compiler->EmitJitRoots(const_cast<uint8_t*>(fast_compiler->GetCode().data()),
+                                roots_data,
+                                &roots);
+    // The root Handle<>s filled by the codegen reference entries in the VariableSizedHandleScope.
+    DCHECK(std::all_of(roots.begin(),
+                       roots.end(),
+                       [&handles](Handle<mirror::Object> root){
+                         return handles.Contains(root.GetReference());
+                       }));
+    ArenaSet<ArtMethod*> cha_single_implementation_list(allocator.Adapter(kArenaAllocCHA));
+    if (!code_cache->Commit(self,
+                            region,
+                            method,
+                            reserved_code,
+                            fast_compiler->GetCode(),
+                            reserved_data,
+                            roots,
+                            ArrayRef<const uint8_t>(fast_compiler->GetStackMaps()),
+                            debug_info,
+                            /* is_full_debug_info= */ compiler_options.GetGenerateDebugInfo(),
+                            compilation_kind,
+                            cha_single_implementation_list)) {
+      code_cache->Free(self, region, reserved_code.data(), reserved_data.data());
+      return false;
+    }
+    if (jit_logger != nullptr) {
+      jit_logger->WriteLog(code, fast_compiler->GetCode().size(), method);
+    }
+    VLOG(jit) << "Fast compiled " << method->PrettyMethod();
+  } else {
+    ScopedArenaVector<uint8_t> stack_map = codegen->BuildStackMaps(code_item);
+    ArrayRef<const uint8_t> reserved_code;
+    ArrayRef<const uint8_t> reserved_data;
+    if (!code_cache->Reserve(self,
+                             region,
+                             codegen->GetAssembler()->CodeSize(),
+                             stack_map.size(),
+                             /*number_of_roots=*/codegen->GetNumberOfJitRoots(),
+                             method,
+                             /*out*/ &reserved_code,
+                             /*out*/ &reserved_data)) {
+      MaybeRecordStat(compilation_stats_.get(), MethodCompilationStat::kJitOutOfMemoryForCommit);
+      return false;
+    }
+    const uint8_t* code = reserved_code.data() + OatQuickMethodHeader::InstructionAlignedSize();
+    const uint8_t* roots_data = reserved_data.data();
 
-  std::vector<Handle<mirror::Object>> roots;
-  codegen->EmitJitRoots(const_cast<uint8_t*>(codegen->GetAssembler()->CodeBufferBaseAddress()),
+    std::vector<Handle<mirror::Object>> roots;
+    codegen->EmitJitRoots(const_cast<uint8_t*>(codegen->GetAssembler()->CodeBufferBaseAddress()),
                         roots_data,
                         &roots);
-  // The root Handle<>s filled by the codegen reference entries in the VariableSizedHandleScope.
-  DCHECK(std::all_of(roots.begin(),
-                     roots.end(),
-                     [&handles](Handle<mirror::Object> root){
-                       return handles.Contains(root.GetReference());
-                     }));
+    // The root Handle<>s filled by the codegen reference entries in the VariableSizedHandleScope.
+    DCHECK(std::all_of(roots.begin(),
+                       roots.end(),
+                       [&handles](Handle<mirror::Object> root){
+                         return handles.Contains(root.GetReference());
+                       }));
 
-  // Add debug info after we know the code location but before we update entry-point.
-  std::vector<uint8_t> debug_info;
-  if (compiler_options.GenerateAnyDebugInfo()) {
-    debug::MethodDebugInfo info = {};
-    DCHECK(info.custom_name.empty());
-    info.dex_file = dex_file;
-    info.class_def_index = class_def_idx;
-    info.dex_method_index = method_idx;
-    info.access_flags = access_flags;
-    info.code_item = code_item;
-    info.isa = codegen->GetInstructionSet();
-    info.deduped = false;
-    info.is_native_debuggable = compiler_options.GetNativeDebuggable();
-    info.is_optimized = true;
-    info.is_code_address_text_relative = false;
-    info.code_address = reinterpret_cast<uintptr_t>(code);
-    info.code_size = codegen->GetAssembler()->CodeSize(),
-    info.frame_size_in_bytes = codegen->GetFrameSize();
-    info.code_info = stack_map.size() == 0 ? nullptr : stack_map.data();
-    info.cfi = ArrayRef<const uint8_t>(*codegen->GetAssembler()->cfi().data());
-    debug_info = GenerateJitDebugInfo(info);
-  }
+    // Add debug info after we know the code location but before we update entry-point.
+    if (compiler_options.GenerateAnyDebugInfo()) {
+      method_debug_info.code_address = reinterpret_cast<uintptr_t>(code);
+      method_debug_info.code_size = codegen->GetAssembler()->CodeSize();
+      method_debug_info.frame_size_in_bytes = codegen->GetFrameSize();
+      method_debug_info.code_info = stack_map.size() == 0 ? nullptr : stack_map.data();
+      method_debug_info.cfi = ArrayRef<const uint8_t>(*codegen->GetAssembler()->cfi().data());
+      debug_info = GenerateJitDebugInfo(method_debug_info);
+    }
 
-  if (compilation_kind == CompilationKind::kBaseline &&
-      !codegen->GetGraph()->IsUsefulOptimizing()) {
-    compilation_kind = CompilationKind::kOptimized;
-  }
+    if (compilation_kind == CompilationKind::kBaseline &&
+        !codegen->GetGraph()->IsUsefulOptimizing()) {
+      // The baseline compilation detected that it has done all the optimizations
+      // that the full compiler would do. Therefore we set the compilation kind to
+      // be `kOptimized`
+      compilation_kind = CompilationKind::kOptimized;
+    }
 
-  if (!code_cache->Commit(self,
-                          region,
-                          method,
-                          reserved_code,
-                          codegen->GetCode(),
-                          reserved_data,
-                          roots,
-                          ArrayRef<const uint8_t>(stack_map),
-                          debug_info,
-                          /* is_full_debug_info= */ compiler_options.GetGenerateDebugInfo(),
-                          compilation_kind,
-                          codegen->GetGraph()->GetCHASingleImplementationList())) {
-    CHECK_EQ(CodeInfo::HasShouldDeoptimizeFlag(stack_map.data()),
-             codegen->GetGraph()->HasShouldDeoptimizeFlag());
-    code_cache->Free(self, region, reserved_code.data(), reserved_data.data());
-    return false;
+    if (!code_cache->Commit(self,
+                            region,
+                            method,
+                            reserved_code,
+                            codegen->GetCode(),
+                            reserved_data,
+                            roots,
+                            ArrayRef<const uint8_t>(stack_map),
+                            debug_info,
+                            /* is_full_debug_info= */ compiler_options.GetGenerateDebugInfo(),
+                            compilation_kind,
+                            codegen->GetGraph()->GetCHASingleImplementationList())) {
+      CHECK_EQ(CodeInfo::HasShouldDeoptimizeFlag(stack_map.data()),
+               codegen->GetGraph()->HasShouldDeoptimizeFlag());
+      code_cache->Free(self, region, reserved_code.data(), reserved_data.data());
+      return false;
+    }
+
+    if (jit_logger != nullptr) {
+      jit_logger->WriteLog(code, codegen->GetAssembler()->CodeSize(), method);
+    }
   }
 
   Runtime::Current()->GetJit()->AddMemoryUsage(method, allocator.BytesUsed());
-  if (jit_logger != nullptr) {
-    jit_logger->WriteLog(code, codegen->GetAssembler()->CodeSize(), method);
-  }
 
   if (kArenaAllocatorCountAllocations) {
     codegen.reset();  // Release codegen's ScopedArenaAllocator for memory accounting.

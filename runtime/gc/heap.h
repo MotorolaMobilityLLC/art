@@ -40,6 +40,7 @@
 #include "gc/gc_cause.h"
 #include "gc/space/large_object_space.h"
 #include "gc/space/space.h"
+#include "gc/space/zygote_space.h"
 #include "handle.h"
 #include "obj_ptr.h"
 #include "offsets.h"
@@ -819,6 +820,10 @@ class Heap {
 
   bool HasZygoteSpace() const {
     return zygote_space_ != nullptr;
+  }
+
+  bool IsInZygoteSpace(const mirror::Object* obj) const {
+    return zygote_space_ != nullptr && zygote_space_->Contains(obj);
   }
 
   // Returns the active concurrent copying collector.

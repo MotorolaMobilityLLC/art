@@ -169,7 +169,7 @@ void InitializeDexFileDomain(const DexFile& dex_file, ObjPtr<mirror::ClassLoader
 
   // Assign the domain unless a more permissive domain has already been assigned.
   // This may happen when DexFile is initialized as trusted.
-  if (IsDomainMoreTrustedThan(dex_domain, dex_file.GetHiddenapiDomain())) {
+  if (IsDomainAtLeastAsTrustedAs(dex_domain, dex_file.GetHiddenapiDomain())) {
     dex_file.SetHiddenapiDomain(dex_domain);
   }
 }

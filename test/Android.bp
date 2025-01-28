@@ -949,6 +949,12 @@ cc_defaults {
         "libnativehelper",
         "libunwindstack",
     ],
+    target: {
+        android: {
+            header_libs: ["libnativeloader-headers"],
+            shared_libs: ["libdl_android"],
+        },
+    },
 }
 
 art_cc_test_library {

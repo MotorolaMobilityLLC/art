@@ -4501,7 +4501,11 @@ bool MethodVerifierImpl::CheckCallSite(uint32_t call_site_idx) {
                                         << index[i] << " >= " << type_and_max[i].second;
       return false;
     }
-    it.Next();
+
+    // Don't increase if we are going to read past the item.
+    if (i != kRequiredArguments - 1) {
+      it.Next();
+    }
   }
 
   // Check method handle kind is valid.

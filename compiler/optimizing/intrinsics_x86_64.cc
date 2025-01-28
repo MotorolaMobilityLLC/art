@@ -4375,7 +4375,7 @@ void IntrinsicCodeGeneratorX86_64::VisitMethodHandleInvokeExact(HInvoke* invoke)
   __ call(Address(
       method,
       ArtMethod::EntryPointFromQuickCompiledCodeOffset(art::PointerSize::k64).SizeValue()));
-  codegen_->RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+  codegen_->RecordPcInfo(invoke, slow_path);
   __ Bind(slow_path->GetExitLabel());
 }
 

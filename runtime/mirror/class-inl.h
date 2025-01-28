@@ -422,7 +422,7 @@ inline bool Class::IsDiscoverable(bool public_only,
   }
 
   return !hiddenapi::ShouldDenyAccessToMember(
-      member, access_context, hiddenapi::AccessMethod::kNone);
+      member, access_context, hiddenapi::AccessMethod::kCheckWithPolicy);
 }
 
 // Determine whether "this" is assignable from "src", where both of these

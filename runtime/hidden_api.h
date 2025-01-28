@@ -51,9 +51,20 @@ inline EnforcementPolicy EnforcementPolicyFromInt(int api_policy_int) {
 }
 
 // Hidden API access method
-// Thist must be kept in sync with VMRuntime.HiddenApiUsageLogger.ACCESS_METHOD_*
+// This must be kept in sync with VMRuntime.HiddenApiUsageLogger.ACCESS_METHOD_*
+// for the access methods that are logged.
 enum class AccessMethod {
-  kNone = 0,  // internal test that does not correspond to an actual access by app
+  // An internal check that does not correspond to an actual access by an app.
+  // It's not logged and the current EnforcementPolicy is not applied. The check
+  // can also be one that, if denied, will be followed by another check with one
+  // of the other methods below (except kCheckWithPolicy), which will then log
+  // and apply the policy (if that one is denied too).
+  kCheck = 0,
+
+  // Like kCheck, except the current EnforcementPolicy is applied (but it still
+  // doesn't log).
+  kCheckWithPolicy = 4,
+
   kReflection = 1,
   kJNI = 2,
   kLinking = 3,

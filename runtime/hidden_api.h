@@ -106,7 +106,7 @@ class AccessContext {
 
   // Returns true if this domain is always allowed to access the domain of `callee`.
   bool CanAlwaysAccess(const AccessContext& callee) const {
-    return IsDomainMoreTrustedThan(domain_, callee.domain_);
+    return IsDomainAtLeastAsTrustedAs(domain_, callee.domain_);
   }
 
  private:

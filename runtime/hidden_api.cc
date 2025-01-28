@@ -86,6 +86,21 @@ static inline std::ostream& operator<<(std::ostream& os, AccessMethod value) {
   return os;
 }
 
+static inline std::ostream& operator<<(std::ostream& os, Domain domain) {
+  switch (domain) {
+    case Domain::kCorePlatform:
+      os << "core-platform";
+      break;
+    case Domain::kPlatform:
+      os << "platform";
+      break;
+    case Domain::kApplication:
+      os << "app";
+      break;
+  }
+  return os;
+}
+
 static inline std::ostream& operator<<(std::ostream& os, const AccessContext& value)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   if (!value.GetClass().IsNull()) {
@@ -97,6 +112,19 @@ static inline std::ostream& operator<<(std::ostream& os, const AccessContext& va
     os << "<unknown_caller>";
   }
   return os;
+}
+
+static const char* FormatHiddenApiRuntimeFlags(uint32_t runtime_flags) {
+  switch (runtime_flags & kAccHiddenapiBits) {
+    case 0:
+      return "0";
+    case kAccPublicApi:
+      return "PublicApi";
+    case kAccCorePlatformApi:
+      return "CorePlatformApi";
+    default:
+      return "?";
+  }
 }
 
 static Domain DetermineDomainFromLocation(const std::string& dex_location,
@@ -126,7 +154,7 @@ static Domain DetermineDomainFromLocation(const std::string& dex_location,
   if (class_loader.IsNull()) {
     if (kIsTargetBuild && !kIsTargetLinux) {
       // This is unexpected only when running on Android.
-      LOG(WARNING) << "DexFile " << dex_location
+      LOG(WARNING) << "hiddenapi: DexFile " << dex_location
                    << " is in boot class path but is not in a known location";
     }
     return Domain::kPlatform;
@@ -326,21 +354,29 @@ void MemberSignature::Dump(std::ostream& os) const {
 
 void MemberSignature::WarnAboutAccess(AccessMethod access_method,
                                       hiddenapi::ApiList list,
-                                      bool access_denied) {
+                                      bool access_denied,
+                                      uint32_t runtime_flags,
+                                      const AccessContext& caller_context,
+                                      const AccessContext& callee_context,
+                                      EnforcementPolicy policy) {
   static std::atomic<uint64_t> log_warning_count_ = 0;
   if (log_warning_count_ > kMaxLogWarnings) {
     return;
   }
-  LOG(WARNING) << "Accessing hidden " << (type_ == kField ? "field " : "method ")
-               << Dumpable<MemberSignature>(*this) << " (" << list << ", " << access_method
-               << (access_denied ? ", denied)" : ", allowed)");
+  LOG(policy == EnforcementPolicy::kEnabled ? ERROR : WARNING)
+      << "hiddenapi: Accessing hidden " << (type_ == kField ? "field " : "method ")
+      << Dumpable<MemberSignature>(*this)
+      << " (runtime_flags=" << FormatHiddenApiRuntimeFlags(runtime_flags)
+      << ", domain=" << callee_context.GetDomain() << ", api=" << list << ") from "
+      << caller_context << " (domain=" << caller_context.GetDomain() << ") using " << access_method
+      << (access_denied ? ": denied" : ": allowed");
   if (access_denied && list.IsTestApi()) {
     // see b/177047045 for more details about test api access getting denied
-    LOG(WARNING) << "If this is a platform test consider enabling "
+    LOG(WARNING) << "hiddenapi: If this is a platform test consider enabling "
                  << "VMRuntime.ALLOW_TEST_API_ACCESS change id for this package.";
   }
   if (log_warning_count_ >= kMaxLogWarnings) {
-    LOG(WARNING) << "Reached maximum number of hidden api access warnings.";
+    LOG(WARNING) << "hiddenapi: Reached maximum number of hidden api access warnings.";
   }
   ++log_warning_count_;
 }
@@ -380,13 +416,13 @@ void MemberSignature::LogAccessToEventLog(uint32_t sampled_value,
       hs.NewHandle(mirror::String::AllocFromModifiedUtf8(soa.Self(), package_name.c_str()));
   if (soa.Self()->IsExceptionPending()) {
     soa.Self()->ClearException();
-    LOG(ERROR) << "Unable to allocate string for package name which called hidden api";
+    LOG(ERROR) << "hiddenapi: Unable to allocate string for package name which called hidden api";
   }
   Handle<mirror::String> signature_jstr =
       hs.NewHandle(mirror::String::AllocFromModifiedUtf8(soa.Self(), signature_str.str().c_str()));
   if (soa.Self()->IsExceptionPending()) {
     soa.Self()->ClearException();
-    LOG(ERROR) << "Unable to allocate string for hidden api method signature";
+    LOG(ERROR) << "hiddenapi: Unable to allocate string for hidden api method signature";
   }
   WellKnownClasses::dalvik_system_VMRuntime_hiddenApiUsed
       ->InvokeStatic<'V', 'I', 'L', 'L', 'I', 'Z'>(soa.Self(),
@@ -397,7 +433,7 @@ void MemberSignature::LogAccessToEventLog(uint32_t sampled_value,
                                                    access_denied);
   if (soa.Self()->IsExceptionPending()) {
     soa.Self()->ClearException();
-    LOG(ERROR) << "Unable to report hidden api usage";
+    LOG(ERROR) << "hiddenapi: Unable to report hidden api usage";
   }
 #else
   UNUSED(sampled_value);
@@ -551,16 +587,22 @@ uint32_t GetDexFlags(T* member) REQUIRES_SHARED(Locks::mutator_lock_) {
 
 template <typename T>
 bool HandleCorePlatformApiViolation(T* member,
+                                    uint32_t runtime_flags,
                                     const AccessContext& caller_context,
+                                    const AccessContext& callee_context,
                                     AccessMethod access_method,
                                     EnforcementPolicy policy) {
   DCHECK(policy != EnforcementPolicy::kDisabled)
       << "Should never enter this function when access checks are completely disabled";
 
   if (access_method != AccessMethod::kNone) {
-    LOG(WARNING) << "Core platform API violation: "
-                 << Dumpable<MemberSignature>(MemberSignature(member)) << " from " << caller_context
-                 << " using " << access_method;
+    LOG(policy == EnforcementPolicy::kEnabled ? ERROR : WARNING)
+        << "hiddenapi: Core platform API violation: "
+        << Dumpable<MemberSignature>(MemberSignature(member))
+        << " (runtime_flags=" << FormatHiddenApiRuntimeFlags(runtime_flags)
+        << ", domain=" << callee_context.GetDomain() << ") from " << caller_context
+        << " (domain=" << caller_context.GetDomain() << ")"
+        << " using " << access_method;
 
     // If policy is set to just warn, add kAccCorePlatformApi to access flags of
     // `member` to avoid reporting the violation again next time.
@@ -574,7 +616,13 @@ bool HandleCorePlatformApiViolation(T* member,
 }
 
 template <typename T>
-bool ShouldDenyAccessToMemberImpl(T* member, ApiList api_list, AccessMethod access_method) {
+bool ShouldDenyAccessToMemberImpl(T* member,
+                                  ApiList api_list,
+                                  uint32_t runtime_flags,
+                                  const AccessContext& caller_context,
+                                  const AccessContext& callee_context,
+                                  AccessMethod access_method)
+    REQUIRES_SHARED(Locks::mutator_lock_) {
   DCHECK(member != nullptr);
   Runtime* runtime = Runtime::Current();
   CompatFramework& compatFramework = runtime->GetCompatFramework();
@@ -622,7 +670,13 @@ bool ShouldDenyAccessToMemberImpl(T* member, ApiList api_list, AccessMethod acce
       // Print a log message with information about this class member access.
       // We do this if we're about to deny access, or the app is debuggable.
       if (kLogAllAccesses || deny_access || runtime->IsJavaDebuggable()) {
-        member_signature.WarnAboutAccess(access_method, api_list, deny_access);
+        member_signature.WarnAboutAccess(access_method,
+                                         api_list,
+                                         deny_access,
+                                         runtime_flags,
+                                         caller_context,
+                                         callee_context,
+                                         hiddenApiPolicy);
       }
 
       // If there is a StrictMode listener, notify it about this violation.
@@ -657,19 +711,30 @@ bool ShouldDenyAccessToMemberImpl(T* member, ApiList api_list, AccessMethod acce
 template uint32_t GetDexFlags<ArtField>(ArtField* member);
 template uint32_t GetDexFlags<ArtMethod>(ArtMethod* member);
 template bool HandleCorePlatformApiViolation(ArtField* member,
+                                             uint32_t runtime_flags,
                                              const AccessContext& caller_context,
+                                             const AccessContext& callee_context,
                                              AccessMethod access_method,
                                              EnforcementPolicy policy);
 template bool HandleCorePlatformApiViolation(ArtMethod* member,
+                                             uint32_t runtime_flags,
                                              const AccessContext& caller_context,
+                                             const AccessContext& callee_context,
                                              AccessMethod access_method,
                                              EnforcementPolicy policy);
 template bool ShouldDenyAccessToMemberImpl<ArtField>(ArtField* member,
                                                      ApiList api_list,
+                                                     uint32_t runtime_flags,
+                                                     const AccessContext& caller_context,
+                                                     const AccessContext& callee_context,
                                                      AccessMethod access_method);
 template bool ShouldDenyAccessToMemberImpl<ArtMethod>(ArtMethod* member,
                                                       ApiList api_list,
+                                                      uint32_t runtime_flags,
+                                                      const AccessContext& caller_context,
+                                                      const AccessContext& callee_context,
                                                       AccessMethod access_method);
+
 }  // namespace detail
 
 template <typename T>
@@ -742,7 +807,8 @@ bool ShouldDenyAccessToMember(T* member,
       DCHECK(api_list.IsValid());
 
       // Member is hidden and caller is not exempted. Enter slow path.
-      return detail::ShouldDenyAccessToMemberImpl(member, api_list, access_method);
+      return detail::ShouldDenyAccessToMemberImpl(
+          member, api_list, runtime_flags, caller_context, callee_context, access_method);
     }
 
     case Domain::kPlatform: {
@@ -765,7 +831,8 @@ bool ShouldDenyAccessToMember(T* member,
       // Access checks are not disabled, report the violation.
       // This may also add kAccCorePlatformApi to the access flags of `member`
       // so as to not warn again on next access.
-      return detail::HandleCorePlatformApiViolation(member, caller_context, access_method, policy);
+      return detail::HandleCorePlatformApiViolation(
+          member, runtime_flags, caller_context, callee_context, access_method, policy);
     }
 
     case Domain::kCorePlatform: {

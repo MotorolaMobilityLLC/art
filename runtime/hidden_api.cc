@@ -364,7 +364,7 @@ void MemberSignature::WarnAboutAccess(AccessMethod access_method,
   if (log_warning_count_ > kMaxLogWarnings) {
     return;
   }
-  LOG(policy == EnforcementPolicy::kEnabled ? ERROR : WARNING)
+  LOG(access_denied ? (policy == EnforcementPolicy::kEnabled ? ERROR : WARNING) : INFO)
       << "hiddenapi: Accessing hidden " << (type_ == kField ? "field " : "method ")
       << Dumpable<MemberSignature>(*this)
       << " (runtime_flags=" << FormatHiddenApiRuntimeFlags(runtime_flags)

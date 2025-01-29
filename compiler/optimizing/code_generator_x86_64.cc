@@ -5709,7 +5709,6 @@ void InstructionCodeGeneratorX86_64::VisitUnresolvedInstanceFieldGet(
   codegen_->GenerateUnresolvedFieldAccess(instruction,
                                           instruction->GetFieldType(),
                                           instruction->GetFieldIndex(),
-                                          instruction->GetDexPc(),
                                           calling_convention);
 }
 
@@ -5726,7 +5725,6 @@ void InstructionCodeGeneratorX86_64::VisitUnresolvedInstanceFieldSet(
   codegen_->GenerateUnresolvedFieldAccess(instruction,
                                           instruction->GetFieldType(),
                                           instruction->GetFieldIndex(),
-                                          instruction->GetDexPc(),
                                           calling_convention);
 }
 
@@ -5743,7 +5741,6 @@ void InstructionCodeGeneratorX86_64::VisitUnresolvedStaticFieldGet(
   codegen_->GenerateUnresolvedFieldAccess(instruction,
                                           instruction->GetFieldType(),
                                           instruction->GetFieldIndex(),
-                                          instruction->GetDexPc(),
                                           calling_convention);
 }
 
@@ -5760,7 +5757,6 @@ void InstructionCodeGeneratorX86_64::VisitUnresolvedStaticFieldSet(
   codegen_->GenerateUnresolvedFieldAccess(instruction,
                                           instruction->GetFieldType(),
                                           instruction->GetFieldIndex(),
-                                          instruction->GetDexPc(),
                                           calling_convention);
 }
 

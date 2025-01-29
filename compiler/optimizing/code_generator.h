@@ -641,12 +641,10 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
       DataType::Type field_type,
       const FieldAccessCallingConvention& calling_convention);
 
-// TODO(solanes): Remove dex_pc from this method
   void GenerateUnresolvedFieldAccess(
       HInstruction* field_access,
       DataType::Type field_type,
       uint32_t field_index,
-      [[maybe_unused]] uint32_t dex_pc,
       const FieldAccessCallingConvention& calling_convention);
 
   static void CreateLoadClassRuntimeCallLocationSummary(HLoadClass* cls,

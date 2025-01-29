@@ -690,7 +690,6 @@ void CodeGenerator::GenerateUnresolvedFieldAccess(
     HInstruction* field_access,
     DataType::Type field_type,
     uint32_t field_index,
-    [[maybe_unused]] uint32_t dex_pc,
     const FieldAccessCallingConvention& calling_convention) {
   LocationSummary* locations = field_access->GetLocations();
 

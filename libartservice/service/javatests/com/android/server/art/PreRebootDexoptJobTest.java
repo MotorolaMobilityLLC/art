@@ -17,6 +17,7 @@
 package com.android.server.art;
 
 import static com.android.server.art.PreRebootDexoptJob.JOB_ID;
+import static com.android.server.art.prereboot.PreRebootDriver.PreRebootResult;
 
 import static com.google.common.truth.Truth.assertThat;
 
@@ -236,7 +237,7 @@ public class PreRebootDexoptJobTest {
         when(mPreRebootDriver.run(any(), eq(true) /* mapSnapshotsForOta */, any()))
                 .thenAnswer(invocation -> {
                     jobStarted.release();
-                    return true;
+                    return new PreRebootResult(true /* success */);
                 });
 
         when(ArtJni.setProperty("dalvik.vm.pre-reboot.has-started", "true"))
@@ -259,7 +260,7 @@ public class PreRebootDexoptJobTest {
     @Test
     public void testSyncStart() throws Exception {
         when(mPreRebootDriver.run(any(), eq(false) /* mapSnapshotsForOta */, any()))
-                .thenReturn(true);
+                .thenReturn(new PreRebootResult(true /* success */));
 
         CompletableFuture<Void> future = mPreRebootDexoptJob.onUpdateReadyStartNow(
                 null /* otaSlot */, false /* mapSnapshotsForOta */);
@@ -276,7 +277,7 @@ public class PreRebootDexoptJobTest {
             cancellationSignal.setOnCancelListener(() -> dexoptCancelled.release());
             assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
             jobExited.release();
-            return true;
+            return new PreRebootResult(true /* success */);
         });
 
         mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
@@ -297,7 +298,7 @@ public class PreRebootDexoptJobTest {
             cancellationSignal.setOnCancelListener(() -> dexoptCancelled.release());
             assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
             jobExited.release();
-            return true;
+            return new PreRebootResult(true /* success */);
         });
 
         CompletableFuture<Void> future = mPreRebootDexoptJob.onUpdateReadyStartNow(
@@ -314,7 +315,8 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReadyImpl("_b" /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
 
-        when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any())).thenReturn(true);
+        when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any()))
+                .thenReturn(new PreRebootResult(true /* success */));
 
         mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -325,7 +327,8 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReadyImpl("_a" /* otaSlot */);
 
-        when(mPreRebootDriver.run(eq("_a"), anyBoolean(), any())).thenReturn(true);
+        when(mPreRebootDriver.run(eq("_a"), anyBoolean(), any()))
+                .thenReturn(new PreRebootResult(true /* success */));
 
         mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -336,7 +339,8 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReadyImpl(null /* otaSlot */);
 
-        when(mPreRebootDriver.run(isNull(), anyBoolean(), any())).thenReturn(true);
+        when(mPreRebootDriver.run(isNull(), anyBoolean(), any()))
+                .thenReturn(new PreRebootResult(true /* success */));
 
         mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -347,7 +351,8 @@ public class PreRebootDexoptJobTest {
         mPreRebootDexoptJob.onUpdateReadyImpl("_b" /* otaSlot */);
         mPreRebootDexoptJob.onUpdateReadyImpl("_b" /* otaSlot */);
 
-        when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any())).thenReturn(true);
+        when(mPreRebootDriver.run(eq("_b"), anyBoolean(), any()))
+                .thenReturn(new PreRebootResult(true /* success */));
 
         mPreRebootDexoptJob.onStartJobImpl(mJobService, mJobParameters);
         mPreRebootDexoptJob.waitForRunningJob();
@@ -375,7 +380,7 @@ public class PreRebootDexoptJobTest {
         when(mPreRebootDriver.run(any(), anyBoolean(), any())).thenAnswer(invocation -> {
             // Simulate that the job takes a while to exit, no matter it's cancelled or not.
             assertThat(jobBlocker.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
-            return true;
+            return new PreRebootResult(true /* success */);
         });
 
         // An update arrives. A job is scheduled.
@@ -461,7 +466,7 @@ public class PreRebootDexoptJobTest {
             cancellationSignal.setOnCancelListener(() -> dexoptCancelled.release());
             assertThat(dexoptCancelled.tryAcquire(TIMEOUT_SEC, TimeUnit.SECONDS)).isTrue();
             jobExited.release();
-            return true;
+            return new PreRebootResult(true /* success */);
         });
 
         // An update arrives. A job is scheduled.

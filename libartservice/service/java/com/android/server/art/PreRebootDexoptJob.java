@@ -17,6 +17,7 @@
 package com.android.server.art;
 
 import static com.android.server.art.model.ArtFlags.ScheduleStatus;
+import static com.android.server.art.prereboot.PreRebootDriver.PreRebootResult;
 import static com.android.server.art.proto.PreRebootStats.Status;
 
 import android.annotation.NonNull;
@@ -158,9 +159,10 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
             // return value of `onStopJob` will be respected, and this call will be ignored.
             jobService.jobFinished(params, false /* wantsReschedule */);
         };
-        // No need to handle exceptions thrown by the future because exceptions are handled inside
-        // the future itself.
-        startLocked(onJobFinishedLocked);
+        startLocked(onJobFinishedLocked).exceptionally(t -> {
+            AsLog.e("Fatal error", t);
+            return null;
+        });
     }
 
     @Override
@@ -357,10 +359,15 @@ public class PreRebootDexoptJob implements ArtServiceJobInterface {
         var cancellationSignal = mCancellationSignal = new CancellationSignal();
         mRunningJob = new CompletableFuture().runAsync(() -> {
             markHasStarted(true);
+            PreRebootStatsReporter statsReporter = mInjector.getStatsReporter();
             try {
-                mInjector.getPreRebootDriver().run(otaSlot, mapSnapshotsForOta, cancellationSignal);
+                statsReporter.recordJobStarted();
+                PreRebootResult result = mInjector.getPreRebootDriver().run(
+                        otaSlot, mapSnapshotsForOta, cancellationSignal);
+                statsReporter.recordJobEnded(result);
             } catch (RuntimeException e) {
-                AsLog.e("Fatal error", e);
+                statsReporter.recordJobEnded(new PreRebootResult(false /* success */));
+                throw e;
             } finally {
                 synchronized (this) {
                     if (onJobFinishedLocked != null) {

@@ -339,12 +339,9 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
     return GetFrameSize() - FrameEntrySpillSize() - kShouldDeoptimizeFlagSize;
   }
 
-  // Record native to dex mapping for a suspend point. Required by runtime.
-  void RecordPcInfo(HInstruction* instruction,
-                    uint32_t dex_pc,
-                    uint32_t native_pc,
-                    SlowPathCode* slow_path = nullptr,
-                    bool native_debug_info = false);
+  // For stack overflow checks and native-debug-info entries without dex register
+  // mapping i.e. start of basic block or at frame entry.
+  void RecordPcInfoForFrameOrBlockEntry(uint32_t dex_pc = 0);
 
   // Record native to dex mapping for a suspend point.
   // The native_pc is used from Assembler::CodePosition.
@@ -352,7 +349,14 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
   // Note: As Assembler::CodePosition is target dependent, it does not guarantee the exact native_pc
   // for the instruction. If the exact native_pc is required it must be provided explicitly.
   void RecordPcInfo(HInstruction* instruction,
+                    SlowPathCode* slow_path = nullptr,
+                    bool native_debug_info = false);
+
+  // Record native to dex mapping for a suspend point. Required by runtime.
+  // Do not use directly. Use the method above.
+  void RecordPcInfo(HInstruction* instruction,
                     uint32_t dex_pc,
+                    uint32_t native_pc,
                     SlowPathCode* slow_path = nullptr,
                     bool native_debug_info = false);
 
@@ -363,6 +367,7 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
   //
   // ARM specific behaviour: The recorded native PC might be a branch over pools to instructions
   // corresponding the dex PC.
+  void MaybeRecordNativeDebugInfoForBlockEntry(uint32_t dex_pc);
   void MaybeRecordNativeDebugInfo(HInstruction* instruction,
                                   uint32_t dex_pc,
                                   SlowPathCode* slow_path = nullptr);
@@ -636,11 +641,12 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
       DataType::Type field_type,
       const FieldAccessCallingConvention& calling_convention);
 
+// TODO(solanes): Remove dex_pc from this method
   void GenerateUnresolvedFieldAccess(
       HInstruction* field_access,
       DataType::Type field_type,
       uint32_t field_index,
-      uint32_t dex_pc,
+      [[maybe_unused]] uint32_t dex_pc,
       const FieldAccessCallingConvention& calling_convention);
 
   static void CreateLoadClassRuntimeCallLocationSummary(HLoadClass* cls,
@@ -674,7 +680,6 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
 
   virtual void InvokeRuntime(QuickEntrypointEnum entrypoint,
                              HInstruction* instruction,
-                             uint32_t dex_pc,
                              SlowPathCode* slow_path = nullptr) = 0;
 
   // Check if the desired_string_load_kind is supported. If it is, return it,

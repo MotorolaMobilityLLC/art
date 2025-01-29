@@ -109,8 +109,7 @@ class InvokePolymorphicSlowPathRISCV64 : public SlowPathCodeRISCV64 {
     // Passing `MethodHandle` object as hidden argument.
     __ Mv(A0, method_handle_);
     codegen->InvokeRuntime(QuickEntrypointEnum::kQuickInvokePolymorphicWithHiddenReceiver,
-                           instruction_,
-                           instruction_->GetDexPc());
+                           instruction_);
 
     RestoreLiveRegisters(codegen, instruction_->GetLocations());
     __ J(GetExitLabel());
@@ -731,7 +730,7 @@ void IntrinsicCodeGeneratorRISCV64::HandleValueOf(HInvoke* invoke,
   auto allocate_instance = [&]() {
     DCHECK_EQ(out, InvokeRuntimeCallingConvention().GetRegisterAt(0));
     codegen_->LoadIntrinsicDeclaringClass(out, invoke);
-    codegen_->InvokeRuntime(kQuickAllocObjectInitialized, invoke, invoke->GetDexPc());
+    codegen_->InvokeRuntime(kQuickAllocObjectInitialized, invoke);
     CheckEntrypointTypes<kQuickAllocObjectWithChecks, void*, mirror::Class*>();
   };
   if (invoke->InputAt(0)->IsIntConstant()) {
@@ -946,7 +945,7 @@ static void GenerateVisitStringIndexOf(HInvoke* invoke,
     __ Li(tmp_reg, 0);
   }
 
-  codegen->InvokeRuntime(kQuickIndexOf, invoke, invoke->GetDexPc(), slow_path);
+  codegen->InvokeRuntime(kQuickIndexOf, invoke, slow_path);
   CheckEntrypointTypes<kQuickIndexOf, int32_t, void*, uint32_t, uint32_t>();
 
   if (slow_path != nullptr) {
@@ -1009,7 +1008,7 @@ void IntrinsicCodeGeneratorRISCV64::VisitStringNewStringFromBytes(HInvoke* invok
   codegen_->AddSlowPath(slow_path);
   __ Beqz(byte_array, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickAllocStringFromBytes, invoke, invoke->GetDexPc(), slow_path);
+  codegen_->InvokeRuntime(kQuickAllocStringFromBytes, invoke, slow_path);
   CheckEntrypointTypes<kQuickAllocStringFromBytes, void*, void*, int32_t, int32_t, int32_t>();
   __ Bind(slow_path->GetExitLabel());
 }
@@ -1031,7 +1030,7 @@ void IntrinsicCodeGeneratorRISCV64::VisitStringNewStringFromChars(HInvoke* invok
   //   java.lang.StringFactory.newStringFromChars(int offset, int charCount, char[] data)
   //
   // all include a null check on `data` before calling that method.
-  codegen_->InvokeRuntime(kQuickAllocStringFromChars, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAllocStringFromChars, invoke);
   CheckEntrypointTypes<kQuickAllocStringFromChars, void*, int32_t, int32_t, void*>();
 }
 
@@ -1053,7 +1052,7 @@ void IntrinsicCodeGeneratorRISCV64::VisitStringNewStringFromString(HInvoke* invo
   codegen_->AddSlowPath(slow_path);
   __ Beqz(string_to_copy, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickAllocStringFromString, invoke, invoke->GetDexPc(), slow_path);
+  codegen_->InvokeRuntime(kQuickAllocStringFromString, invoke, slow_path);
   CheckEntrypointTypes<kQuickAllocStringFromString, void*, void*>();
   __ Bind(slow_path->GetExitLabel());
 }
@@ -5224,7 +5223,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathCos(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathCos(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickCos, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickCos, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathSin(HInvoke* invoke) {
@@ -5232,7 +5231,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathSin(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathSin(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickSin, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickSin, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathAcos(HInvoke* invoke) {
@@ -5240,7 +5239,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathAcos(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathAcos(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickAcos, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAcos, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathAsin(HInvoke* invoke) {
@@ -5248,7 +5247,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathAsin(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathAsin(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickAsin, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAsin, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathAtan(HInvoke* invoke) {
@@ -5256,7 +5255,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathAtan(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathAtan(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickAtan, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAtan, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathAtan2(HInvoke* invoke) {
@@ -5264,7 +5263,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathAtan2(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathAtan2(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickAtan2, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAtan2, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathPow(HInvoke* invoke) {
@@ -5272,7 +5271,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathPow(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathPow(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickPow, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickPow, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathCbrt(HInvoke* invoke) {
@@ -5280,7 +5279,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathCbrt(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathCbrt(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickCbrt, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickCbrt, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathCosh(HInvoke* invoke) {
@@ -5288,7 +5287,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathCosh(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathCosh(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickCosh, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickCosh, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathExp(HInvoke* invoke) {
@@ -5296,7 +5295,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathExp(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathExp(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickExp, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickExp, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathExpm1(HInvoke* invoke) {
@@ -5304,7 +5303,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathExpm1(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathExpm1(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickExpm1, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickExpm1, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathHypot(HInvoke* invoke) {
@@ -5312,7 +5311,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathHypot(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathHypot(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickHypot, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickHypot, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathLog(HInvoke* invoke) {
@@ -5320,7 +5319,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathLog(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathLog(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickLog, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickLog, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathLog10(HInvoke* invoke) {
@@ -5328,7 +5327,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathLog10(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathLog10(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickLog10, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickLog10, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathNextAfter(HInvoke* invoke) {
@@ -5336,7 +5335,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathNextAfter(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathNextAfter(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickNextAfter, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickNextAfter, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathSinh(HInvoke* invoke) {
@@ -5344,7 +5343,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathSinh(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathSinh(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickSinh, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickSinh, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathTan(HInvoke* invoke) {
@@ -5352,7 +5351,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathTan(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathTan(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickTan, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickTan, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathTanh(HInvoke* invoke) {
@@ -5360,7 +5359,7 @@ void IntrinsicLocationsBuilderRISCV64::VisitMathTanh(HInvoke* invoke) {
 }
 
 void IntrinsicCodeGeneratorRISCV64::VisitMathTanh(HInvoke* invoke) {
-  codegen_->InvokeRuntime(kQuickTanh, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickTanh, invoke);
 }
 
 void IntrinsicLocationsBuilderRISCV64::VisitMathSqrt(HInvoke* invoke) {
@@ -5814,7 +5813,7 @@ void IntrinsicCodeGeneratorRISCV64::VisitMethodHandleInvokeExact(HInvoke* invoke
   Offset entry_point = ArtMethod::EntryPointFromQuickCompiledCodeOffset(kRiscv64PointerSize);
   __ Loadd(RA, method, entry_point.SizeValue());
   __ Jalr(RA);
-  codegen_->RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+  codegen_->RecordPcInfo(invoke, slow_path);
   __ Bind(slow_path->GetExitLabel());
 }
 

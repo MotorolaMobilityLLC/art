@@ -188,12 +188,18 @@ class HiddenApiTest : public CommonRuntimeTest {
   }
 
   bool ShouldDenyAccess(hiddenapi::ApiList list) REQUIRES_SHARED(Locks::mutator_lock_) {
-    // Choose parameters such that there are no side effects (AccessMethod::kNone)
+    // This is only used for log messages, so its state doesn't matter.
+    const hiddenapi::AccessContext placeholder_context(/* is_trusted= */ false);
+
+    // Choose parameters such that there are no side effects (AccessMethod::kCheck)
     // and that the member is not on the exemptions list (here we choose one which
     // is not even in boot class path).
     return ShouldDenyAccessToMemberImpl(/* member= */ class1_field1_,
                                         list,
-                                        /* access_method= */ hiddenapi::AccessMethod::kNone);
+                                        /* runtime_flags= */ 0,
+                                        /* caller_context= */ placeholder_context,
+                                        /* callee_context= */ placeholder_context,
+                                        hiddenapi::AccessMethod::kCheck);
   }
 
   void TestLocation(const std::string& location, hiddenapi::Domain expected_domain) {

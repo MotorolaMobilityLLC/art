@@ -51,9 +51,20 @@ inline EnforcementPolicy EnforcementPolicyFromInt(int api_policy_int) {
 }
 
 // Hidden API access method
-// Thist must be kept in sync with VMRuntime.HiddenApiUsageLogger.ACCESS_METHOD_*
+// This must be kept in sync with VMRuntime.HiddenApiUsageLogger.ACCESS_METHOD_*
+// for the access methods that are logged.
 enum class AccessMethod {
-  kNone = 0,  // internal test that does not correspond to an actual access by app
+  // An internal check that does not correspond to an actual access by an app.
+  // It's not logged and the current EnforcementPolicy is not applied. The check
+  // can also be one that, if denied, will be followed by another check with one
+  // of the other methods below (except kCheckWithPolicy), which will then log
+  // and apply the policy (if that one is denied too).
+  kCheck = 0,
+
+  // Like kCheck, except the current EnforcementPolicy is applied (but it still
+  // doesn't log).
+  kCheckWithPolicy = 4,
+
   kReflection = 1,
   kJNI = 2,
   kLinking = 3,
@@ -95,7 +106,7 @@ class AccessContext {
 
   // Returns true if this domain is always allowed to access the domain of `callee`.
   bool CanAlwaysAccess(const AccessContext& callee) const {
-    return IsDomainMoreTrustedThan(domain_, callee.domain_);
+    return IsDomainAtLeastAsTrustedAs(domain_, callee.domain_);
   }
 
  private:
@@ -204,7 +215,13 @@ class MemberSignature {
 
   bool DoesPrefixMatchAny(const std::vector<std::string>& exemptions);
 
-  void WarnAboutAccess(AccessMethod access_method, ApiList list, bool access_denied);
+  void WarnAboutAccess(AccessMethod access_method,
+                       ApiList list,
+                       bool access_denied,
+                       uint32_t runtime_flags,
+                       const AccessContext& caller_context,
+                       const AccessContext& callee_context,
+                       EnforcementPolicy policy) REQUIRES_SHARED(Locks::mutator_lock_);
 
   void LogAccessToEventLog(uint32_t sampled_value, AccessMethod access_method, bool access_denied);
 
@@ -222,16 +239,21 @@ uint32_t GetDexFlags(T* member) REQUIRES_SHARED(Locks::mutator_lock_);
 
 // Handler of detected core platform API violations. Returns true if access to
 // `member` should be denied.
-template<typename T>
+template <typename T>
 bool HandleCorePlatformApiViolation(T* member,
+                                    uint32_t runtime_flags,
                                     const AccessContext& caller_context,
+                                    const AccessContext& callee_context,
                                     AccessMethod access_method,
-                                    EnforcementPolicy policy)
-    REQUIRES_SHARED(Locks::mutator_lock_);
+                                    EnforcementPolicy policy) REQUIRES_SHARED(Locks::mutator_lock_);
 
-template<typename T>
-bool ShouldDenyAccessToMemberImpl(T* member, ApiList api_list, AccessMethod access_method)
-    REQUIRES_SHARED(Locks::mutator_lock_);
+template <typename T>
+bool ShouldDenyAccessToMemberImpl(T* member,
+                                  ApiList api_list,
+                                  uint32_t runtime_flags,
+                                  const AccessContext& caller_context,
+                                  const AccessContext& callee_context,
+                                  AccessMethod access_method) REQUIRES_SHARED(Locks::mutator_lock_);
 
 inline ArtField* GetInterfaceMemberIfProxy(ArtField* field) { return field; }
 

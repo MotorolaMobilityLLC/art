@@ -781,6 +781,29 @@ bool DexFileVerifier::CheckMap() {
                           static_cast<size_t>(item_type));
         return false;
       }
+
+      size_t alignment;
+      switch (item_type) {
+        case DexFile::kDexTypeClassDataItem:
+        case DexFile::kDexTypeStringDataItem:
+        case DexFile::kDexTypeDebugInfoItem:
+        case DexFile::kDexTypeAnnotationItem:
+        case DexFile::kDexTypeEncodedArrayItem:
+          alignment = sizeof(uint8_t);
+          break;
+        default:
+          alignment = sizeof(uint32_t);
+          break;
+      }
+
+      if (!IsAlignedParam(item->offset_, alignment)) {
+        ErrorStringPrintf("Offset(%d) should be aligned by %zu for maplist item of type %hu.",
+                          item->offset_,
+                          alignment,
+                          item->type_);
+        return false;
+      }
+
       data_items_left -= icount;
       data_item_count += icount;
     }

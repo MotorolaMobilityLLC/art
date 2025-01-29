@@ -184,8 +184,7 @@ class InvokePolymorphicSlowPathARM64 : public SlowPathCodeARM64 {
     // Passing `MethodHandle` object as hidden argument.
     __ Mov(w0, method_handle_.W());
     codegen->InvokeRuntime(QuickEntrypointEnum::kQuickInvokePolymorphicWithHiddenReceiver,
-                           instruction_,
-                           instruction_->GetDexPc());
+                           instruction_);
 
     RestoreLiveRegisters(codegen, instruction_->GetLocations());
     __ B(GetExitLabel());
@@ -2476,7 +2475,7 @@ static void GenerateVisitStringIndexOf(HInvoke* invoke,
     __ Mov(tmp_reg, 0);
   }
 
-  codegen->InvokeRuntime(kQuickIndexOf, invoke, invoke->GetDexPc(), slow_path);
+  codegen->InvokeRuntime(kQuickIndexOf, invoke, slow_path);
   CheckEntrypointTypes<kQuickIndexOf, int32_t, void*, uint32_t, uint32_t>();
 
   if (slow_path != nullptr) {
@@ -2540,7 +2539,7 @@ void IntrinsicCodeGeneratorARM64::VisitStringNewStringFromBytes(HInvoke* invoke)
   codegen_->AddSlowPath(slow_path);
   __ B(eq, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickAllocStringFromBytes, invoke, invoke->GetDexPc(), slow_path);
+  codegen_->InvokeRuntime(kQuickAllocStringFromBytes, invoke, slow_path);
   CheckEntrypointTypes<kQuickAllocStringFromBytes, void*, void*, int32_t, int32_t, int32_t>();
   __ Bind(slow_path->GetExitLabel());
 }
@@ -2562,7 +2561,7 @@ void IntrinsicCodeGeneratorARM64::VisitStringNewStringFromChars(HInvoke* invoke)
   //   java.lang.StringFactory.newStringFromChars(int offset, int charCount, char[] data)
   //
   // all include a null check on `data` before calling that method.
-  codegen_->InvokeRuntime(kQuickAllocStringFromChars, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAllocStringFromChars, invoke);
   CheckEntrypointTypes<kQuickAllocStringFromChars, void*, int32_t, int32_t, void*>();
 }
 
@@ -2585,7 +2584,7 @@ void IntrinsicCodeGeneratorARM64::VisitStringNewStringFromString(HInvoke* invoke
   codegen_->AddSlowPath(slow_path);
   __ B(eq, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickAllocStringFromString, invoke, invoke->GetDexPc(), slow_path);
+  codegen_->InvokeRuntime(kQuickAllocStringFromString, invoke, slow_path);
   CheckEntrypointTypes<kQuickAllocStringFromString, void*, void*>();
   __ Bind(slow_path->GetExitLabel());
 }
@@ -2637,7 +2636,7 @@ static void CreateFPFPFPToFPLocations(ArenaAllocator* allocator, HInvoke* invoke
 static void GenFPToFPCall(HInvoke* invoke,
                           CodeGeneratorARM64* codegen,
                           QuickEntrypointEnum entry) {
-  codegen->InvokeRuntime(entry, invoke, invoke->GetDexPc());
+  codegen->InvokeRuntime(entry, invoke);
 }
 
 void IntrinsicLocationsBuilderARM64::VisitMathCos(HInvoke* invoke) {
@@ -3669,7 +3668,7 @@ void IntrinsicCodeGeneratorARM64::HandleValueOf(HInvoke* invoke,
   auto allocate_instance = [&]() {
     DCHECK(out.X().Is(InvokeRuntimeCallingConvention().GetRegisterAt(0)));
     codegen_->LoadIntrinsicDeclaringClass(out, invoke);
-    codegen_->InvokeRuntime(kQuickAllocObjectInitialized, invoke, invoke->GetDexPc());
+    codegen_->InvokeRuntime(kQuickAllocObjectInitialized, invoke);
     CheckEntrypointTypes<kQuickAllocObjectWithChecks, void*, mirror::Class*>();
   };
   if (invoke->InputAt(0)->IsIntConstant()) {
@@ -6118,7 +6117,7 @@ void IntrinsicCodeGeneratorARM64::VisitMethodHandleInvokeExact(HInvoke* invoke) 
   Offset entry_point = ArtMethod::EntryPointFromQuickCompiledCodeOffset(kArm64PointerSize);
   __ Ldr(lr, MemOperand(method, entry_point.SizeValue()));
   __ Blr(lr);
-  codegen_->RecordPcInfo(invoke, invoke->GetDexPc(), slow_path);
+  codegen_->RecordPcInfo(invoke, slow_path);
   __ Bind(slow_path->GetExitLabel());
 }
 

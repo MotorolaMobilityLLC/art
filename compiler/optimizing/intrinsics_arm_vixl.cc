@@ -1081,7 +1081,7 @@ static void GenerateVisitStringIndexOf(HInvoke* invoke,
     __ Mov(tmp_reg, 0);
   }
 
-  codegen->InvokeRuntime(kQuickIndexOf, invoke, invoke->GetDexPc(), slow_path);
+  codegen->InvokeRuntime(kQuickIndexOf, invoke, slow_path);
   CheckEntrypointTypes<kQuickIndexOf, int32_t, void*, uint32_t, uint32_t>();
 
   if (slow_path != nullptr) {
@@ -1143,7 +1143,7 @@ void IntrinsicCodeGeneratorARMVIXL::VisitStringNewStringFromBytes(HInvoke* invok
   codegen_->AddSlowPath(slow_path);
   __ B(eq, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickAllocStringFromBytes, invoke, invoke->GetDexPc(), slow_path);
+  codegen_->InvokeRuntime(kQuickAllocStringFromBytes, invoke, slow_path);
   CheckEntrypointTypes<kQuickAllocStringFromBytes, void*, void*, int32_t, int32_t, int32_t>();
   __ Bind(slow_path->GetExitLabel());
 }
@@ -1165,7 +1165,7 @@ void IntrinsicCodeGeneratorARMVIXL::VisitStringNewStringFromChars(HInvoke* invok
   //   java.lang.StringFactory.newStringFromChars(int offset, int charCount, char[] data)
   //
   // all include a null check on `data` before calling that method.
-  codegen_->InvokeRuntime(kQuickAllocStringFromChars, invoke, invoke->GetDexPc());
+  codegen_->InvokeRuntime(kQuickAllocStringFromChars, invoke);
   CheckEntrypointTypes<kQuickAllocStringFromChars, void*, int32_t, int32_t, void*>();
 }
 
@@ -1186,7 +1186,7 @@ void IntrinsicCodeGeneratorARMVIXL::VisitStringNewStringFromString(HInvoke* invo
   codegen_->AddSlowPath(slow_path);
   __ B(eq, slow_path->GetEntryLabel());
 
-  codegen_->InvokeRuntime(kQuickAllocStringFromString, invoke, invoke->GetDexPc(), slow_path);
+  codegen_->InvokeRuntime(kQuickAllocStringFromString, invoke, slow_path);
   CheckEntrypointTypes<kQuickAllocStringFromString, void*, void*>();
 
   __ Bind(slow_path->GetExitLabel());
@@ -1666,7 +1666,7 @@ static void GenFPToFPCall(HInvoke* invoke,
   __ Vmov(RegisterFrom(locations->GetTemp(0)),
           RegisterFrom(locations->GetTemp(1)),
           InputDRegisterAt(invoke, 0));
-  codegen->InvokeRuntime(entry, invoke, invoke->GetDexPc());
+  codegen->InvokeRuntime(entry, invoke);
   __ Vmov(OutputDRegister(invoke),
           RegisterFrom(locations->GetTemp(0)),
           RegisterFrom(locations->GetTemp(1)));
@@ -1688,7 +1688,7 @@ static void GenFPFPToFPCall(HInvoke* invoke,
   __ Vmov(RegisterFrom(locations->GetTemp(2)),
           RegisterFrom(locations->GetTemp(3)),
           InputDRegisterAt(invoke, 1));
-  codegen->InvokeRuntime(entry, invoke, invoke->GetDexPc());
+  codegen->InvokeRuntime(entry, invoke);
   __ Vmov(OutputDRegister(invoke),
           RegisterFrom(locations->GetTemp(0)),
           RegisterFrom(locations->GetTemp(1)));
@@ -2338,7 +2338,7 @@ void IntrinsicCodeGeneratorARMVIXL::HandleValueOf(HInvoke* invoke,
   auto allocate_instance = [&]() {
     DCHECK(out.Is(InvokeRuntimeCallingConventionARMVIXL().GetRegisterAt(0)));
     codegen_->LoadIntrinsicDeclaringClass(out, invoke);
-    codegen_->InvokeRuntime(kQuickAllocObjectInitialized, invoke, invoke->GetDexPc());
+    codegen_->InvokeRuntime(kQuickAllocObjectInitialized, invoke);
     CheckEntrypointTypes<kQuickAllocObjectWithChecks, void*, mirror::Class*>();
   };
   if (invoke->InputAt(0)->IsIntConstant()) {

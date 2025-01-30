@@ -44,8 +44,8 @@ std::ostream& operator<<(std::ostream& stream, StubType stub_type);
 class EXPORT PACKED(4) OatHeader {
  public:
   static constexpr std::array<uint8_t, 4> kOatMagic { { 'o', 'a', 't', '\n' } };
-  // Last oat version changed reason: reland "arm64: Store resolved MethodType-s in .bss."
-  static constexpr std::array<uint8_t, 4> kOatVersion{{'2', '5', '4', '\0'}};
+  // Last oat version changed reason: reduce alignment for .rodata section in OAT files.
+  static constexpr std::array<uint8_t, 4> kOatVersion{{'2', '5', '5', '\0'}};
 
   static constexpr const char* kDex2OatCmdLineKey = "dex2oat-cmdline";
   static constexpr const char* kDebuggableKey = "debuggable";
@@ -66,7 +66,8 @@ class EXPORT PACKED(4) OatHeader {
   static OatHeader* Create(InstructionSet instruction_set,
                            const InstructionSetFeatures* instruction_set_features,
                            uint32_t dex_file_count,
-                           const SafeMap<std::string, std::string>* variable_data);
+                           const SafeMap<std::string, std::string>* variable_data,
+                           uint32_t base_oat_offset = 0u);
 
   bool IsValid() const;
   std::string GetValidationErrorMessage() const;
@@ -131,7 +132,8 @@ class EXPORT PACKED(4) OatHeader {
   OatHeader(InstructionSet instruction_set,
             const InstructionSetFeatures* instruction_set_features,
             uint32_t dex_file_count,
-            const SafeMap<std::string, std::string>* variable_data);
+            const SafeMap<std::string, std::string>* variable_data,
+            uint32_t base_oat_offset);
 
   // Returns true if the value of the given key is "true", false otherwise.
   bool IsKeyEnabled(const char* key) const;
@@ -147,6 +149,10 @@ class EXPORT PACKED(4) OatHeader {
   uint32_t dex_file_count_;
   uint32_t oat_dex_files_offset_;
   uint32_t bcp_bss_info_offset_;
+  // Offset of the oat header (i.e. start of the oat data) in the ELF file.
+  // It is used to additional validation of the oat header as it is not
+  // page-aligned in the memory.
+  uint32_t base_oat_offset_;
   uint32_t executable_offset_;
   uint32_t jni_dlsym_lookup_trampoline_offset_;
   uint32_t jni_dlsym_lookup_critical_trampoline_offset_;

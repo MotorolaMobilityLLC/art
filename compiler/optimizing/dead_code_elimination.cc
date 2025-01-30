@@ -488,7 +488,8 @@ void HDeadCodeElimination::MaybeAddPhi(HBasicBlock* block) {
 
     if (block_cond->GetLeft() != dominator_cond->GetLeft() ||
         block_cond->GetRight() != dominator_cond->GetRight() ||
-        block_cond->GetOppositeCondition() != dominator_cond->GetCondition()) {
+        block_cond->GetOppositeCondition() != dominator_cond->GetCondition() ||
+        block_cond->GetBias() != dominator_cond->GetBias()) {
       return;
     }
   }

@@ -25,6 +25,5 @@ def run(ctx, args):
 
   ctx.run(fr"sed -i -E '/(JNI_OnLoad|JNI_OnUnload)/d' '{args.stdout_file}'")
 
-  # Delete hiddenapi's denial errors which go to stderr on host.
-  if args.host:
-    ctx.run(fr"sed -i -E '/ E dalvikvm.* hiddenapi: /d' '{args.stderr_file}'")
+  # Ignore hiddenapi's denial errors which go to stderr on host and qemu (but not on device).
+  ctx.run(fr"sed -i -E '/ E dalvikvm.* hiddenapi: /d' '{args.stderr_file}'")

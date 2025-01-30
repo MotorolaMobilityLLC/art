@@ -690,7 +690,6 @@ void CodeGenerator::GenerateUnresolvedFieldAccess(
     HInstruction* field_access,
     DataType::Type field_type,
     uint32_t field_index,
-    [[maybe_unused]] uint32_t dex_pc,
     const FieldAccessCallingConvention& calling_convention) {
   LocationSummary* locations = field_access->GetLocations();
 
@@ -1168,26 +1167,6 @@ void CodeGenerator::RecordPcInfo(HInstruction* instruction,
   // the regular case, we retrieve the dex_pc from the instruction's environment.
   DCHECK_IMPLIES(native_debug_info, GetCompilerOptions().GetNativeDebuggable());
   DCHECK_IMPLIES(!native_debug_info, instruction->HasEnvironment()) << *instruction;
-  // The code generated for some type conversions
-  // may call the runtime, thus normally requiring a subsequent
-  // call to this method. However, the method verifier does not
-  // produce PC information for certain instructions, which are
-  // considered "atomic" (they cannot join a GC).
-  // Therefore we do not currently record PC information for such
-  // instructions.  As this may change later, we added this special
-  // case so that code generators may nevertheless call
-  // CodeGenerator::RecordPcInfo without triggering an error in
-  // CodeGenerator::BuildNativeGCMap ("Missing ref for dex pc 0x")
-  // thereafter.
-  if (instruction->IsTypeConversion()) {
-    return;
-  }
-  if (instruction->IsRem()) {
-    DataType::Type type = instruction->AsRem()->GetResultType();
-    if ((type == DataType::Type::kFloat32) || (type == DataType::Type::kFloat64)) {
-      return;
-    }
-  }
 
   LocationSummary* locations = instruction->GetLocations();
   uint32_t register_mask = locations->GetRegisterMask();

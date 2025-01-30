@@ -157,6 +157,7 @@ class OatSymbolizer final {
     builder_.reset(new ElfBuilder<ElfTypes>(isa, output_stream.get()));
 
     builder_->Start();
+    builder_->ReserveSpaceForDynamicSection(elf_file->GetPath());
 
     auto* rodata = builder_->GetRoData();
     auto* text = builder_->GetText();

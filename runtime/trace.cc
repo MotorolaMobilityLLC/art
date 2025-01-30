@@ -256,8 +256,8 @@ static uint16_t GetRecordSize(TraceClockSource clock_source, int version) {
     return (clock_source == TraceClockSource::kDual) ? kTraceRecordSizeDualClock :
                                                        kTraceRecordSizeSingleClock;
   } else {
-    return (clock_source == TraceClockSource::kDual) ? kTraceRecordSizeDualClockV2 :
-                                                       kTraceRecordSizeSingleClockV2;
+    return (clock_source == TraceClockSource::kDual) ? kMaxTraceRecordSizeDualClockV2
+                                                     : kMaxTraceRecordSizeSingleClockV2;
   }
 }
 
@@ -1554,19 +1554,35 @@ void TraceWriter::ReadValuesFromRecord(uintptr_t* method_trace_entries,
   }
 }
 
-void TraceWriter::FlushEntriesFormatV1(
+size_t TraceWriter::FlushEntriesFormatV1(
     uintptr_t* method_trace_entries,
     size_t tid,
     const std::unordered_map<ArtMethod*, std::string>& method_infos,
     size_t end_offset,
-    size_t* current_index,
-    uint8_t* buffer_ptr) {
+    size_t num_records) {
+  size_t buffer_index = 0;
+  uint8_t* buffer_ptr = buf_.get();
+
+  const size_t record_size = GetRecordSize(clock_source_, trace_format_version_);
+  DCHECK_LT(record_size, kPerThreadBufSize);
+  if (trace_output_mode_ != TraceOutputMode::kStreaming) {
+    // In non-streaming mode we only flush to file at the end, so retain the earlier data. If the
+    // buffer is full we don't process any more entries.
+    buffer_index = cur_offset_;
+
+    // Check if there is sufficient space in the buffer for non-streaming case. If not return early.
+    // In FormatV1, the encoding of events is fixed size, so we can determine the amount of buffer
+    // space required.
+    if (cur_offset_ + record_size * num_records >= buffer_size_) {
+      overflow_ = true;
+      return 0;
+    }
+  }
+
   uint16_t thread_id = GetThreadEncoding(tid);
   bool has_thread_cpu_clock = UseThreadCpuClock(clock_source_);
   bool has_wall_clock = UseWallClock(clock_source_);
-  size_t buffer_index = *current_index;
   size_t num_entries = GetNumEntries(clock_source_);
-  const size_t record_size = GetRecordSize(clock_source_, trace_format_version_);
 
   for (size_t entry_index = kPerThreadBufSize; entry_index != end_offset;) {
     entry_index -= num_entries;
@@ -1589,20 +1605,33 @@ void TraceWriter::FlushEntriesFormatV1(
                      record.wall_clock_time);
     buffer_index += record_size;
   }
-  *current_index = buffer_index;
+
+  if (trace_output_mode_ == TraceOutputMode::kStreaming) {
+    // Flush the contents of buffer to file.
+    if (!trace_file_->WriteFully(buffer_ptr, buffer_index)) {
+      PLOG(WARNING) << "Failed streaming a tracing event.";
+    }
+  } else {
+    // In non-streaming mode, we keep the data in the buffer and write to the
+    // file when tracing has stopped. Just update the offset of the buffer.
+    cur_offset_ = buffer_index;
+  }
+  return num_records;
 }
 
-void TraceWriter::FlushEntriesFormatV2(
-    uintptr_t* method_trace_entries,
-    size_t tid,
-    size_t num_records,
-    size_t* current_index,
-    uint8_t* init_buffer_ptr) {
+size_t TraceWriter::FlushEntriesFormatV2(uintptr_t* method_trace_entries,
+                                         size_t tid,
+                                         size_t num_records) {
+  uint8_t* init_buffer_ptr = buf_.get();
+  uint8_t* end_buffer_ptr = buf_.get() + buffer_size_;
+
+  if (trace_output_mode_ != TraceOutputMode::kStreaming) {
+    // In non-streaming mode we only flush to file at the end, so retain the earlier data. If the
+    // buffer is full we don't process any more entries.
+    init_buffer_ptr = buf_.get() + cur_offset_;
+  }
+
   uint8_t* current_buffer_ptr = init_buffer_ptr;
-
-  EncodeEventBlockHeader(current_buffer_ptr, tid, num_records);
-  current_buffer_ptr += kEntryHeaderSizeV2;
-
   bool has_thread_cpu_clock = UseThreadCpuClock(clock_source_);
   bool has_wall_clock = UseWallClock(clock_source_);
   size_t num_entries = GetNumEntries(clock_source_);
@@ -1610,41 +1639,62 @@ void TraceWriter::FlushEntriesFormatV2(
   uint32_t prev_thread_timestamp = 0;
   uint64_t prev_method_action_encoding = 0;
   size_t entry_index = kPerThreadBufSize;
-  for (size_t i = 0; i < num_records; i++) {
-    entry_index -= num_entries;
+  size_t curr_record_index = 0;
+  const int max_record_size = GetRecordSize(clock_source_, trace_format_version_);
 
-    MethodTraceRecord record;
-    ReadValuesFromRecord(
-        method_trace_entries, entry_index, record, has_thread_cpu_clock, has_wall_clock);
+  while (curr_record_index < num_records) {
+    current_buffer_ptr = init_buffer_ptr + kEntryHeaderSizeV2;
+    for (; curr_record_index < num_records; curr_record_index++) {
+      // Don't process more entries if the buffer doesn't have sufficient space.
+      if (end_buffer_ptr - current_buffer_ptr < max_record_size) {
+        break;
+      }
 
-    // TODO(mythria): Explore the possibility of using method pointer instead of having an encoding.
-    // On 64-bit this means method ids would use 8 bytes but that is okay since we only encode the
-    // full method id in the header and then encode the diff against the method id in the header.
-    // The diff is usually expected to be small.
-    uint64_t method_id = reinterpret_cast<uintptr_t>(record.method);
-    uint64_t method_action_encoding = method_id | record.action;
+      entry_index -= num_entries;
+      MethodTraceRecord record;
+      ReadValuesFromRecord(
+          method_trace_entries, entry_index, record, has_thread_cpu_clock, has_wall_clock);
 
-    int64_t method_diff = method_action_encoding - prev_method_action_encoding;
-    current_buffer_ptr = EncodeSignedLeb128(current_buffer_ptr, method_diff);
-    prev_method_action_encoding = method_action_encoding;
+      uint64_t method_id = reinterpret_cast<uintptr_t>(record.method);
+      uint64_t method_action_encoding = method_id | record.action;
 
-    if (has_wall_clock) {
-      current_buffer_ptr =
-          EncodeUnsignedLeb128(current_buffer_ptr, (record.wall_clock_time - prev_wall_timestamp));
-      prev_wall_timestamp = record.wall_clock_time;
+      int64_t method_diff = method_action_encoding - prev_method_action_encoding;
+      current_buffer_ptr = EncodeSignedLeb128(current_buffer_ptr, method_diff);
+      prev_method_action_encoding = method_action_encoding;
+
+      if (has_wall_clock) {
+        current_buffer_ptr = EncodeUnsignedLeb128(current_buffer_ptr,
+                                                  (record.wall_clock_time - prev_wall_timestamp));
+        prev_wall_timestamp = record.wall_clock_time;
+      }
+
+      if (has_thread_cpu_clock) {
+        current_buffer_ptr = EncodeUnsignedLeb128(current_buffer_ptr,
+                                                  (record.thread_cpu_time - prev_thread_timestamp));
+        prev_thread_timestamp = record.thread_cpu_time;
+      }
     }
 
-    if (has_thread_cpu_clock) {
-      current_buffer_ptr = EncodeUnsignedLeb128(current_buffer_ptr,
-                                                (record.thread_cpu_time - prev_thread_timestamp));
-      prev_thread_timestamp = record.thread_cpu_time;
+    uint32_t size = current_buffer_ptr - (init_buffer_ptr + kEntryHeaderSizeV2);
+    EncodeEventBlockHeader(init_buffer_ptr, tid, curr_record_index, size);
+
+    if (trace_output_mode_ != TraceOutputMode::kStreaming) {
+      if (curr_record_index < num_records) {
+        overflow_ = true;
+      }
+      // In non-streaming mode, we keep the data in the buffer and write to the
+      // file when tracing has stopped. Just update the offset of the buffer.
+      cur_offset_ += (current_buffer_ptr - init_buffer_ptr);
+      return curr_record_index;
+    } else {
+      // Flush the contents of the buffer to the file.
+      if (!trace_file_->WriteFully(init_buffer_ptr, current_buffer_ptr - init_buffer_ptr)) {
+        PLOG(WARNING) << "Failed streaming a tracing event.";
+      }
     }
   }
 
-  // Update the total size of the block excluding header size.
-  uint8_t* total_size_loc = init_buffer_ptr + kEntryHeaderSizeV2 - 4;
-  Append4LE(total_size_loc, current_buffer_ptr - (init_buffer_ptr + kEntryHeaderSizeV2));
-  *current_index += current_buffer_ptr - init_buffer_ptr;
+  return num_records;
 }
 
 void TraceWriter::FlushBuffer(uintptr_t* method_trace_entries,
@@ -1662,41 +1712,15 @@ void TraceWriter::FlushBuffer(uintptr_t* method_trace_entries,
   size_t num_entries = GetNumEntries(clock_source_);
   size_t num_records = (kPerThreadBufSize - current_offset) / num_entries;
   DCHECK_EQ((kPerThreadBufSize - current_offset) % num_entries, 0u);
-  const size_t record_size = GetRecordSize(clock_source_, trace_format_version_);
-  DCHECK_LT(record_size, kPerThreadBufSize);
 
-  if (trace_output_mode_ != TraceOutputMode::kStreaming) {
-    // In non-streaming mode we only flush to file at the end, so retain the earlier data. If the
-    // buffer is full we don't process any more entries.
-    current_index = cur_offset_;
-
-    // Check if there is sufficient place in the buffer for non-streaming case. If not return early.
-    if (cur_offset_ + record_size * num_records >= buffer_size) {
-      overflow_ = true;
-      return;
-    }
-  }
-  num_records_ += num_records;
-
-  DCHECK_GT(buffer_size_, record_size * num_entries);
+  int num_records_written = 0;
   if (trace_format_version_ == Trace::kFormatV1) {
-    FlushEntriesFormatV1(
-        method_trace_entries, tid, method_infos, current_offset, &current_index, buffer_ptr);
+    num_records_written =
+        FlushEntriesFormatV1(method_trace_entries, tid, method_infos, current_offset, num_records);
   } else {
-    FlushEntriesFormatV2(
-        method_trace_entries, tid, num_records, &current_index, buffer_ptr + current_index);
+    num_records_written = FlushEntriesFormatV2(method_trace_entries, tid, num_records);
   }
-
-  if (trace_output_mode_ == TraceOutputMode::kStreaming) {
-    // Flush the contents of buffer to file.
-    if (!trace_file_->WriteFully(buffer_ptr, current_index)) {
-      PLOG(WARNING) << "Failed streaming a tracing event.";
-    }
-  } else {
-    // In non-streaming mode, we keep the data in the buffer and write to the
-    // file when tracing has stopped. Just updated the offset of the buffer.
-    cur_offset_ = current_index;
-  }
+  num_records_ += num_records_written;
   return;
 }
 
@@ -1782,12 +1806,16 @@ void TraceWriter::EncodeEventEntry(uint8_t* ptr,
   static_assert(kPacketSize == 2 + 4 + 4 + 4, "Packet size incorrect.");
 }
 
-void TraceWriter::EncodeEventBlockHeader(uint8_t* ptr, uint32_t thread_id, uint32_t num_records) {
+void TraceWriter::EncodeEventBlockHeader(uint8_t* ptr,
+                                         uint32_t thread_id,
+                                         uint32_t num_records,
+                                         uint32_t size) {
   ptr[0] = kEntryHeaderV2;
   Append4LE(ptr + 1, thread_id);
   // This specifies the total number of records encoded in the block using lebs.
   DCHECK_LT(num_records, 1u << 24);
   Append3LE(ptr + 5, num_records);
+  Append4LE(ptr + 8, size);
 }
 
 void TraceWriter::EnsureSpace(uint8_t* buffer,

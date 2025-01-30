@@ -44,8 +44,8 @@ std::ostream& operator<<(std::ostream& stream, StubType stub_type);
 class EXPORT PACKED(4) OatHeader {
  public:
   static constexpr std::array<uint8_t, 4> kOatMagic { { 'o', 'a', 't', '\n' } };
-  // Last oat version changed reason: reduce alignment for .rodata section in OAT files.
-  static constexpr std::array<uint8_t, 4> kOatVersion{{'2', '5', '5', '\0'}};
+  // Last oat version changed reason: move dynamic sections to start of OAT file.
+  static constexpr std::array<uint8_t, 4> kOatVersion{{'2', '5', '6', '\0'}};
 
   static constexpr const char* kDex2OatCmdLineKey = "dex2oat-cmdline";
   static constexpr const char* kDebuggableKey = "debuggable";

@@ -1134,9 +1134,6 @@ class Runtime {
 
   bool AreMetricsInitialized() const { return metrics_reporter_ != nullptr; }
 
-  // For `artd` only.
-  EXPORT static void AllowPageSizeAccess();
-
  private:
   static void InitPlatformSignalHandlers();
 

@@ -355,6 +355,18 @@ class OatWriter {
     return dex_files_ != nullptr && extract_dex_files_into_vdex_;
   }
 
+  // Return the file offset that corresponds to `offset_from_oat_data`.
+  size_t GetFileOffset(size_t offset_from_oat_data) const {
+    DCHECK_NE(oat_data_offset_, 0u);
+    return offset_from_oat_data + oat_data_offset_;
+  }
+
+  // Return the next offset (relative to the oat data) that is on or after `offset_from_oat_data`,
+  // that is aligned by `alignment` to the beginning of the file.
+  size_t GetOffsetFromOatDataAlignedToFile(size_t offset_from_oat_data, size_t alignment) const {
+    return RoundUp(GetFileOffset(offset_from_oat_data), alignment) - oat_data_offset_;
+  }
+
   enum class WriteState {
     kAddingDexFileSources,
     kStartRoData,

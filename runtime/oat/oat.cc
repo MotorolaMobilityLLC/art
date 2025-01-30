@@ -45,7 +45,8 @@ static size_t ComputeOatHeaderSize(const SafeMap<std::string, std::string>* vari
 OatHeader* OatHeader::Create(InstructionSet instruction_set,
                              const InstructionSetFeatures* instruction_set_features,
                              uint32_t dex_file_count,
-                             const SafeMap<std::string, std::string>* variable_data) {
+                             const SafeMap<std::string, std::string>* variable_data,
+                             uint32_t base_oat_offset) {
   // Estimate size of optional data.
   size_t needed_size = ComputeOatHeaderSize(variable_data);
 
@@ -56,19 +57,22 @@ OatHeader* OatHeader::Create(InstructionSet instruction_set,
   return new (memory) OatHeader(instruction_set,
                                 instruction_set_features,
                                 dex_file_count,
-                                variable_data);
+                                variable_data,
+                                base_oat_offset);
 }
 
 OatHeader::OatHeader(InstructionSet instruction_set,
                      const InstructionSetFeatures* instruction_set_features,
                      uint32_t dex_file_count,
-                     const SafeMap<std::string, std::string>* variable_data)
+                     const SafeMap<std::string, std::string>* variable_data,
+                     uint32_t base_oat_offset)
     : oat_checksum_(0u),
       instruction_set_(instruction_set),
       instruction_set_features_bitmap_(instruction_set_features->AsBitmap()),
       dex_file_count_(dex_file_count),
       oat_dex_files_offset_(0),
       bcp_bss_info_offset_(0),
+      base_oat_offset_(base_oat_offset),
       executable_offset_(0),
       jni_dlsym_lookup_trampoline_offset_(0),
       jni_dlsym_lookup_critical_trampoline_offset_(0),
@@ -100,7 +104,9 @@ bool OatHeader::IsValid() const {
   if (version_ != kOatVersion) {
     return false;
   }
-  if (!IsAligned<kElfSegmentAlignment>(executable_offset_)) {
+  // Only check the offset is valid after it has been set.
+  if (executable_offset_ != 0u &&
+      !IsAligned<kElfSegmentAlignment>(executable_offset_ + base_oat_offset_)) {
     return false;
   }
   if (!IsValidInstructionSet(instruction_set_)) {
@@ -122,7 +128,9 @@ std::string OatHeader::GetValidationErrorMessage() const {
                         kOatVersion[0], kOatVersion[1], kOatVersion[2], kOatVersion[3],
                         version_[0], version_[1], version_[2], version_[3]);
   }
-  if (!IsAligned<kElfSegmentAlignment>(executable_offset_)) {
+  // Only check the offset is valid after it has been set.
+  if (executable_offset_ != 0u &&
+      !IsAligned<kElfSegmentAlignment>(executable_offset_ + base_oat_offset_)) {
     return "Executable offset not properly aligned.";
   }
   if (!IsValidInstructionSet(instruction_set_)) {
@@ -199,13 +207,13 @@ void OatHeader::SetBcpBssInfoOffset(uint32_t bcp_info_offset) {
 
 uint32_t OatHeader::GetExecutableOffset() const {
   DCHECK(IsValid());
-  DCHECK_ALIGNED(executable_offset_, kElfSegmentAlignment);
+  DCHECK_ALIGNED(executable_offset_ + base_oat_offset_, kElfSegmentAlignment);
   CHECK_GT(executable_offset_, sizeof(OatHeader));
   return executable_offset_;
 }
 
 void OatHeader::SetExecutableOffset(uint32_t executable_offset) {
-  DCHECK_ALIGNED(executable_offset, kElfSegmentAlignment);
+  DCHECK_ALIGNED(executable_offset + base_oat_offset_, kElfSegmentAlignment);
   CHECK_GT(executable_offset, sizeof(OatHeader));
   DCHECK(IsValid());
   DCHECK_EQ(executable_offset_, 0U);

@@ -190,7 +190,7 @@ public final class ArtManagerLocal {
     public int handleShellCommand(@NonNull Binder target, @NonNull ParcelFileDescriptor in,
             @NonNull ParcelFileDescriptor out, @NonNull ParcelFileDescriptor err,
             @NonNull String[] args) {
-        return new ArtShellCommand(this, mInjector.getPackageManagerLocal(), mInjector.getContext())
+        return new ArtShellCommand(this, mInjector.getPackageManagerLocal())
                 .exec(target, in.getFileDescriptor(), out.getFileDescriptor(),
                         err.getFileDescriptor(), args);
     }

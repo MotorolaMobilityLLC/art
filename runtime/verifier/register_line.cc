@@ -142,19 +142,17 @@ void RegisterLine::CopyResultRegister2(MethodVerifier* verifier, uint32_t vdst) 
 
 static constexpr uint32_t kVirtualNullRegister = std::numeric_limits<uint32_t>::max();
 
-void RegisterLine::PushMonitor(MethodVerifier* verifier, uint32_t reg_idx, int32_t insn_idx) {
-  const RegType& reg_type = GetRegisterType(verifier, reg_idx);
-  if (!reg_type.IsReferenceTypes()) {
-    verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "monitor-enter on non-object ("
-        << reg_type << ")";
-  } else if (monitors_.size() >= kMaxMonitorStackDepth) {
+void RegisterLine::PushMonitor(
+    MethodVerifier* verifier, uint32_t vreg, const RegType& reg_type, int32_t insn_idx) {
+  DCHECK_EQ(reg_type.GetId(), GetRegisterTypeId(vreg));
+  if (monitors_.size() >= kMaxMonitorStackDepth) {
     verifier->Fail(VERIFY_ERROR_LOCKING);
     if (kDumpLockFailures) {
       VLOG(verifier) << "monitor-enter stack overflow while verifying "
                      << verifier->GetMethodReference().PrettyMethod();
     }
   } else {
-    if (SetRegToLockDepth(reg_idx, monitors_.size())) {
+    if (SetRegToLockDepth(vreg, monitors_.size())) {
       // Null literals can establish aliases that we can't easily track. As such, handle the zero
       // case as the 2^32-1 register (which isn't available in dex bytecode).
       if (reg_type.IsZero()) {
@@ -165,18 +163,16 @@ void RegisterLine::PushMonitor(MethodVerifier* verifier, uint32_t reg_idx, int32
     } else {
       verifier->Fail(VERIFY_ERROR_LOCKING);
       if (kDumpLockFailures) {
-        VLOG(verifier) << "unexpected monitor-enter on register v" <<  reg_idx << " in "
+        VLOG(verifier) << "unexpected monitor-enter on register v" <<  vreg << " in "
                        << verifier->GetMethodReference().PrettyMethod();
       }
     }
   }
 }
 
-void RegisterLine::PopMonitor(MethodVerifier* verifier, uint32_t reg_idx) {
-  const RegType& reg_type = GetRegisterType(verifier, reg_idx);
-  if (!reg_type.IsReferenceTypes()) {
-    verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "monitor-exit on non-object (" << reg_type << ")";
-  } else if (monitors_.empty()) {
+void RegisterLine::PopMonitor(MethodVerifier* verifier, uint32_t vreg, const RegType& reg_type) {
+  DCHECK_EQ(reg_type.GetId(), GetRegisterTypeId(vreg));
+  if (monitors_.empty()) {
     verifier->Fail(VERIFY_ERROR_LOCKING);
     if (kDumpLockFailures) {
       VLOG(verifier) << "monitor-exit stack underflow while verifying "
@@ -185,14 +181,14 @@ void RegisterLine::PopMonitor(MethodVerifier* verifier, uint32_t reg_idx) {
   } else {
     monitors_.pop_back();
 
-    bool success = IsSetLockDepth(reg_idx, monitors_.size());
+    bool success = IsSetLockDepth(vreg, monitors_.size());
 
     if (!success && reg_type.IsZero()) {
       // Null literals can establish aliases that we can't easily track. As such, handle the zero
       // case as the 2^32-1 register (which isn't available in dex bytecode).
       success = IsSetLockDepth(kVirtualNullRegister, monitors_.size());
       if (success) {
-        reg_idx = kVirtualNullRegister;
+        vreg = kVirtualNullRegister;
       }
     }
 
@@ -205,7 +201,7 @@ void RegisterLine::PopMonitor(MethodVerifier* verifier, uint32_t reg_idx) {
     } else {
       // Record the register was unlocked. This clears all aliases, thus it will also clear the
       // null lock, if necessary.
-      ClearRegToLockDepth(reg_idx, monitors_.size());
+      ClearRegToLockDepth(vreg, monitors_.size());
     }
   }
 }

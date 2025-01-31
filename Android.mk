@@ -28,8 +28,6 @@ include $(art_path)/build/Android.cpplint.mk
 ########################################################################
 # product rules
 
-include $(art_path)/tools/ahat/Android.mk
-
 ART_HOST_DEPENDENCIES := \
   $(ART_HOST_EXECUTABLES) \
   $(ART_HOST_DEX_DEPENDENCIES) \

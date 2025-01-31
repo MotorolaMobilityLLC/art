@@ -47,10 +47,19 @@ class TraceData {
  public:
   explicit TraceData(LowOverheadTraceType trace_type)
       : trace_type_(trace_type),
+        trace_end_time_(0),
         trace_data_lock_("Trace Data lock", LockLevel::kGenericBottomLock) {}
 
   LowOverheadTraceType GetTraceType() const {
     return trace_type_;
+  }
+
+  uint64_t GetTraceEndTime() const {
+    return trace_end_time_;
+  }
+
+  void SetTraceEndTime(uint64_t end_time) {
+    trace_end_time_ = end_time;
   }
 
   // Dumps events collected in long_running_methods_ and the information about
@@ -80,6 +89,8 @@ class TraceData {
   std::string long_running_methods_ GUARDED_BY(trace_data_lock_);
 
   LowOverheadTraceType trace_type_;
+
+  uint64_t trace_end_time_;
 
   // These hold the methods and threads see so far. These are used to generate information about
   // the methods and threads.
@@ -196,11 +207,6 @@ class TraceProfiler {
                                           std::ostringstream& os);
 
   static bool profile_in_progress_ GUARDED_BY(Locks::trace_lock_);
-
-  // Keeps track of number of outstanding trace stop tasks. We should only stop a trace when the
-  // count is 0. If a trace was already stopped and a new trace has started before the time elapsed
-  // for the previous one we shouldn't stop the new trace.
-  static int num_trace_stop_tasks_ GUARDED_BY(Locks::trace_lock_);
 
   static TraceData* trace_data_ GUARDED_BY(Locks::trace_lock_);
 

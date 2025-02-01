@@ -62,11 +62,14 @@ class ThreadList {
 
   void ShutDown();
 
-  void DumpForSigQuit(std::ostream& os)
-      REQUIRES(!Locks::thread_list_lock_, !Locks::mutator_lock_);
-  // For thread suspend timeout dumps.
+  // Dump stacks for all threads.
+  // This version includes some additional data.
+  void DumpForSigQuit(std::ostream& os) REQUIRES(!Locks::thread_list_lock_, !Locks::mutator_lock_);
+
+  // This version is less jank-prone if mutator_lock_ is not held.
   EXPORT void Dump(std::ostream& os, bool dump_native_stack = true)
       REQUIRES(!Locks::thread_list_lock_, !Locks::thread_suspend_count_lock_);
+
   pid_t GetLockOwner();  // For SignalCatcher.
 
   // Thread suspension support.

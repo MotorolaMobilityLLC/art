@@ -198,7 +198,8 @@ bool HControlFlowSimplifier::TryGenerateSelectSimpleDiamondPattern(
     block->MergeWith(merge_block);
   }
 
-  MaybeRecordStat(stats_, MethodCompilationStat::kSelectGenerated);
+  MaybeRecordStat(stats_, select != nullptr ? MethodCompilationStat::kControlFlowSelectGenerated
+                                            : MethodCompilationStat::kControlFlowDiamondRemoved);
 
   // Very simple way of finding common subexpressions in the generated HSelect statements
   // (since this runs after GVN). Lookup by condition, and reuse latest one if possible

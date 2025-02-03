@@ -131,10 +131,6 @@ enum class MethodCompilationStat {
   kJitOutOfMemoryForCommit,
   kFullLSEAllocationRemoved,
   kFullLSEPossible,
-  kNonPartialLoadRemoved,
-  kPartialLSEPossible,
-  kPartialStoreRemoved,
-  kPartialAllocationMoved,
   kDevirtualized,
   kLastStat
 };

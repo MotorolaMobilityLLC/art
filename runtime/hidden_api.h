@@ -215,13 +215,13 @@ class MemberSignature {
 
   bool DoesPrefixMatchAny(const std::vector<std::string>& exemptions);
 
-  void WarnAboutAccess(AccessMethod access_method,
-                       ApiList list,
-                       bool access_denied,
-                       uint32_t runtime_flags,
-                       const AccessContext& caller_context,
-                       const AccessContext& callee_context,
-                       EnforcementPolicy policy) REQUIRES_SHARED(Locks::mutator_lock_);
+  void LogAccessToLogcat(AccessMethod access_method,
+                         ApiList list,
+                         bool access_denied,
+                         uint32_t runtime_flags,
+                         const AccessContext& caller_context,
+                         const AccessContext& callee_context,
+                         EnforcementPolicy policy) REQUIRES_SHARED(Locks::mutator_lock_);
 
   void LogAccessToEventLog(uint32_t sampled_value, AccessMethod access_method, bool access_denied);
 

@@ -46,7 +46,7 @@ static constexpr uint64_t kHideMaxtargetsdkPHiddenApis = 149997251;
 static constexpr uint64_t kHideMaxtargetsdkQHiddenApis = 149994052;
 static constexpr uint64_t kAllowTestApiAccess = 166236554;
 
-static constexpr uint64_t kMaxLogWarnings = 100;
+static constexpr uint64_t kMaxLogAccessesToLogcat = 100;
 
 // Should be the same as dalvik.system.VMRuntime.PREVENT_META_REFLECTION_BLOCKLIST_ACCESS.
 // Corresponds to a bug id.
@@ -353,15 +353,15 @@ void MemberSignature::Dump(std::ostream& os) const {
   }
 }
 
-void MemberSignature::WarnAboutAccess(AccessMethod access_method,
-                                      hiddenapi::ApiList list,
-                                      bool access_denied,
-                                      uint32_t runtime_flags,
-                                      const AccessContext& caller_context,
-                                      const AccessContext& callee_context,
-                                      EnforcementPolicy policy) {
-  static std::atomic<uint64_t> log_warning_count_ = 0;
-  if (log_warning_count_ > kMaxLogWarnings) {
+void MemberSignature::LogAccessToLogcat(AccessMethod access_method,
+                                        hiddenapi::ApiList list,
+                                        bool access_denied,
+                                        uint32_t runtime_flags,
+                                        const AccessContext& caller_context,
+                                        const AccessContext& callee_context,
+                                        EnforcementPolicy policy) {
+  static std::atomic<uint64_t> logged_access_count_ = 0;
+  if (logged_access_count_ > kMaxLogAccessesToLogcat) {
     return;
   }
   LOG(access_denied ? (policy == EnforcementPolicy::kEnabled ? ERROR : WARNING) : INFO)
@@ -376,10 +376,10 @@ void MemberSignature::WarnAboutAccess(AccessMethod access_method,
     LOG(WARNING) << "hiddenapi: If this is a platform test consider enabling "
                  << "VMRuntime.ALLOW_TEST_API_ACCESS change id for this package.";
   }
-  if (log_warning_count_ >= kMaxLogWarnings) {
-    LOG(WARNING) << "hiddenapi: Reached maximum number of hidden api access warnings.";
+  if (logged_access_count_ >= kMaxLogAccessesToLogcat) {
+    LOG(WARNING) << "hiddenapi: Reached maximum number of hidden api access messages.";
   }
-  ++log_warning_count_;
+  ++logged_access_count_;
 }
 
 bool MemberSignature::Equals(const MemberSignature& other) {
@@ -678,13 +678,13 @@ bool ShouldDenyAccessToMemberImpl(T* member,
       // Print a log message with information about this class member access.
       // We do this if we're about to deny access, or the app is debuggable.
       if (kLogAllAccesses || deny_access || runtime->IsJavaDebuggable()) {
-        member_signature.WarnAboutAccess(access_method,
-                                         api_list,
-                                         deny_access,
-                                         runtime_flags,
-                                         caller_context,
-                                         callee_context,
-                                         hiddenApiPolicy);
+        member_signature.LogAccessToLogcat(access_method,
+                                           api_list,
+                                           deny_access,
+                                           runtime_flags,
+                                           caller_context,
+                                           callee_context,
+                                           hiddenApiPolicy);
       }
 
       // If there is a StrictMode listener, notify it about this violation.

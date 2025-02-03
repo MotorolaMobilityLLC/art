@@ -223,7 +223,8 @@ class VdexFile {
   }
 
   EXPORT static std::unique_ptr<VdexFile> OpenFromDm(const std::string& filename,
-                                                     const ZipArchive& archive);
+                                                     const ZipArchive& archive,
+                                                     std::string* error_msg);
 
   const uint8_t* Begin() const { return mmap_.Begin(); }
   const uint8_t* End() const { return mmap_.End(); }

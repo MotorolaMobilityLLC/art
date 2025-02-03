@@ -957,18 +957,21 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
    * "dst_type" is stored into vA, and "src_type" is verified against vB.
    */
   ALWAYS_INLINE
-  void CheckUnaryOp(const Instruction* inst,
+  bool CheckUnaryOp(const Instruction* inst,
                     uint16_t inst_data,
                     RegType::Kind dst_kind,
                     RegType::Kind src_kind)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     if (VerifyRegisterType(inst->VRegB_12x(inst_data), src_kind)) {
       work_line_->SetRegisterType(inst->VRegA_12x(inst_data), dst_kind);
+      return true;
+    } else {
+      return false;
     }
   }
 
   ALWAYS_INLINE
-  void CheckUnaryOpWide(const Instruction* inst,
+  bool CheckUnaryOpWide(const Instruction* inst,
                         uint16_t inst_data,
                         RegType::Kind dst_kind,
                         RegType::Kind src_kind)
@@ -976,11 +979,14 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
     if (VerifyRegisterTypeWide(inst->VRegB_12x(inst_data), src_kind)) {
       work_line_->SetRegisterTypeWide(
           inst->VRegA_12x(inst_data), dst_kind, RegType::ToHighHalf(dst_kind));
+      return true;
+    } else {
+      return false;
     }
   }
 
   ALWAYS_INLINE
-  void CheckUnaryOpToWide(const Instruction* inst,
+  bool CheckUnaryOpToWide(const Instruction* inst,
                           uint16_t inst_data,
                           RegType::Kind dst_kind,
                           RegType::Kind src_kind)
@@ -988,17 +994,23 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
     if (VerifyRegisterType(inst->VRegB_12x(inst_data), src_kind)) {
       work_line_->SetRegisterTypeWide(
           inst->VRegA_12x(inst_data), dst_kind, RegType::ToHighHalf(dst_kind));
+      return true;
+    } else {
+      return false;
     }
   }
 
   ALWAYS_INLINE
-  void CheckUnaryOpFromWide(const Instruction* inst,
+  bool CheckUnaryOpFromWide(const Instruction* inst,
                             uint16_t inst_data,
                             RegType::Kind dst_kind,
                             RegType::Kind src_kind)
       REQUIRES_SHARED(Locks::mutator_lock_) {
     if (VerifyRegisterTypeWide(inst->VRegB_12x(inst_data), src_kind)) {
       work_line_->SetRegisterType(inst->VRegA_12x(inst_data), dst_kind);
+      return true;
+    } else {
+      return false;
     }
   }
 
@@ -1008,7 +1020,7 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
    * against vB/vC.
    */
   ALWAYS_INLINE
-  void CheckBinaryOp(const Instruction* inst,
+  bool CheckBinaryOp(const Instruction* inst,
                      uint16_t inst_data,
                      RegType::Kind dst_kind,
                      RegType::Kind src_kind1,
@@ -1026,16 +1038,18 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
                 RegTypeCache::RegKindForId(work_line_->GetRegisterTypeId(vregB))) &&
             RegType::IsBooleanTypes(
                 RegTypeCache::RegKindForId(work_line_->GetRegisterTypeId(vregC)))) {
-          work_line_->SetRegisterType(vregA, RegType::Kind::kBoolean);
-          return;
+          dst_kind = RegType::Kind::kBoolean;
         }
       }
       work_line_->SetRegisterType(vregA, dst_kind);
+      return true;
+    } else {
+      return false;
     }
   }
 
   ALWAYS_INLINE
-  void CheckBinaryOpWide(const Instruction* inst,
+  bool CheckBinaryOpWide(const Instruction* inst,
                          uint16_t inst_data,
                          RegType::Kind dst_kind,
                          RegType::Kind src_kind1,
@@ -1045,11 +1059,14 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
         VerifyRegisterTypeWide(inst->VRegC_23x(), src_kind2)) {
       work_line_->SetRegisterTypeWide(
           inst->VRegA_23x(inst_data), dst_kind, RegType::ToHighHalf(dst_kind));
+      return true;
+    } else {
+      return false;
     }
   }
 
   ALWAYS_INLINE
-  void CheckBinaryOpWideCmp(const Instruction* inst,
+  bool CheckBinaryOpWideCmp(const Instruction* inst,
                             uint16_t inst_data,
                             RegType::Kind dst_kind,
                             RegType::Kind src_kind1,
@@ -1058,11 +1075,14 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
     if (VerifyRegisterTypeWide(inst->VRegB_23x(), src_kind1) &&
         VerifyRegisterTypeWide(inst->VRegC_23x(), src_kind2)) {
       work_line_->SetRegisterType(inst->VRegA_23x(inst_data), dst_kind);
+      return true;
+    } else {
+      return false;
     }
   }
 
   ALWAYS_INLINE
-  void CheckBinaryOpWideShift(const Instruction* inst,
+  bool CheckBinaryOpWideShift(const Instruction* inst,
                               uint16_t inst_data,
                               RegType::Kind long_lo_kind,
                               RegType::Kind int_kind)
@@ -1071,6 +1091,9 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
         VerifyRegisterType(inst->VRegC_23x(), int_kind)) {
       RegType::Kind long_hi_kind = RegType::ToHighHalf(long_lo_kind);
       work_line_->SetRegisterTypeWide(inst->VRegA_23x(inst_data), long_lo_kind, long_hi_kind);
+      return true;
+    } else {
+      return false;
     }
   }
 
@@ -1079,7 +1102,7 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
    * are verified against vA/vB, then "dst_type" is stored into vA.
    */
   ALWAYS_INLINE
-  void CheckBinaryOp2addr(const Instruction* inst,
+  bool CheckBinaryOp2addr(const Instruction* inst,
                           uint16_t inst_data,
                           RegType::Kind dst_kind,
                           RegType::Kind src_kind1,
@@ -1096,16 +1119,18 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
                 RegTypeCache::RegKindForId(work_line_->GetRegisterTypeId(vregA))) &&
             RegType::IsBooleanTypes(
                 RegTypeCache::RegKindForId(work_line_->GetRegisterTypeId(vregB)))) {
-          work_line_->SetRegisterType(vregA, RegType::Kind::kBoolean);
-          return;
+          dst_kind = RegType::Kind::kBoolean;
         }
       }
       work_line_->SetRegisterType(vregA, dst_kind);
+      return true;
+    } else {
+      return false;
     }
   }
 
   ALWAYS_INLINE
-  void CheckBinaryOp2addrWide(const Instruction* inst,
+  bool CheckBinaryOp2addrWide(const Instruction* inst,
                               uint16_t inst_data,
                               RegType::Kind dst_kind,
                               RegType::Kind src_kind1,
@@ -1116,11 +1141,14 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
     if (VerifyRegisterTypeWide(vregA, src_kind1) &&
         VerifyRegisterTypeWide(vregB, src_kind2)) {
       work_line_->SetRegisterTypeWide(vregA, dst_kind, RegType::ToHighHalf(dst_kind));
+      return true;
+    } else {
+      return false;
     }
   }
 
   ALWAYS_INLINE
-  void CheckBinaryOp2addrWideShift(const Instruction* inst,
+  bool CheckBinaryOp2addrWideShift(const Instruction* inst,
                                    uint16_t inst_data,
                                    RegType::Kind long_lo_kind,
                                    RegType::Kind int_kind)
@@ -1131,6 +1159,9 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
         VerifyRegisterType(vregB, int_kind)) {
       RegType::Kind long_hi_kind = RegType::ToHighHalf(long_lo_kind);
       work_line_->SetRegisterTypeWide(vregA, long_lo_kind, long_hi_kind);
+      return true;
+    } else {
+      return false;
     }
   }
 
@@ -1140,27 +1171,29 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
    *
    * If "check_boolean_op" is set, we use the constant value in vC.
    */
+  template <bool kIsLit16>
   ALWAYS_INLINE
-  void CheckLiteralOp(const Instruction* inst,
+  bool CheckLiteralOp(const Instruction* inst,
                       uint16_t inst_data,
                       RegType::Kind dst_kind,
                       RegType::Kind src_kind,
-                      bool check_boolean_op,
-                      bool is_lit16)
+                      bool check_boolean_op)
       REQUIRES_SHARED(Locks::mutator_lock_) {
-    const uint32_t vregA = is_lit16 ? inst->VRegA_22s(inst_data) : inst->VRegA_22b(inst_data);
-    const uint32_t vregB = is_lit16 ? inst->VRegB_22s(inst_data) : inst->VRegB_22b();
+    const uint32_t vregA = kIsLit16 ? inst->VRegA_22s(inst_data) : inst->VRegA_22b(inst_data);
+    const uint32_t vregB = kIsLit16 ? inst->VRegB_22s(inst_data) : inst->VRegB_22b();
     if (VerifyRegisterType(vregB, src_kind)) {
       if (check_boolean_op) {
         DCHECK_EQ(dst_kind, RegType::Kind::kInteger);
         /* check vB with the call, then check the constant manually */
-        const uint32_t val = is_lit16 ? inst->VRegC_22s() : inst->VRegC_22b();
+        const uint32_t val = kIsLit16 ? inst->VRegC_22s() : inst->VRegC_22b();
         if (work_line_->GetRegisterType(this, vregB).IsBooleanTypes() && (val == 0 || val == 1)) {
-          work_line_->SetRegisterType(vregA, RegType::Kind::kBoolean);
-          return;
+          dst_kind = RegType::Kind::kBoolean;
         }
       }
       work_line_->SetRegisterType(vregA, dst_kind);
+      return true;
+    } else {
+      return false;
     }
   }
 
@@ -2626,6 +2659,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
        */
       if (inst->VRegA_10x(inst_data) != 0) {
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "encountered data table in instruction stream";
+        return false;
       }
       break;
 
@@ -2699,6 +2733,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       if (!IsInstanceConstructor() || work_line_->CheckConstructorReturn(this)) {
         if (!GetMethodReturnType().IsConflict()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-void not expected";
+          return false;
         }
       }
       break;
@@ -2709,6 +2744,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         if (!return_type.IsCategory1Types()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unexpected non-category 1 return type "
                                             << return_type;
+          return false;
         } else {
           // Compilers may generate synthetic functions that write byte values into boolean fields.
           // Also, it may use integer values for boolean, byte, short, and character return types.
@@ -2732,6 +2768,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         const RegType& return_type = GetMethodReturnType();
         if (!return_type.IsCategory2Types()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-wide not expected";
+          return false;
         } else {
           /* check the register contents */
           const uint32_t vregA = inst->VRegA_11x(inst_data);
@@ -2747,6 +2784,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         const RegType& return_type = GetMethodReturnType();
         if (!return_type.IsReferenceTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-object not expected";
+          return false;
         } else {
           /* return_type is the *expected* return type, not register value */
           DCHECK(!return_type.IsZeroOrNull());
@@ -2757,15 +2795,19 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
           // reference in vAA is an instance of the "return_type."
           if (reg_type.IsUndefined()) {
             Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning undefined register";
+            return false;
           } else if (reg_type.IsConflict()) {
             Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning register with conflict";
+            return false;
           } else if (reg_type.IsUninitializedTypes()) {
             Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning uninitialized object '"
                                               << reg_type << "'";
+            return false;
           } else if (!reg_type.IsReferenceTypes()) {
             // We really do expect a reference here.
             Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-object returns a non-reference type "
                                               << reg_type;
+            return false;
           } else if (!IsAssignableFrom(return_type, reg_type)) {
             if (reg_type.IsUnresolvedTypes() || return_type.IsUnresolvedTypes()) {
               Fail(VERIFY_ERROR_UNRESOLVED_TYPE_CHECK)
@@ -2773,6 +2815,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
             } else {
               Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning '" << reg_type
                   << "', but expected from declaration '" << return_type << "'";
+              return false;
             }
           }
         }
@@ -2951,7 +2994,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "using primitive type "
               << dex_file_->GetTypeDescriptorView(type_idx) << " in instanceof in "
               << GetDeclaringClass();
-          break;
+          return false;
         }
 
         DCHECK_NE(failures_.size(), 0U);
@@ -2966,11 +3009,14 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       const RegType& orig_type = work_line_->GetRegisterType(this, orig_type_reg);
       if (!res_type.IsNonZeroReferenceTypes()) {
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << opcode << " on unexpected class " << res_type;
+        return false;
       } else if (!orig_type.IsReferenceTypes()) {
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << opcode << " on non-reference in v" << orig_type_reg;
+        return false;
       } else if (orig_type.IsUninitializedTypes()) {
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << opcode << " on uninitialized reference in v"
                                           << orig_type_reg;
+        return false;
       } else {
         if (is_checkcast) {
           work_line_->SetRegisterType<LockOp::kKeep>(inst->VRegA_21c(inst_data), res_type);
@@ -2986,11 +3032,13 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         if (!res_type.IsArrayTypes() && !res_type.IsZeroOrNull()) {
           // ie not an array or null
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "array-length on non-array " << res_type;
+          return false;
         } else {
           work_line_->SetRegisterType(inst->VRegA_12x(inst_data), kInteger);
         }
       } else {
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "array-length on non-array " << res_type;
+        return false;
       }
       break;
     }
@@ -3029,26 +3077,37 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       break;
     case Instruction::CMPL_FLOAT:
     case Instruction::CMPG_FLOAT:
-      CheckBinaryOp(inst, inst_data, kInteger, kFloat, kFloat, /*check_boolean_op=*/ false);
+      if (!CheckBinaryOp(inst, inst_data, kInteger, kFloat, kFloat, /*check_boolean_op=*/ false)) {
+        return false;
+      }
       break;
     case Instruction::CMPL_DOUBLE:
     case Instruction::CMPG_DOUBLE:
-      CheckBinaryOpWideCmp(inst, inst_data, kInteger, kDoubleLo, kDoubleLo);
+      if (!CheckBinaryOpWideCmp(inst, inst_data, kInteger, kDoubleLo, kDoubleLo)) {
+        return false;
+      }
       break;
     case Instruction::CMP_LONG:
-      CheckBinaryOpWideCmp(inst, inst_data, kInteger, kLongLo, kLongLo);
+      if (!CheckBinaryOpWideCmp(inst, inst_data, kInteger, kLongLo, kLongLo)) {
+        return false;
+      }
       break;
     case Instruction::THROW: {
       const RegType& res_type = work_line_->GetRegisterType(this, inst->VRegA_11x(inst_data));
       if (!IsAssignableFrom(reg_types_.JavaLangThrowable(), res_type)) {
         if (res_type.IsUninitializedTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "thrown exception not initialized";
+          return false;
         } else if (!res_type.IsReferenceTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "thrown value of non-reference type " << res_type;
+          return false;
         } else {
-          Fail(res_type.IsUnresolvedTypes()
-                  ? VERIFY_ERROR_UNRESOLVED_TYPE_CHECK : VERIFY_ERROR_BAD_CLASS_HARD)
+          bool unresolved = res_type.IsUnresolvedTypes();
+          Fail(unresolved ? VERIFY_ERROR_UNRESOLVED_TYPE_CHECK : VERIFY_ERROR_BAD_CLASS_HARD)
                 << "thrown class " << res_type << " not instanceof Throwable";
+          if (!unresolved) {
+            return false;
+          }
         }
       }
       break;
@@ -3073,16 +3132,19 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         if (!array_type.IsArrayTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid fill-array-data with array type "
                                             << array_type;
+          return false;
         } else if (array_type.IsUnresolvedTypes()) {
           // If it's an unresolved array type, it must be non-primitive.
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid fill-array-data for array of type "
                                             << array_type;
+          return false;
         } else {
           const RegType& component_type = reg_types_.GetComponentType(array_type);
           DCHECK(!component_type.IsConflict());
           if (component_type.IsNonZeroReferenceTypes()) {
             Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invalid fill-array-data with component type "
                                               << component_type;
+            return false;
           } else {
             // Now verify if the element width in the table matches the element width declared in
             // the array. The signature has been verified by `CheckArrayData()`.
@@ -3095,6 +3157,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
             if (array_data[1] != elem_width) {
               Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "array-data size mismatch (" << array_data[1]
                                                 << " vs " << elem_width << ")";
+              return false;
             }
           }
         }
@@ -3116,6 +3179,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       if (mismatch) {
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "args to if-eq/if-ne (" << reg_type1 << ","
                                           << reg_type2 << ") must both be references or integral";
+        return false;
       }
       break;
     }
@@ -3128,6 +3192,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       if (!reg_type1.IsIntegralTypes() || !reg_type2.IsIntegralTypes()) {
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "args to 'if' (" << reg_type1 << ","
                                           << reg_type2 << ") must be integral";
+        return false;
       }
       break;
     }
@@ -3137,6 +3202,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       if (!reg_type.IsReferenceTypes() && !reg_type.IsIntegralTypes()) {
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "type " << reg_type
                                           << " unexpected as arg to if-eqz/if-nez";
+        return false;
       }
 
       // Find previous instruction - its existence is a precondition to peephole optimization.
@@ -3247,6 +3313,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       if (!reg_type.IsIntegralTypes()) {
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "type " << reg_type
                                           << " unexpected as arg to if-ltz/if-gez/if-gtz/if-lez";
+        return false;
       }
       break;
     }
@@ -3429,20 +3496,21 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
          * this method (which implies that we're in a constructor ourselves).
          */
         const RegType& this_type = GetInvocationThis(inst);
-        if (this_type.IsConflict())  // failure.
-          break;
+        if (this_type.IsConflict()) {  // failure.
+          return false;
+        }
 
         /* no null refs allowed (?) */
         if (this_type.IsZeroOrNull()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unable to initialize null ref";
-          break;
+          return false;
         }
 
         /* arg must be an uninitialized reference */
         if (!this_type.IsUninitializedTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "Expected initialization on uninitialized reference "
               << this_type;
-          break;
+          return false;
         }
 
         // Note: According to JLS, constructors are never inherited. Therefore the target
@@ -3511,7 +3579,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         if (this_type.IsUninitializedTypes()) {
           Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "interface call on uninitialized object "
               << this_type;
-          break;
+          return false;
         }
         // In the past we have tried to assert that "called_interface" is assignable
         // from "this_type.GetClass()", however, as we do an imprecise Join
@@ -3546,13 +3614,12 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       ArtMethod* called_method = VerifyInvocationArgs(inst, METHOD_POLYMORPHIC, is_range);
       if (called_method == nullptr) {
         // Convert potential soft failures in VerifyInvocationArgs() to hard errors.
-        if (failures_.size() > 0) {
-          std::string_view message = failures_.back().message.view();
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << message;
-        } else {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "invoke-polymorphic verification failure.";
-        }
-        break;
+        std::string_view message = failures_.empty() ? "invoke-polymorphic verification failure."
+                                                     : failures_.back().message.view();
+        // Note: Adding another failure to `failures_` does not invalidate the view of
+        // the previous message (if any) -  the list node holding it is not even moved.
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << message;
+        return false;
       }
       if (!CheckSignaturePolymorphicMethod(called_method) ||
           !CheckSignaturePolymorphicReceiver(inst)) {
@@ -3603,62 +3670,100 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     }
     case Instruction::NEG_INT:
     case Instruction::NOT_INT:
-      CheckUnaryOp(inst, inst_data, kInteger, kInteger);
+      if (!CheckUnaryOp(inst, inst_data, kInteger, kInteger)) {
+        return false;
+      }
       break;
     case Instruction::NEG_LONG:
     case Instruction::NOT_LONG:
-      CheckUnaryOpWide(inst, inst_data, kLongLo, kLongLo);
+      if (!CheckUnaryOpWide(inst, inst_data, kLongLo, kLongLo)) {
+        return false;
+      }
       break;
     case Instruction::NEG_FLOAT:
-      CheckUnaryOp(inst, inst_data, kFloat, kFloat);
+      if (!CheckUnaryOp(inst, inst_data, kFloat, kFloat)) {
+        return false;
+      }
       break;
     case Instruction::NEG_DOUBLE:
-      CheckUnaryOpWide(inst, inst_data, kDoubleLo, kDoubleLo);
+      if (!CheckUnaryOpWide(inst, inst_data, kDoubleLo, kDoubleLo)) {
+        return false;
+      }
       break;
     case Instruction::INT_TO_LONG:
-      CheckUnaryOpToWide(inst, inst_data, kLongLo, kInteger);
+      if (!CheckUnaryOpToWide(inst, inst_data, kLongLo, kInteger)) {
+        return false;
+      }
       break;
     case Instruction::INT_TO_FLOAT:
-      CheckUnaryOp(inst, inst_data, kFloat, kInteger);
+      if (!CheckUnaryOp(inst, inst_data, kFloat, kInteger)) {
+        return false;
+      }
       break;
     case Instruction::INT_TO_DOUBLE:
-      CheckUnaryOpToWide(inst, inst_data, kDoubleLo, kInteger);
+      if (!CheckUnaryOpToWide(inst, inst_data, kDoubleLo, kInteger)) {
+        return false;
+      }
       break;
     case Instruction::LONG_TO_INT:
-      CheckUnaryOpFromWide(inst, inst_data, kInteger, kLongLo);
+      if (!CheckUnaryOpFromWide(inst, inst_data, kInteger, kLongLo)) {
+        return false;
+      }
       break;
     case Instruction::LONG_TO_FLOAT:
-      CheckUnaryOpFromWide(inst, inst_data, kFloat, kLongLo);
+      if (!CheckUnaryOpFromWide(inst, inst_data, kFloat, kLongLo)) {
+        return false;
+      }
       break;
     case Instruction::LONG_TO_DOUBLE:
-      CheckUnaryOpWide(inst, inst_data, kDoubleLo, kLongLo);
+      if (!CheckUnaryOpWide(inst, inst_data, kDoubleLo, kLongLo)) {
+        return false;
+      }
       break;
     case Instruction::FLOAT_TO_INT:
-      CheckUnaryOp(inst, inst_data, kInteger, kFloat);
+      if (!CheckUnaryOp(inst, inst_data, kInteger, kFloat)) {
+        return false;
+      }
       break;
     case Instruction::FLOAT_TO_LONG:
-      CheckUnaryOpToWide(inst, inst_data, kLongLo, kFloat);
+      if (!CheckUnaryOpToWide(inst, inst_data, kLongLo, kFloat)) {
+        return false;
+      }
       break;
     case Instruction::FLOAT_TO_DOUBLE:
-      CheckUnaryOpToWide(inst, inst_data, kDoubleLo, kFloat);
+      if (!CheckUnaryOpToWide(inst, inst_data, kDoubleLo, kFloat)) {
+        return false;
+      }
       break;
     case Instruction::DOUBLE_TO_INT:
-      CheckUnaryOpFromWide(inst, inst_data, kInteger, kDoubleLo);
+      if (!CheckUnaryOpFromWide(inst, inst_data, kInteger, kDoubleLo)) {
+        return false;
+      }
       break;
     case Instruction::DOUBLE_TO_LONG:
-      CheckUnaryOpWide(inst, inst_data, kLongLo, kDoubleLo);
+      if (!CheckUnaryOpWide(inst, inst_data, kLongLo, kDoubleLo)) {
+        return false;
+      }
       break;
     case Instruction::DOUBLE_TO_FLOAT:
-      CheckUnaryOpFromWide(inst, inst_data, kFloat, kDoubleLo);
+      if (!CheckUnaryOpFromWide(inst, inst_data, kFloat, kDoubleLo)) {
+        return false;
+      }
       break;
     case Instruction::INT_TO_BYTE:
-      CheckUnaryOp(inst, inst_data, kByte, kInteger);
+      if (!CheckUnaryOp(inst, inst_data, kByte, kInteger)) {
+        return false;
+      }
       break;
     case Instruction::INT_TO_CHAR:
-      CheckUnaryOp(inst, inst_data, kChar, kInteger);
+      if (!CheckUnaryOp(inst, inst_data, kChar, kInteger)) {
+        return false;
+      }
       break;
     case Instruction::INT_TO_SHORT:
-      CheckUnaryOp(inst, inst_data, kShort, kInteger);
+      if (!CheckUnaryOp(inst, inst_data, kShort, kInteger)) {
+        return false;
+      }
       break;
 
     case Instruction::ADD_INT:
@@ -3669,12 +3774,18 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::SHL_INT:
     case Instruction::SHR_INT:
     case Instruction::USHR_INT:
-      CheckBinaryOp(inst, inst_data, kInteger, kInteger, kInteger, /*check_boolean_op=*/ false);
+      if (!CheckBinaryOp(
+               inst, inst_data, kInteger, kInteger, kInteger, /*check_boolean_op=*/ false)) {
+        return false;
+      }
       break;
     case Instruction::AND_INT:
     case Instruction::OR_INT:
     case Instruction::XOR_INT:
-      CheckBinaryOp(inst, inst_data, kInteger, kInteger, kInteger, /*check_boolean_op=*/ true);
+      if (!CheckBinaryOp(
+               inst, inst_data, kInteger, kInteger, kInteger, /*check_boolean_op=*/ true)) {
+        return false;
+      }
       break;
     case Instruction::ADD_LONG:
     case Instruction::SUB_LONG:
@@ -3684,27 +3795,35 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::AND_LONG:
     case Instruction::OR_LONG:
     case Instruction::XOR_LONG:
-      CheckBinaryOpWide(inst, inst_data, kLongLo, kLongLo, kLongLo);
+      if (!CheckBinaryOpWide(inst, inst_data, kLongLo, kLongLo, kLongLo)) {
+        return false;
+      }
       break;
     case Instruction::SHL_LONG:
     case Instruction::SHR_LONG:
     case Instruction::USHR_LONG:
       /* shift distance is Int, making these different from other binary operations */
-      CheckBinaryOpWideShift(inst, inst_data, kLongLo, kInteger);
+      if (!CheckBinaryOpWideShift(inst, inst_data, kLongLo, kInteger)) {
+        return false;
+      }
       break;
     case Instruction::ADD_FLOAT:
     case Instruction::SUB_FLOAT:
     case Instruction::MUL_FLOAT:
     case Instruction::DIV_FLOAT:
     case Instruction::REM_FLOAT:
-      CheckBinaryOp(inst, inst_data, kFloat, kFloat, kFloat, /*check_boolean_op=*/ false);
+      if (!CheckBinaryOp(inst, inst_data, kFloat, kFloat, kFloat, /*check_boolean_op=*/ false)) {
+        return false;
+      }
       break;
     case Instruction::ADD_DOUBLE:
     case Instruction::SUB_DOUBLE:
     case Instruction::MUL_DOUBLE:
     case Instruction::DIV_DOUBLE:
     case Instruction::REM_DOUBLE:
-      CheckBinaryOpWide(inst, inst_data, kDoubleLo, kDoubleLo, kDoubleLo);
+      if (!CheckBinaryOpWide(inst, inst_data, kDoubleLo, kDoubleLo, kDoubleLo)) {
+        return false;
+      }
       break;
     case Instruction::ADD_INT_2ADDR:
     case Instruction::SUB_INT_2ADDR:
@@ -3713,17 +3832,24 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::SHL_INT_2ADDR:
     case Instruction::SHR_INT_2ADDR:
     case Instruction::USHR_INT_2ADDR:
-      CheckBinaryOp2addr(
-          inst, inst_data, kInteger, kInteger, kInteger, /*check_boolean_op=*/ false);
+      if (!CheckBinaryOp2addr(
+               inst, inst_data, kInteger, kInteger, kInteger, /*check_boolean_op=*/ false)) {
+        return false;
+      }
       break;
     case Instruction::AND_INT_2ADDR:
     case Instruction::OR_INT_2ADDR:
     case Instruction::XOR_INT_2ADDR:
-      CheckBinaryOp2addr(inst, inst_data, kInteger, kInteger, kInteger, /*check_boolean_op=*/ true);
+      if (!CheckBinaryOp2addr(
+               inst, inst_data, kInteger, kInteger, kInteger, /*check_boolean_op=*/ true)) {
+        return false;
+      }
       break;
     case Instruction::DIV_INT_2ADDR:
-      CheckBinaryOp2addr(
-          inst, inst_data, kInteger, kInteger, kInteger, /*check_boolean_op=*/ false);
+      if (!CheckBinaryOp2addr(
+               inst, inst_data, kInteger, kInteger, kInteger, /*check_boolean_op=*/ false)) {
+        return false;
+      }
       break;
     case Instruction::ADD_LONG_2ADDR:
     case Instruction::SUB_LONG_2ADDR:
@@ -3733,40 +3859,53 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::AND_LONG_2ADDR:
     case Instruction::OR_LONG_2ADDR:
     case Instruction::XOR_LONG_2ADDR:
-      CheckBinaryOp2addrWide(inst, inst_data, kLongLo, kLongLo, kLongLo);
+      if (!CheckBinaryOp2addrWide(inst, inst_data, kLongLo, kLongLo, kLongLo)) {
+        return false;
+      }
       break;
     case Instruction::SHL_LONG_2ADDR:
     case Instruction::SHR_LONG_2ADDR:
     case Instruction::USHR_LONG_2ADDR:
-      CheckBinaryOp2addrWideShift(inst, inst_data, kLongLo, kInteger);
+      if (!CheckBinaryOp2addrWideShift(inst, inst_data, kLongLo, kInteger)) {
+        return false;
+      }
       break;
     case Instruction::ADD_FLOAT_2ADDR:
     case Instruction::SUB_FLOAT_2ADDR:
     case Instruction::MUL_FLOAT_2ADDR:
     case Instruction::DIV_FLOAT_2ADDR:
     case Instruction::REM_FLOAT_2ADDR:
-      CheckBinaryOp2addr(inst, inst_data, kFloat, kFloat, kFloat, /*check_boolean_op=*/ false);
+      if (!CheckBinaryOp2addr(
+               inst, inst_data, kFloat, kFloat, kFloat, /*check_boolean_op=*/ false)) {
+        return false;
+      }
       break;
     case Instruction::ADD_DOUBLE_2ADDR:
     case Instruction::SUB_DOUBLE_2ADDR:
     case Instruction::MUL_DOUBLE_2ADDR:
     case Instruction::DIV_DOUBLE_2ADDR:
     case Instruction::REM_DOUBLE_2ADDR:
-      CheckBinaryOp2addrWide(inst, inst_data, kDoubleLo, kDoubleLo, kDoubleLo);
+      if (!CheckBinaryOp2addrWide(inst, inst_data, kDoubleLo, kDoubleLo, kDoubleLo)) {
+        return false;
+      }
       break;
     case Instruction::ADD_INT_LIT16:
     case Instruction::RSUB_INT_LIT16:
     case Instruction::MUL_INT_LIT16:
     case Instruction::DIV_INT_LIT16:
     case Instruction::REM_INT_LIT16:
-      CheckLiteralOp(
-          inst, inst_data, kInteger, kInteger, /*check_boolean_op=*/ false, /*is_lit16=*/ true);
+      if (!CheckLiteralOp</*kIsLit16=*/ true>(
+               inst, inst_data, kInteger, kInteger, /*check_boolean_op=*/ false)) {
+        return false;
+      }
       break;
     case Instruction::AND_INT_LIT16:
     case Instruction::OR_INT_LIT16:
     case Instruction::XOR_INT_LIT16:
-      CheckLiteralOp(
-          inst, inst_data, kInteger, kInteger, /*check_boolean_op=*/ true, /*is_lit16=*/ true);
+      if (!CheckLiteralOp</*kIsLit16=*/ true>(
+               inst, inst_data, kInteger, kInteger, /*check_boolean_op=*/ true)) {
+        return false;
+      }
       break;
     case Instruction::ADD_INT_LIT8:
     case Instruction::RSUB_INT_LIT8:
@@ -3776,14 +3915,18 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::SHL_INT_LIT8:
     case Instruction::SHR_INT_LIT8:
     case Instruction::USHR_INT_LIT8:
-      CheckLiteralOp(
-          inst, inst_data, kInteger, kInteger, /*check_boolean_op=*/ false, /*is_lit16=*/ false);
+      if (!CheckLiteralOp</*kIsLit16=*/ false>(
+               inst, inst_data, kInteger, kInteger, /*check_boolean_op=*/ false)) {
+        return false;
+      }
       break;
     case Instruction::AND_INT_LIT8:
     case Instruction::OR_INT_LIT8:
     case Instruction::XOR_INT_LIT8:
-      CheckLiteralOp(
-          inst, inst_data, kInteger, kInteger, /*check_boolean_op=*/ true, /*is_lit16=*/ false);
+      if (!CheckLiteralOp</*kIsLit16=*/ false>(
+               inst, inst_data, kInteger, kInteger, /*check_boolean_op=*/ true)) {
+        return false;
+      }
       break;
 
     /* These should never appear during verification. */
@@ -3793,7 +3936,7 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     case Instruction::UNUSED_79:
     case Instruction::UNUSED_7A:
       Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "Unexpected opcode " << inst->DumpString(dex_file_);
-      break;
+      return false;
 
     /*
      * DO NOT add a "default" clause here. Without it the compiler will

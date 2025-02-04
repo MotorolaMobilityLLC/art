@@ -914,10 +914,11 @@ class EXPORT ArtMethod final {
            !IsProxyMethod();
   }
 
-  // We need to explicitly indicate whether the code item is obtained from the compact dex file,
-  // because in JVMTI, we obtain the code item from the standard dex file to update the method.
-  void SetCodeItem(const dex::CodeItem* code_item, bool is_compact_dex_code_item)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+  void SetCodeItem(const dex::CodeItem* code_item)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    DCHECK(HasCodeItem());
+    SetDataPtrSize(code_item, kRuntimePointerSize);
+  }
 
   // Is this a hand crafted method used for something like describing callee saves?
   bool IsCalleeSaveMethod() REQUIRES_SHARED(Locks::mutator_lock_);

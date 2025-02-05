@@ -1593,6 +1593,10 @@ bool MethodVerifier<kVerifierDebug>::Verify() {
     return false;
   }
 
+  if (code_item_accessor_.InsnsSizeInCodeUnits() == 0u) {
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "code item has no opcode";
+    return false;
+  }
   // Allocate and initialize an array to hold instruction data.
   insn_flags_.reset(allocator_.AllocArray<InstructionFlags>(
       code_item_accessor_.InsnsSizeInCodeUnits()));
@@ -1619,10 +1623,6 @@ bool MethodVerifierImpl::ComputeWidthsAndCountOps() {
   // We can't assume the instruction is well formed, handle the case where calculating the size
   // goes past the end of the code item.
   const uint32_t insns_size = code_item_accessor_.InsnsSizeInCodeUnits();
-  if (insns_size == 0u) {
-    Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "code item has no opcode";
-    return false;
-  }
   const Instruction* inst = &code_item_accessor_.InstructionAt(0u);
   uint32_t dex_pc = 0u;
   while (dex_pc != insns_size) {

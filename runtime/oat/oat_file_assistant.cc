@@ -1019,14 +1019,12 @@ const OatFile* OatFileAssistant::OatFileInfo::GetFile() {
           vdex = VdexFile::Open(vdex_fd_,
                                 s.st_size,
                                 filename_,
-                                /*writable=*/false,
                                 /*low_4gb=*/false,
                                 &error_msg);
         }
       }
     } else {
       vdex = VdexFile::Open(filename_,
-                            /*writable=*/false,
                             /*low_4gb=*/false,
                             &error_msg);
     }

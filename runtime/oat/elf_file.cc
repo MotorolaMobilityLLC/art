@@ -38,8 +38,6 @@ using android::base::StringPrintf;
 template <typename ElfTypes>
 ElfFileImpl<ElfTypes>::ElfFileImpl(File* file)
     : header_(nullptr),
-      base_address_(nullptr),
-      program_headers_start_(nullptr),
       section_headers_start_(nullptr),
       dynamic_program_header_(nullptr),
       dynamic_section_start_(nullptr),
@@ -875,17 +873,6 @@ bool ElfFileImpl<ElfTypes>::ValidPointer(const uint8_t* start) const {
 template class ElfFileImpl<ElfTypes32>;
 template class ElfFileImpl<ElfTypes64>;
 
-ElfFile::ElfFile(ElfFileImpl32* elf32) : elf32_(elf32), elf64_(nullptr) {
-}
-
-ElfFile::ElfFile(ElfFileImpl64* elf64) : elf32_(nullptr), elf64_(elf64) {
-}
-
-ElfFile::~ElfFile() {
-  // Should never have 32 and 64-bit impls.
-  CHECK_NE(elf32_.get() == nullptr, elf64_.get() == nullptr);
-}
-
 ElfFile* ElfFile::Open(File* file,
                        bool low_4gb,
                        /*out*/ std::string* error_msg) {
@@ -907,17 +894,9 @@ ElfFile* ElfFile::Open(File* file,
   }
   uint8_t* header = map.Begin();
   if (header[EI_CLASS] == ELFCLASS64) {
-    ElfFileImpl64* elf_file_impl = ElfFileImpl64::Open(file, low_4gb, error_msg);
-    if (elf_file_impl == nullptr) {
-      return nullptr;
-    }
-    return new ElfFile(elf_file_impl);
+    return ElfFileImpl64::Open(file, low_4gb, error_msg);
   } else if (header[EI_CLASS] == ELFCLASS32) {
-    ElfFileImpl32* elf_file_impl = ElfFileImpl32::Open(file, low_4gb, error_msg);
-    if (elf_file_impl == nullptr) {
-      return nullptr;
-    }
-    return new ElfFile(elf_file_impl);
+    return ElfFileImpl32::Open(file, low_4gb, error_msg);
   } else {
     *error_msg = StringPrintf("Failed to find expected EI_CLASS value %d or %d in %s, found %d",
                               ELFCLASS32, ELFCLASS64,
@@ -926,51 +905,5 @@ ElfFile* ElfFile::Open(File* file,
     return nullptr;
   }
 }
-
-#define DELEGATE_TO_IMPL(func, ...) \
-  if (elf64_.get() != nullptr) { \
-    return elf64_->func(__VA_ARGS__); \
-  } else { \
-    DCHECK(elf32_.get() != nullptr); \
-    return elf32_->func(__VA_ARGS__); \
-  }
-
-bool ElfFile::Load(File* file,
-                   bool executable,
-                   bool low_4gb,
-                   /*inout*/MemMap* reservation,
-                   /*out*/std::string* error_msg) {
-  DELEGATE_TO_IMPL(Load, file, executable, low_4gb, reservation, error_msg);
-}
-
-const uint8_t* ElfFile::FindDynamicSymbolAddress(const std::string& symbol_name) const {
-  DELEGATE_TO_IMPL(FindDynamicSymbolAddress, symbol_name);
-}
-
-size_t ElfFile::Size() const {
-  DELEGATE_TO_IMPL(Size);
-}
-
-uint8_t* ElfFile::Begin() const {
-  DELEGATE_TO_IMPL(Begin);
-}
-
-uint8_t* ElfFile::End() const {
-  DELEGATE_TO_IMPL(End);
-}
-
-const std::string& ElfFile::GetFilePath() const {
-  DELEGATE_TO_IMPL(GetFilePath);
-}
-
-bool ElfFile::GetLoadedSize(size_t* size, std::string* error_msg) const {
-  DELEGATE_TO_IMPL(GetLoadedSize, size, error_msg);
-}
-
-size_t ElfFile::GetElfSegmentAlignmentFromFile() const {
-  DELEGATE_TO_IMPL(GetElfSegmentAlignmentFromFile);
-}
-
-const uint8_t* ElfFile::GetBaseAddress() const { DELEGATE_TO_IMPL(GetBaseAddress); }
 
 }  // namespace art

@@ -1126,8 +1126,9 @@ class EXPORT ArtMethod final {
     // Non-abstract methods: The hotness we measure for this method. Not atomic,
     // as we allow missing increments: if the method is hot, we will see it eventually.
     uint16_t hotness_count_;
-    // Abstract methods: IMT index.
+    // Abstract interface methods: IMT index.
     uint16_t imt_index_;
+    // Abstract class (non-interface) methods: Unused (zero-initialized).
   };
 
   // Fake padding field gets inserted here.

@@ -38,13 +38,6 @@ inline void ImTable::GetImtHashComponents(ArtMethod* method,
                                           uint32_t* name_hash,
                                           uint32_t* signature_hash) {
   if (kImTableHashUseName) {
-    if (method->IsProxyMethod()) {
-      *class_hash = 0;
-      *name_hash = 0;
-      *signature_hash = 0;
-      return;
-    }
-
     const DexFile* dex_file = method->GetDexFile();
     const dex::MethodId& method_id = dex_file->GetMethodId(method->GetDexMethodIndex());
 
@@ -84,6 +77,7 @@ inline void ImTable::GetImtHashComponents(ArtMethod* method,
 
 inline uint32_t ImTable::GetImtIndex(ArtMethod* method) {
   DCHECK(!method->IsCopied());
+  DCHECK(!method->IsProxyMethod());
   if (!method->IsAbstract()) {
     // For default methods, where we cannot store the imt_index, we use the
     // method_index instead. We mask it with the closest power of two to

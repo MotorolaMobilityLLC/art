@@ -48,12 +48,8 @@ class ElfFileImpl {
                            bool writable,
                            bool program_header_only,
                            bool low_4gb,
-                           /*out*/std::string* error_msg);
-  static ElfFileImpl* Open(File* file,
-                           int mmap_prot,
-                           int mmap_flags,
-                           bool low_4gb,
-                           /*out*/std::string* error_msg);
+                           /*out*/ std::string* error_msg);
+
   ~ElfFileImpl();
 
   const std::string& GetFilePath() const {
@@ -107,12 +103,6 @@ class ElfFileImpl {
   Elf_Word GetDynamicNum() const;
   Elf_Dyn& GetDynamic(Elf_Word) const;
 
-  Elf_Word GetRelNum(Elf_Shdr&) const;
-  Elf_Rel& GetRel(Elf_Shdr&, Elf_Word) const;
-
-  Elf_Word GetRelaNum(Elf_Shdr&) const;
-  Elf_Rela& GetRela(Elf_Shdr&, Elf_Word) const;
-
   // Retrieves the expected size when the file is loaded at runtime. Returns true if successful.
   bool GetLoadedSize(size_t* size, std::string* error_msg) const;
 
@@ -126,8 +116,6 @@ class ElfFileImpl {
             bool low_4gb,
             /*inout*/MemMap* reservation,
             /*out*/std::string* error_msg);
-
-  bool Strip(File* file, std::string* error_msg);
 
  private:
   ElfFileImpl(File* file, bool writable, bool program_header_only);
@@ -146,8 +134,6 @@ class ElfFileImpl {
   Elf_Dyn* GetDynamicSectionStart() const;
   Elf_Sym* GetSymbolSectionStart(Elf_Word section_type) const;
   const char* GetStringSectionStart(Elf_Word section_type) const;
-  Elf_Rel* GetRelSectionStart(Elf_Shdr&) const;
-  Elf_Rela* GetRelaSectionStart(Elf_Shdr&) const;
   Elf_Word* GetHashSectionStart() const;
   Elf_Word GetHashBucketNum() const;
   Elf_Word GetHashChainNum() const;
@@ -183,9 +169,6 @@ class ElfFileImpl {
                             bool build_map);
 
   Elf_Phdr* FindProgamHeaderByType(Elf_Word type) const;
-
-  Elf_Dyn* FindDynamicByType(Elf_Sword type) const;
-  Elf_Word FindDynamicValueByType(Elf_Sword type) const;
 
   // Lookup a string by section type. Returns null for special 0 offset.
   const char* GetString(Elf_Word section_type, Elf_Word) const;

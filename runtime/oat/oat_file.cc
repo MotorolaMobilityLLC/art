@@ -1622,12 +1622,6 @@ class ElfOatFile final : public OatFileBase {
  public:
   ElfOatFile(const std::string& filename, bool executable) : OatFileBase(filename, executable) {}
 
-  bool InitializeFromElfFile(int zip_fd,
-                             ElfFile* elf_file,
-                             VdexFile* vdex_file,
-                             ArrayRef<const std::string> dex_filenames,
-                             std::string* error_msg);
-
  protected:
   const uint8_t* FindDynamicSymbolAddress(const std::string& symbol_name,
                                           std::string* error_msg) const override {
@@ -1675,27 +1669,6 @@ class ElfOatFile final : public OatFileBase {
 
   DISALLOW_COPY_AND_ASSIGN(ElfOatFile);
 };
-
-bool ElfOatFile::InitializeFromElfFile(int zip_fd,
-                                       ElfFile* elf_file,
-                                       VdexFile* vdex_file,
-                                       ArrayRef<const std::string> dex_filenames,
-                                       std::string* error_msg) {
-  ScopedTrace trace(__PRETTY_FUNCTION__);
-  if (IsExecutable()) {
-    *error_msg = "Cannot initialize from elf file in executable mode.";
-    return false;
-  }
-  elf_file_.reset(elf_file);
-  SetVdex(vdex_file);
-  uint64_t offset, size;
-  bool has_section = elf_file->GetSectionOffsetAndSize(".rodata", &offset, &size);
-  CHECK(has_section);
-  SetBegin(elf_file->Begin() + offset);
-  SetEnd(elf_file->Begin() + size + offset);
-  // Ignore the optional .bss section when opening non-executable.
-  return Setup(zip_fd, dex_filenames, /*dex_files=*/{}, error_msg);
-}
 
 bool ElfOatFile::Load(const std::string& elf_filename,
                       bool writable,

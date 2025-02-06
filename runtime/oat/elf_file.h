@@ -17,9 +17,11 @@
 #ifndef ART_RUNTIME_OAT_ELF_FILE_H_
 #define ART_RUNTIME_OAT_ELF_FILE_H_
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
+#include "android-base/logging.h"
 #include "base/macros.h"
 #include "base/mem_map.h"
 #include "base/os.h"
@@ -39,22 +41,33 @@ using ElfFileImpl64 = ElfFileImpl<ElfTypes64>;
 // ELFObjectFile.
 class ElfFile {
  public:
+  // Loads the program headers.
+  // Does not take the ownership of the file. It must stay alive during the `Load` call.
+  static ElfFile* Open(File* file,
+                       off_t start,
+                       size_t file_length,
+                       const std::string& file_location,
+                       bool low_4gb,
+                       /*out*/ std::string* error_msg);
+
   static ElfFile* Open(File* file,
                        bool low_4gb,
                        /*out*/ std::string* error_msg);
 
   virtual ~ElfFile() = default;
 
-  // Load segments into memory based on PT_LOAD program headers
-  virtual bool Load(File* file,
-                    bool executable,
+  // Load segments into memory based on PT_LOAD program headers.
+  virtual bool Load(bool executable,
                     bool low_4gb,
                     /*inout*/ MemMap* reservation,
                     /*out*/ std::string* error_msg) = 0;
 
   virtual const uint8_t* FindDynamicSymbolAddress(const std::string& symbol_name) const = 0;
 
-  const std::string& GetFilePath() const { return file_path_; }
+  // Returns the location of the ELF file, for debugging purposes only.
+  // Note that the location is not necessarily a path to a file on disk. It can also be a zip entry
+  // inside a zip file.
+  const std::string& GetFileLocation() const { return file_location_; }
 
   uint8_t* GetBaseAddress() const { return base_address_; }
 
@@ -71,9 +84,15 @@ class ElfFile {
   virtual bool Is64Bit() const = 0;
 
  protected:
-  ElfFile() = default;
+  ElfFile(File* file, off_t start, size_t file_length, const std::string& file_location)
+      : file_(file), start_(start), file_length_(file_length), file_location_(file_location) {
+    CHECK(file != nullptr);
+  }
 
-  const std::string file_path_;
+  File* const file_;
+  const off_t start_;
+  const size_t file_length_;
+  const std::string file_location_;
 
   // ELF header mapping. If program_header_only_ is false, will
   // actually point to the entire elf file.

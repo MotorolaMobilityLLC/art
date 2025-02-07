@@ -1813,7 +1813,8 @@ static void LoadAndUpdateStatus(const ClassAccessor& accessor,
     // a boot image class, or a class in a different dex file for multidex, and
     // we should not update the status in that case.
     if (&cls->GetDexFile() == &accessor.GetDexFile()) {
-      VLOG(compiler) << "Updating class status of " << accessor.GetDescriptor() << " to " << status;
+      VLOG(compiler) << "Updating class status of " << accessor.GetDescriptorView()
+                     << " to " << status;
       ObjectLock<mirror::Class> lock(self, cls);
       mirror::Class::SetStatus(cls, status, self);
     }
@@ -1880,7 +1881,7 @@ bool CompilerDriver::FastVerify(jobject jclass_loader,
           // If the class will be in the image, we can rely on the ArtMethods
           // telling that they need access checks.
           VLOG(compiler) << "Promoting "
-                         << std::string(accessor.GetDescriptor())
+                         << accessor.GetDescriptorView()
                          << " from needs access checks to verified given it is an image class";
           status = ClassStatus::kVerified;
         }

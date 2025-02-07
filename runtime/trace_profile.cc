@@ -88,6 +88,26 @@ void TraceData::SignalTraceDumpComplete() {
   trace_dump_condition_.Broadcast(Thread::Current());
 }
 
+void TraceData::AppendToLongRunningMethods(const uint8_t* buffer, size_t size) {
+  MutexLock mu(Thread::Current(), trace_data_lock_);
+  if (curr_buffer_ == nullptr) {
+    curr_buffer_.reset(new uint8_t[kBufSizeForEncodedData]);
+    curr_index_ = 0;
+  }
+  if (curr_index_ + size <= kBufSizeForEncodedData) {
+    memcpy(curr_buffer_.get() + curr_index_, buffer, size);
+    curr_index_ += size;
+  } else {
+    size_t remaining_bytes = kBufSizeForEncodedData - curr_index_;
+    if (remaining_bytes != 0) {
+      memcpy(curr_buffer_.get() + curr_index_, buffer, remaining_bytes);
+    }
+    overflow_buffers_.push_back(std::move(curr_buffer_));
+    curr_buffer_.reset(new uint8_t[kBufSizeForEncodedData]);
+    memcpy(curr_buffer_.get(), buffer + remaining_bytes, size - remaining_bytes);
+  }
+}
+
 void TraceProfiler::AllocateBuffer(Thread* thread) {
   if (!art_flags::always_enable_profile_code()) {
     return;
@@ -162,8 +182,6 @@ void RecordMethodsOnThreadStack(Thread* thread, uintptr_t* method_trace_buffer)
   uint64_t init_time = TimestampCounter::GetNanoTime(TimestampCounter::GetTimestamp());
   // Set the lsb to 0 to indicate method entry.
   init_time = init_time & ~1;
-  std::ostringstream os;
-  os << "Thread:" << thread->GetTid() << "\n";
   size_t index = kAlwaysOnTraceBufSize - 1;
   for (auto smi = visitor.stack_methods_.rbegin(); smi != visitor.stack_methods_.rend(); smi++) {
     method_trace_buffer[index--] = reinterpret_cast<uintptr_t>(*smi);
@@ -477,38 +495,60 @@ void TraceProfiler::TraceTimeElapsed() {
   TraceProfiler::StopLocked();
 }
 
-void TraceProfiler::DumpLongRunningMethodBuffer(uint32_t thread_id,
-                                                uintptr_t* method_trace_entries,
-                                                uintptr_t* end_trace_entries,
-                                                std::unordered_set<ArtMethod*>& methods,
-                                                std::ostringstream& os) {
-  os << "Thread:" << thread_id << "\n";
-  for (uintptr_t* ptr = method_trace_entries + kAlwaysOnTraceBufSize - 1;
-       ptr >= end_trace_entries;) {
-    uintptr_t entry = *ptr;
-    if (entry == 0x1) {
-      // This is the special placeholder exit we added to record all methods on the stack at the
-      // start of the trace. Just ignore this entry.
-    } else if (entry & 0x1) {
-      // Method exit
-      os << "<-" << TimestampCounter::GetNanoTime(entry & ~1) << "\n";
+size_t TraceProfiler::DumpLongRunningMethodBuffer(uint32_t thread_id,
+                                                  uintptr_t* method_trace_entries,
+                                                  uintptr_t* end_trace_entries,
+                                                  uint8_t* buffer,
+                                                  std::unordered_set<ArtMethod*>& methods) {
+  // Encode header at the end once we compute the number of records.
+  uint8_t* curr_buffer_ptr = buffer + kAlwaysOnTraceHeaderSize;
+
+  int num_records = 0;
+  uintptr_t prev_timestamp_action_encoding = 0;
+  uintptr_t prev_method_ptr = 0;
+  size_t end_index = end_trace_entries - method_trace_entries;
+  for (size_t i = kAlwaysOnTraceBufSize - 1; i >= end_index;) {
+    uintptr_t event = method_trace_entries[i--];
+    bool is_method_exit = event & 0x1;
+    uint64_t timestamp_action_encoding;
+    uintptr_t method_ptr;
+    if (is_method_exit) {
+      // Method exit. We only have timestamp here.
+      timestamp_action_encoding = event & ~1;
     } else {
-      // Method entry
-      ArtMethod* method = reinterpret_cast<ArtMethod*>(entry);
-      ptr--;
-      CHECK(ptr >= end_trace_entries);
-      os << "->" << method << " " << TimestampCounter::GetNanoTime(*ptr) << "\n";
-      methods.insert(method);
+      // method entry
+      method_ptr = event;
+      timestamp_action_encoding = method_trace_entries[i--];
     }
-    ptr--;
+
+    int64_t timestamp_action_diff = timestamp_action_encoding - prev_timestamp_action_encoding;
+    int64_t method_diff;
+    if (!is_method_exit) {
+      method_diff = method_ptr - prev_method_ptr;
+      ArtMethod* method = reinterpret_cast<ArtMethod*>(method_ptr);
+      methods.insert(method);
+      prev_method_ptr = method_ptr;
+      curr_buffer_ptr = EncodeSignedLeb128(curr_buffer_ptr, method_diff);
+    }
+    curr_buffer_ptr = EncodeSignedLeb128(curr_buffer_ptr, timestamp_action_diff);
+    num_records++;
+    prev_timestamp_action_encoding = timestamp_action_encoding;
   }
+
+  // Fill in header information:
+  // 1 byte of header identifier
+  // 4 bytes of thread_id
+  // 3 bytes of number of records
+  buffer[0] = kEntryHeaderV2;
+  Append4LE(buffer + 1, thread_id);
+  Append3LE(buffer + 5, num_records);
+  return curr_buffer_ptr - buffer;
 }
 
 void TraceProfiler::FlushBufferAndRecordTraceEvent(ArtMethod* method,
                                                    Thread* thread,
                                                    bool is_entry) {
   uint64_t timestamp = TimestampCounter::GetTimestamp();
-  std::ostringstream os;
   std::unordered_set<ArtMethod*> traced_methods;
   uintptr_t* method_trace_entries = thread->GetMethodTraceBuffer();
   DCHECK(method_trace_entries != nullptr);
@@ -529,19 +569,28 @@ void TraceProfiler::FlushBufferAndRecordTraceEvent(ArtMethod* method,
 
   size_t num_occupied_entries = (processed_events_ptr - *method_trace_curr_ptr);
   size_t index = kAlwaysOnTraceBufSize;
+
+  std::unique_ptr<uint8_t> buffer_ptr(new uint8_t[kBufSizeForEncodedData]);
+  size_t num_bytes;
   if (num_occupied_entries > kMaxEntriesAfterFlush) {
     // If we don't have sufficient space just record a placeholder exit and flush all the existing
     // events. We have accurate timestamps to filter out these events in a post-processing step.
     // This would happen only when we have very deeply (~1024) nested code.
-    DumpLongRunningMethodBuffer(
-        thread->GetTid(), method_trace_entries, *method_trace_curr_ptr, traced_methods, os);
+    num_bytes = DumpLongRunningMethodBuffer(thread->GetTid(),
+                                            method_trace_entries,
+                                            *method_trace_curr_ptr,
+                                            buffer_ptr.get(),
+                                            traced_methods);
 
     // Encode a placeholder exit event. This will be ignored when dumping the methods.
     method_trace_entries[--index] = 0x1;
   } else {
     // Flush all the entries till the method exit event.
-    DumpLongRunningMethodBuffer(
-        thread->GetTid(), method_trace_entries, processed_events_ptr, traced_methods, os);
+    num_bytes = DumpLongRunningMethodBuffer(thread->GetTid(),
+                                            method_trace_entries,
+                                            processed_events_ptr,
+                                            buffer_ptr.get(),
+                                            traced_methods);
 
     // Move the remaining events to the start of the buffer.
     for (uintptr_t* ptr = processed_events_ptr - 1; ptr >= *method_trace_curr_ptr; ptr--) {
@@ -569,7 +618,7 @@ void TraceProfiler::FlushBufferAndRecordTraceEvent(ArtMethod* method,
   *method_trace_curr_ptr = method_trace_entries + index;
 
   MutexLock mu(Thread::Current(), *Locks::trace_lock_);
-  trace_data_->AppendToLongRunningMethods(os.str());
+  trace_data_->AppendToLongRunningMethods(buffer_ptr.get(), num_bytes);
   trace_data_->AddTracedMethods(traced_methods);
   trace_data_->AddTracedThread(thread);
 }
@@ -590,10 +639,20 @@ void TraceDumpCheckpoint::Run(Thread* thread) {
     std::unordered_set<ArtMethod*> traced_methods;
     if (trace_data_->GetTraceType() == LowOverheadTraceType::kLongRunningMethods) {
       uintptr_t* method_trace_curr_ptr = *(thread->GetTraceBufferCurrEntryPtr());
-      std::ostringstream os;
-      TraceProfiler::DumpLongRunningMethodBuffer(
-          thread->GetTid(), method_trace_entries, method_trace_curr_ptr, traced_methods, os);
-      trace_data_->AppendToLongRunningMethods(os.str());
+      std::unique_ptr<uint8_t> buffer_ptr(new uint8_t[kBufSizeForEncodedData]);
+      size_t num_bytes = TraceProfiler::DumpLongRunningMethodBuffer(thread->GetTid(),
+                                                                    method_trace_entries,
+                                                                    method_trace_curr_ptr,
+                                                                    buffer_ptr.get(),
+                                                                    traced_methods);
+      MutexLock mu(Thread::Current(), trace_file_lock_);
+      if (trace_file_ != nullptr) {
+        if (!trace_file_->WriteFully(buffer_ptr.get(), num_bytes)) {
+          PLOG(WARNING) << "Failed streaming a tracing event.";
+        }
+      } else {
+        trace_data_->AppendToLongRunningMethods(buffer_ptr.get(), num_bytes);
+      }
     } else {
       std::unique_ptr<uint8_t> buffer_ptr(new uint8_t[kBufSizeForEncodedData]);
       size_t num_bytes = TraceProfiler::DumpBuffer(
@@ -632,8 +691,12 @@ void TraceData::DumpData(std::ostringstream& os) {
     // We cannot dump method information while holding trace_lock_, since we have to also
     // acquire a mutator lock. Take a snapshot of thread and method information.
     MutexLock mu(Thread::Current(), trace_data_lock_);
-    if (long_running_methods_.length() > 0) {
-      os << long_running_methods_;
+    if (curr_buffer_ != nullptr) {
+      for (size_t i = 0; i < overflow_buffers_.size(); i++) {
+        os.write(reinterpret_cast<char*>(overflow_buffers_[i].get()), kBufSizeForEncodedData);
+      }
+
+      os.write(reinterpret_cast<char*>(curr_buffer_.get()), curr_index_);
     }
 
     methods = traced_methods_;

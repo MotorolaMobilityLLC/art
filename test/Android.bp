@@ -88,6 +88,7 @@ cc_defaults {
     },
     // Tests aren't generally included in any APEX, but this is necessary to
     // avoid duplicate install rules for them by making them unavailable to platform.
+    // TODO(b/395617594): Figure out why this is necessary and remove it.
     apex_available: [
         "com.android.art.debug",
     ],
@@ -543,6 +544,9 @@ art_cc_defaults {
     defaults: ["art_test_defaults"],
     header_libs: ["libnativebridge-headers"],
     srcs: ["115-native-bridge/nativebridge.cc"],
+    // TODO(b/395617594): This can be removed when apex_available is removed
+    // from art_test_defaults.
+    apex_available: ["//apex_available:platform"],
 }
 
 art_cc_test_library {
@@ -572,6 +576,9 @@ cc_defaults {
         "liblog",
         "libnativehelper",
     ],
+    // TODO(b/395617594): This can be removed when apex_available is removed
+    // from art_test_defaults.
+    apex_available: ["//apex_available:platform"],
 }
 
 art_cc_test_library {
@@ -815,6 +822,9 @@ art_cc_defaults {
         "slicer_no_rtti",
         "libz", // for slicer (using adler32).
     ],
+    // TODO(b/395617594): This can be removed when apex_available is removed
+    // from art_test_defaults.
+    apex_available: ["//apex_available:platform"],
 }
 
 art_cc_test_library {
@@ -844,6 +854,9 @@ art_cc_defaults {
         "libtistress-srcs",
     ],
     static_libs: ["slicer_no_rtti"],
+    // TODO(b/395617594): This can be removed when apex_available is removed
+    // from art_test_defaults.
+    apex_available: ["//apex_available:platform"],
 }
 
 art_cc_test_library {
@@ -955,6 +968,9 @@ cc_defaults {
             shared_libs: ["libdl_android"],
         },
     },
+    // TODO(b/395617594): This can be removed when apex_available is removed
+    // from art_test_defaults.
+    apex_available: ["//apex_available:platform"],
 }
 
 art_cc_test_library {
@@ -999,6 +1015,9 @@ cc_defaults {
         "liblog",
         "libnativehelper",
     ],
+    // TODO(b/395617594): This can be removed when apex_available is removed
+    // from art_test_defaults.
+    apex_available: ["//apex_available:platform"],
 }
 
 art_cc_test_library {

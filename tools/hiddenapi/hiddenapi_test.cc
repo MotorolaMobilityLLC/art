@@ -178,7 +178,7 @@ class HiddenApiTest : public CommonRuntimeTest {
                                          const dex::ClassDef& class_def,
                                          const DexFile& dex_file) {
     ClassAccessor accessor(dex_file, class_def, /* parse hiddenapi flags */ true);
-    CHECK(accessor.HasClassData()) << "Class " << accessor.GetDescriptor() << " has no data";
+    CHECK(accessor.HasClassData()) << "Class " << accessor.GetDescriptorView() << " has no data";
 
     if (!accessor.HasHiddenapiClassData()) {
       return hiddenapi::ApiList::Sdk();
@@ -189,7 +189,7 @@ class HiddenApiTest : public CommonRuntimeTest {
       if (strcmp(name, dex_file.GetFieldName(fid)) == 0) {
         const uint32_t actual_visibility = field.GetAccessFlags() & kAccVisibilityFlags;
         CHECK_EQ(actual_visibility, expected_visibility)
-            << "Field " << name << " in class " << accessor.GetDescriptor();
+            << "Field " << name << " in class " << accessor.GetDescriptorView();
         return hiddenapi::ApiList(field.GetHiddenapiFlags());
       }
     }
@@ -205,7 +205,7 @@ class HiddenApiTest : public CommonRuntimeTest {
                                           const dex::ClassDef& class_def,
                                           const DexFile& dex_file) {
     ClassAccessor accessor(dex_file, class_def, /* parse hiddenapi flags */ true);
-    CHECK(accessor.HasClassData()) << "Class " << accessor.GetDescriptor() << " has no data";
+    CHECK(accessor.HasClassData()) << "Class " << accessor.GetDescriptorView() << " has no data";
 
     if (!accessor.HasHiddenapiClassData()) {
       return hiddenapi::ApiList::Sdk();
@@ -215,10 +215,10 @@ class HiddenApiTest : public CommonRuntimeTest {
       const dex::MethodId& mid = dex_file.GetMethodId(method.GetIndex());
       if (strcmp(name, dex_file.GetMethodName(mid)) == 0) {
         CHECK_EQ(expected_native, method.MemberIsNative())
-            << "Method " << name << " in class " << accessor.GetDescriptor();
+            << "Method " << name << " in class " << accessor.GetDescriptorView();
         const uint32_t actual_visibility = method.GetAccessFlags() & kAccVisibilityFlags;
         CHECK_EQ(actual_visibility, expected_visibility)
-            << "Method " << name << " in class " << accessor.GetDescriptor();
+            << "Method " << name << " in class " << accessor.GetDescriptorView();
         return hiddenapi::ApiList(method.GetHiddenapiFlags());
       }
     }

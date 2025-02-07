@@ -2701,7 +2701,13 @@ class JNI {
         // TODO: make this a hard register error in the future.
       }
 
-      if (is_class_loader_namespace_natively_bridged) {
+      // It is possible to link a class with native methods from a library loaded by
+      // a different classloader. In this case IsClassLoaderNamespaceNativelyBridged
+      // fails detect if native bridge is enabled and may return false.
+      // For this reason we always check method with native bridge (see b/393035780
+      // for details).
+      if (is_class_loader_namespace_natively_bridged ||
+          android::NativeBridgeIsNativeBridgeFunctionPointer(fnPtr)) {
         fnPtr = GenerateNativeBridgeTrampoline(fnPtr, m);
       }
       const void* final_function_ptr = class_linker->RegisterNative(soa.Self(), m, fnPtr);

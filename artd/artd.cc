@@ -1172,8 +1172,7 @@ ndk::ScopedAStatus Artd::dexopt(
   }
 
   AddBootImageFlags(args);
-  AddCompilerConfigFlags(
-      in_instructionSet, in_compilerFilter, in_priorityClass, in_dexoptOptions, args);
+  AddCompilerConfigFlags(in_instructionSet, in_compilerFilter, in_dexoptOptions, args);
   AddPerfConfigFlags(in_priorityClass, art_exec_args, args);
 
   // For being surfaced in crash reports on crashes.
@@ -1794,7 +1793,6 @@ void Artd::AddBootImageFlags(/*out*/ CmdlineBuilder& args) {
 
 void Artd::AddCompilerConfigFlags(const std::string& instruction_set,
                                   const std::string& compiler_filter,
-                                  PriorityClass priority_class,
                                   const DexoptOptions& dexopt_options,
                                   /*out*/ CmdlineBuilder& args) {
   args.Add("--instruction-set=%s", instruction_set);
@@ -1805,8 +1803,6 @@ void Artd::AddCompilerConfigFlags(const std::string& instruction_set,
 
   args.Add("--compiler-filter=%s", compiler_filter)
       .Add("--compilation-reason=%s", dexopt_options.compilationReason);
-
-  args.AddIf(priority_class >= PriorityClass::INTERACTIVE, "--compact-dex-level=none");
 
   args.AddIfNonEmpty("--max-image-block-size=%s",
                      props_->GetOrEmpty("dalvik.vm.dex2oat-max-image-block-size"))

@@ -334,7 +334,6 @@ class Artd : public aidl::com::android::server::art::BnArtd {
 
   void AddCompilerConfigFlags(const std::string& instruction_set,
                               const std::string& compiler_filter,
-                              aidl::com::android::server::art::PriorityClass priority_class,
                               const aidl::com::android::server::art::DexoptOptions& dexopt_options,
                               /*out*/ art::tools::CmdlineBuilder& args);
 

@@ -253,13 +253,16 @@ void ThreadList::Dump(std::ostream& os, bool dump_native_stack) {
     os << "DALVIK THREADS (" << list_.size() << "):\n";
   }
   if (self != nullptr) {
+    // Dump() can be called in any mutator lock state.
+    bool mutator_lock_held = Locks::mutator_lock_->IsSharedHeld(self);
     DumpCheckpoint checkpoint(dump_native_stack);
     // Acquire mutator lock separately for each thread, to avoid long runnable code sequence
     // without suspend checks.
-    size_t threads_running_checkpoint = RunCheckpoint(&checkpoint,
-                                                      nullptr,
-                                                      true,
-                                                      /* acquire_mutator_lock= */ true);
+    size_t threads_running_checkpoint =
+        RunCheckpoint(&checkpoint,
+                      nullptr,
+                      true,
+                      /* acquire_mutator_lock= */ !mutator_lock_held);
     if (threads_running_checkpoint != 0) {
       checkpoint.WaitForThreadsToRunThroughCheckpoint(threads_running_checkpoint);
     }

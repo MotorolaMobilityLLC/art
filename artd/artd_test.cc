@@ -811,7 +811,7 @@ TEST_F(ArtdTest, dexoptPriorityClassBoot) {
               DoExecAndReturnCode(WhenSplitBy("--",
                                               AllOf(Not(Contains(Flag("--set-task-profile=", _))),
                                                     Not(Contains(Flag("--set-priority=", _)))),
-                                              Contains(Flag("--compact-dex-level=", "none"))),
+                                              _),
                                   _,
                                   _))
       .WillOnce(Return(0));
@@ -825,7 +825,7 @@ TEST_F(ArtdTest, dexoptPriorityClassInteractive) {
                   WhenSplitBy("--",
                               AllOf(Contains(Flag("--set-task-profile=", "Dex2OatBootComplete")),
                                     Contains(Flag("--set-priority=", "background"))),
-                              Contains(Flag("--compact-dex-level=", "none"))),
+                              _),
                   _,
                   _))
       .WillOnce(Return(0));
@@ -839,7 +839,7 @@ TEST_F(ArtdTest, dexoptPriorityClassInteractiveFast) {
                   WhenSplitBy("--",
                               AllOf(Contains(Flag("--set-task-profile=", "Dex2OatBootComplete")),
                                     Contains(Flag("--set-priority=", "background"))),
-                              Contains(Flag("--compact-dex-level=", "none"))),
+                              _),
                   _,
                   _))
       .WillOnce(Return(0));
@@ -853,7 +853,7 @@ TEST_F(ArtdTest, dexoptPriorityClassBackground) {
                   WhenSplitBy("--",
                               AllOf(Contains(Flag("--set-task-profile=", "Dex2OatBackground")),
                                     Contains(Flag("--set-priority=", "background"))),
-                              Not(Contains(Flag("--compact-dex-level=", _)))),
+                              _),
                   _,
                   _))
       .WillOnce(Return(0));

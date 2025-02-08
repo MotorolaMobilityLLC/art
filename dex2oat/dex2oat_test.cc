@@ -1797,7 +1797,7 @@ TEST_F(Dex2oatTest, AppImageResolveStrings) {
           bool mutated_successfully = false;
           // Change the dex instructions to make an opcode that spans past the end of the code item.
           for (ClassAccessor accessor : dex->GetClasses()) {
-            if (accessor.GetDescriptor() == std::string("LStringLiterals$StartupClass;")) {
+            if (accessor.GetDescriptorView() == "LStringLiterals$StartupClass;") {
               classes.push_back(accessor.GetClassIdx());
             }
             for (const ClassAccessor::Method& method : accessor.GetMethods()) {

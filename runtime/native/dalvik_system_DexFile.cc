@@ -628,38 +628,6 @@ static jint GetDexOptNeeded(JNIEnv* env,
                                             downgrade);
 }
 
-static jstring DexFile_getDexFileStatus(JNIEnv* env,
-                                        jclass,
-                                        jstring javaFilename,
-                                        jstring javaInstructionSet) {
-  ScopedUtfChars filename(env, javaFilename);
-  if (env->ExceptionCheck()) {
-    return nullptr;
-  }
-
-  ScopedUtfChars instruction_set(env, javaInstructionSet);
-  if (env->ExceptionCheck()) {
-    return nullptr;
-  }
-
-  const InstructionSet target_instruction_set = GetInstructionSetFromString(
-      instruction_set.c_str());
-  if (target_instruction_set == InstructionSet::kNone) {
-    ScopedLocalRef<jclass> iae(env, env->FindClass("java/lang/IllegalArgumentException"));
-    std::string message(StringPrintf("Instruction set %s is invalid.", instruction_set.c_str()));
-    env->ThrowNew(iae.get(), message.c_str());
-    return nullptr;
-  }
-
-  // The API doesn't support passing a class loader context, so skip the class loader context check
-  // and assume that it's OK.
-  OatFileAssistant oat_file_assistant(filename.c_str(),
-                                      target_instruction_set,
-                                      /* context= */ nullptr,
-                                      /* load_executable= */ false);
-  return env->NewStringUTF(oat_file_assistant.GetStatusDump().c_str());
-}
-
 // Return an array specifying the optimization status of the given file.
 // The array specification is [compiler_filter, compiler_reason].
 static jobjectArray DexFile_getDexFileOptimizationStatus(JNIEnv* env,
@@ -1039,8 +1007,6 @@ static JNINativeMethod gMethods[] = {
         DexFile, getNonProfileGuidedCompilerFilter, "(Ljava/lang/String;)Ljava/lang/String;"),
     NATIVE_METHOD(DexFile, getSafeModeCompilerFilter, "(Ljava/lang/String;)Ljava/lang/String;"),
     NATIVE_METHOD(DexFile, isBackedByOatFile, "(Ljava/lang/Object;)Z"),
-    NATIVE_METHOD(
-        DexFile, getDexFileStatus, "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"),
     NATIVE_METHOD(DexFile,
                   getDexFileOutputPaths,
                   "(Ljava/lang/String;Ljava/lang/String;)[Ljava/lang/String;"),

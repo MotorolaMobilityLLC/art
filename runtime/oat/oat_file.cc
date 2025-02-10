@@ -1766,7 +1766,14 @@ bool ElfOatFile::ElfFileOpen(File* file,
 class OatFileBackedByVdex final : public OatFileBase {
  public:
   explicit OatFileBackedByVdex(const std::string& filename)
-      : OatFileBase(filename, /*executable=*/false) {}
+      : OatFileBase(filename, /*executable=*/false),
+        oat_header_(nullptr) {}
+
+  ~OatFileBackedByVdex() {
+    if (oat_header_ != nullptr) {
+      operator delete (oat_header_, oat_header_->GetHeaderSize());
+    }
+  }
 
   static OatFileBackedByVdex* Open(const std::vector<const DexFile*>& dex_files,
                                    std::unique_ptr<VdexFile>&& vdex_file,
@@ -1908,11 +1915,11 @@ class OatFileBackedByVdex final : public OatFileBase {
       store.Put(OatHeader::kClassPathKey, context->EncodeContextForOatFile(""));
     }
 
-    oat_header_.reset(OatHeader::Create(kRuntimeQuickCodeISA,
-                                        isa_features.get(),
-                                        number_of_dex_files,
-                                        &store));
-    const uint8_t* begin = reinterpret_cast<const uint8_t*>(oat_header_.get());
+    oat_header_ = OatHeader::Create(kRuntimeQuickCodeISA,
+                                    isa_features.get(),
+                                    number_of_dex_files,
+                                    &store);
+    const uint8_t* begin = reinterpret_cast<const uint8_t*>(oat_header_);
     SetBegin(begin);
     SetEnd(begin + oat_header_->GetHeaderSize());
   }
@@ -1955,7 +1962,7 @@ class OatFileBackedByVdex final : public OatFileBase {
   }
 
  private:
-  std::unique_ptr<OatHeader> oat_header_;
+  OatHeader* oat_header_;
 
   DISALLOW_COPY_AND_ASSIGN(OatFileBackedByVdex);
 };

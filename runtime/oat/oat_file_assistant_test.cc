@@ -828,10 +828,6 @@ TEST_P(OatFileAssistantTest, VdexUpToDateNoOdex) {
                                /*expected_location=*/OatFileAssistant::kLocationOdex,
                                /*expected_legacy_result=*/-OatFileAssistant::kDex2OatForFilter);
 
-  // Make sure we don't crash in this case when we dump the status. We don't
-  // care what the actual dumped value is.
-  oat_file_assistant.GetStatusDump();
-
   VerifyOptimizationStatus(dex_location,
                            default_context_.get(),
                            "verify",

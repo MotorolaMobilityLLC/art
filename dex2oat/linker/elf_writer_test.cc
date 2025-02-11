@@ -14,8 +14,13 @@
  * limitations under the License.
  */
 
+#include <gelf.h>
+#include <libelf.h>
 #include <sys/mman.h>  // For the PROT_NONE constant.
 
+#include <cstdint>
+
+#include "android-base/scopeguard.h"
 #include "base/file_utils.h"
 #include "base/mem_map.h"
 #include "base/unix_file/fd_file.h"
@@ -83,18 +88,38 @@ class ElfWriterTest : public CommonCompilerDriverTest {
   }
 };
 
-#define EXPECT_ELF_FILE_ADDRESS(ef, expected_value, symbol_name, build_map) \
-  do { \
-    void* addr = reinterpret_cast<void*>((ef)->FindSymbolAddress(SHT_DYNSYM, \
-                                                                 symbol_name, \
-                                                                 build_map)); \
-    EXPECT_NE(nullptr, addr); \
-    if ((expected_value) == nullptr) { \
-      (expected_value) = addr; \
-    }                        \
-    EXPECT_EQ(expected_value, addr); \
-    EXPECT_EQ(expected_value, (ef)->FindDynamicSymbolAddress(symbol_name)); \
-  } while (false)
+static void FindSymbolAddress(File* file, const char* symbol_name, /*out*/ uint8_t** addr) {
+  ASSERT_NE(elf_version(EV_CURRENT), EV_NONE) << "libelf initialization failed: " << elf_errmsg(-1);
+
+  Elf* elf = elf_begin(file->Fd(), ELF_C_READ, /*ref=*/nullptr);
+  ASSERT_NE(elf, nullptr) << elf_errmsg(-1);
+  auto elf_cleanup = android::base::make_scope_guard([&]() { elf_end(elf); });
+
+  Elf_Scn* dyn_scn = nullptr;
+  GElf_Shdr scn_hdr;
+  while ((dyn_scn = elf_nextscn(elf, dyn_scn)) != nullptr) {
+    ASSERT_EQ(gelf_getshdr(dyn_scn, &scn_hdr), &scn_hdr) << elf_errmsg(-1);
+    if (scn_hdr.sh_type == SHT_DYNSYM) {
+      break;
+    }
+  }
+  ASSERT_NE(dyn_scn, nullptr) << "Section SHT_DYNSYM not found";
+
+  Elf_Data* data = elf_getdata(dyn_scn, /*data=*/nullptr);
+
+  // Iterate through dynamic section entries.
+  for (int i = 0; i < scn_hdr.sh_size / scn_hdr.sh_entsize; i++) {
+    GElf_Sym sym;
+    ASSERT_EQ(gelf_getsym(data, i, &sym), &sym) << elf_errmsg(-1);
+    const char* name = elf_strptr(elf, scn_hdr.sh_link, sym.st_name);
+    if (strcmp(name, symbol_name) == 0) {
+      *addr = reinterpret_cast<uint8_t*>(sym.st_value);
+      break;
+    }
+  }
+
+  ASSERT_NE(*addr, nullptr) << "Symbol " << symbol_name << "not found";
+}
 
 TEST_F(ElfWriterTest, dlsym) {
   std::string elf_location = GetCoreOatLocation();
@@ -102,42 +127,19 @@ TEST_F(ElfWriterTest, dlsym) {
   LOG(INFO) << "elf_filename=" << elf_filename;
 
   UnreserveImageSpace();
-  void* dl_oatdata = nullptr;
-  void* dl_oatexec = nullptr;
-  void* dl_oatlastword = nullptr;
+  uint8_t* dl_oatdata = nullptr;
+  uint8_t* dl_oatexec = nullptr;
+  uint8_t* dl_oatlastword = nullptr;
 
   std::unique_ptr<File> file(OS::OpenFileForReading(elf_filename.c_str()));
   ASSERT_TRUE(file.get() != nullptr) << elf_filename;
+  ASSERT_NO_FATAL_FAILURE(FindSymbolAddress(file.get(), "oatdata", &dl_oatdata));
+  ASSERT_NO_FATAL_FAILURE(FindSymbolAddress(file.get(), "oatexec", &dl_oatexec));
+  ASSERT_NO_FATAL_FAILURE(FindSymbolAddress(file.get(), "oatlastword", &dl_oatlastword));
   {
     std::string error_msg;
     std::unique_ptr<ElfFile> ef(ElfFile::Open(file.get(),
-                                              /*writable=*/ false,
-                                              /*program_header_only=*/ false,
                                               /*low_4gb=*/false,
-                                              &error_msg));
-    CHECK(ef.get() != nullptr) << error_msg;
-    EXPECT_ELF_FILE_ADDRESS(ef, dl_oatdata, "oatdata", false);
-    EXPECT_ELF_FILE_ADDRESS(ef, dl_oatexec, "oatexec", false);
-    EXPECT_ELF_FILE_ADDRESS(ef, dl_oatlastword, "oatlastword", false);
-  }
-  {
-    std::string error_msg;
-    std::unique_ptr<ElfFile> ef(ElfFile::Open(file.get(),
-                                              /*writable=*/ false,
-                                              /*program_header_only=*/ false,
-                                              /*low_4gb=*/ false,
-                                              &error_msg));
-    CHECK(ef.get() != nullptr) << error_msg;
-    EXPECT_ELF_FILE_ADDRESS(ef, dl_oatdata, "oatdata", true);
-    EXPECT_ELF_FILE_ADDRESS(ef, dl_oatexec, "oatexec", true);
-    EXPECT_ELF_FILE_ADDRESS(ef, dl_oatlastword, "oatlastword", true);
-  }
-  {
-    std::string error_msg;
-    std::unique_ptr<ElfFile> ef(ElfFile::Open(file.get(),
-                                              /*writable=*/ false,
-                                              /*program_header_only=*/ true,
-                                              /*low_4gb=*/ false,
                                               &error_msg));
     CHECK(ef.get() != nullptr) << error_msg;
     size_t size;
@@ -146,21 +148,44 @@ TEST_F(ElfWriterTest, dlsym) {
     MemMap reservation = MemMap::MapAnonymous("ElfWriterTest#dlsym reservation",
                                               RoundUp(size, MemMap::GetPageSize()),
                                               PROT_NONE,
-                                              /*low_4gb=*/ true,
+                                              /*low_4gb=*/true,
                                               &error_msg);
     CHECK(reservation.IsValid()) << error_msg;
     uint8_t* base = reservation.Begin();
     success =
-        ef->Load(file.get(), /*executable=*/ false, /*low_4gb=*/ false, &reservation, &error_msg);
+        ef->Load(file.get(), /*executable=*/false, /*low_4gb=*/false, &reservation, &error_msg);
     CHECK(success) << error_msg;
     CHECK(!reservation.IsValid());
     EXPECT_EQ(reinterpret_cast<uintptr_t>(dl_oatdata) + reinterpret_cast<uintptr_t>(base),
-        reinterpret_cast<uintptr_t>(ef->FindDynamicSymbolAddress("oatdata")));
+              reinterpret_cast<uintptr_t>(ef->FindDynamicSymbolAddress("oatdata")));
     EXPECT_EQ(reinterpret_cast<uintptr_t>(dl_oatexec) + reinterpret_cast<uintptr_t>(base),
-        reinterpret_cast<uintptr_t>(ef->FindDynamicSymbolAddress("oatexec")));
+              reinterpret_cast<uintptr_t>(ef->FindDynamicSymbolAddress("oatexec")));
     EXPECT_EQ(reinterpret_cast<uintptr_t>(dl_oatlastword) + reinterpret_cast<uintptr_t>(base),
-        reinterpret_cast<uintptr_t>(ef->FindDynamicSymbolAddress("oatlastword")));
+              reinterpret_cast<uintptr_t>(ef->FindDynamicSymbolAddress("oatlastword")));
   }
+}
+
+static void HasSection(File* file, const char* section_name, /*out*/ bool* result) {
+  ASSERT_NE(elf_version(EV_CURRENT), EV_NONE) << "libelf initialization failed: " << elf_errmsg(-1);
+
+  Elf* elf = elf_begin(file->Fd(), ELF_C_READ, /*ref=*/nullptr);
+  ASSERT_NE(elf, nullptr) << elf_errmsg(-1);
+  auto elf_cleanup = android::base::make_scope_guard([&]() { elf_end(elf); });
+
+  size_t shstrndx = 0;
+  ASSERT_EQ(elf_getshdrstrndx(elf, &shstrndx), 0) << elf_errmsg(-1);
+
+  Elf_Scn* dyn_scn = nullptr;
+  GElf_Shdr scn_hdr;
+  while ((dyn_scn = elf_nextscn(elf, dyn_scn)) != nullptr) {
+    ASSERT_EQ(gelf_getshdr(dyn_scn, &scn_hdr), &scn_hdr) << elf_errmsg(-1);
+    const char* name = elf_strptr(elf, shstrndx, scn_hdr.sh_name);
+    if (strcmp(name, section_name) == 0) {
+      *result = true;
+      return;
+    }
+  }
+  *result = false;
 }
 
 TEST_F(ElfWriterTest, CheckBuildIdPresent) {
@@ -170,16 +195,10 @@ TEST_F(ElfWriterTest, CheckBuildIdPresent) {
 
   std::unique_ptr<File> file(OS::OpenFileForReading(elf_filename.c_str()));
   ASSERT_TRUE(file.get() != nullptr);
-  {
-    std::string error_msg;
-    std::unique_ptr<ElfFile> ef(ElfFile::Open(file.get(),
-                                              /*writable=*/ false,
-                                              /*program_header_only=*/ false,
-                                              /*low_4gb=*/ false,
-                                              &error_msg));
-    CHECK(ef.get() != nullptr) << error_msg;
-    EXPECT_TRUE(ef->HasSection(".note.gnu.build-id"));
-  }
+
+  bool result;
+  ASSERT_NO_FATAL_FAILURE(HasSection(file.get(), ".note.gnu.build-id", &result));
+  EXPECT_TRUE(result);
 }
 
 // Check that dynamic sections (.dynamic, .dynsym, .dynstr, .hash) in an oat file are formed
@@ -231,9 +250,7 @@ TEST_F(ElfWriterTest, CheckDynamicSection) {
 
     std::string error_msg;
     std::unique_ptr<ElfFile> ef(ElfFile::Open(tmp_oat.GetFile(),
-                                              /*writable=*/ false,
-                                              /*program_header_only=*/ true,
-                                              /*low_4gb=*/ false,
+                                              /*low_4gb=*/false,
                                               &error_msg));
     ASSERT_NE(ef.get(), nullptr) << error_msg;
     ASSERT_TRUE(ef->Load(tmp_oat.GetFile(),

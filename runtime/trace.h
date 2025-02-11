@@ -132,8 +132,11 @@ static constexpr int kSummaryHeaderV2 = 3;
 
 // Packet sizes for the new method tracing format.
 static constexpr uint16_t kTraceHeaderLengthV2 = 32;
-static constexpr uint16_t kTraceRecordSizeSingleClockV2 = 6;
-static constexpr uint16_t kTraceRecordSizeDualClockV2 = kTraceRecordSizeSingleClockV2 + 2;
+// We have 2 entries (method pointer and timestamp) which are uleb encoded. Each
+// of them is a maximum of 64 bits which would need 10 bytes at the maximum.
+static constexpr uint16_t kMaxTraceRecordSizeSingleClockV2 = 20;
+// We will have one more timestamp of 64 bits if we use a dual clock source.
+static constexpr uint16_t kMaxTraceRecordSizeDualClockV2 = kMaxTraceRecordSizeSingleClockV2 + 10;
 static constexpr uint16_t kEntryHeaderSizeV2 = 12;
 
 static constexpr uint16_t kTraceVersionSingleClockV2 = 4;
@@ -306,18 +309,14 @@ class TraceWriter {
                             bool has_thread_cpu_clock,
                             bool has_wall_clock);
 
-  void FlushEntriesFormatV2(uintptr_t* method_trace_entries,
-                            size_t tid,
-                            size_t num_records,
-                            size_t* current_index,
-                            uint8_t* init_buffer_ptr) REQUIRES(trace_writer_lock_);
+  size_t FlushEntriesFormatV2(uintptr_t* method_trace_entries, size_t tid, size_t num_records)
+      REQUIRES(trace_writer_lock_);
 
-  void FlushEntriesFormatV1(uintptr_t* method_trace_entries,
-                            size_t tid,
-                            const std::unordered_map<ArtMethod*, std::string>& method_infos,
-                            size_t end_offset,
-                            size_t* current_index,
-                            uint8_t* buffer_ptr) REQUIRES(trace_writer_lock_);
+  size_t FlushEntriesFormatV1(uintptr_t* method_trace_entries,
+                              size_t tid,
+                              const std::unordered_map<ArtMethod*, std::string>& method_infos,
+                              size_t end_offset,
+                              size_t num_records) REQUIRES(trace_writer_lock_);
   // Get a 32-bit id for the method and specify if the method hasn't been seen before. If this is
   // the first time we see this method record information (like method name, declaring class etc.,)
   // about the method.
@@ -347,7 +346,7 @@ class TraceWriter {
 
   // Encodes the header for the events block. This assumes that there is enough space reserved to
   // encode the entry.
-  void EncodeEventBlockHeader(uint8_t* ptr, uint32_t thread_id, uint32_t num_records)
+  void EncodeEventBlockHeader(uint8_t* ptr, uint32_t thread_id, uint32_t num_records, uint32_t size)
       REQUIRES(trace_writer_lock_);
 
   // Ensures there is sufficient space in the buffer to record the requested_size. If there is not

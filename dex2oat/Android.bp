@@ -410,6 +410,9 @@ art_cc_library_static {
 
 art_cc_defaults {
     name: "art_dex2oat_tests_defaults",
+    defaults: [
+        "elfutils_transitive_defaults", // For libelf
+    ],
     device_common_data: [
         ":art-gtest-jars-AbstractMethod",
         ":art-gtest-jars-ArrayClassWithUnresolvedComponent",
@@ -506,6 +509,7 @@ art_cc_defaults {
         "liblog",
     ],
     static_libs: [
+        "libelf",
         "libgmock",
         "liblz4", // libart(d)-dex2oat dependency; must be repeated here since it's a static lib.
     ],

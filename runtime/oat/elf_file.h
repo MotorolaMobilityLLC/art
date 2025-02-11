@@ -41,10 +41,8 @@ using ElfFileImpl64 = ElfFileImpl<ElfTypes64>;
 class ElfFile {
  public:
   static ElfFile* Open(File* file,
-                       bool writable,
-                       bool program_header_only,
                        bool low_4gb,
-                       /*out*/std::string* error_msg);
+                       /*out*/ std::string* error_msg);
 
   ~ElfFile();
 
@@ -52,8 +50,8 @@ class ElfFile {
   bool Load(File* file,
             bool executable,
             bool low_4gb,
-            /*inout*/MemMap* reservation,
-            /*out*/std::string* error_msg);
+            /*inout*/ MemMap* reservation,
+            /*out*/ std::string* error_msg);
 
   const uint8_t* FindDynamicSymbolAddress(const std::string& symbol_name) const;
 
@@ -67,31 +65,17 @@ class ElfFile {
 
   const std::string& GetFilePath() const;
 
-  bool GetSectionOffsetAndSize(const char* section_name, uint64_t* offset, uint64_t* size) const;
-
-  bool HasSection(const std::string& name) const;
-
-  uint64_t FindSymbolAddress(unsigned section_type,
-                             const std::string& symbol_name,
-                             bool build_map);
-
   bool GetLoadedSize(size_t* size, std::string* error_msg) const;
 
   size_t GetElfSegmentAlignmentFromFile() const;
 
   const uint8_t* GetBaseAddress() const;
 
-  bool Is64Bit() const {
-    return elf64_.get() != nullptr;
-  }
+  bool Is64Bit() const { return elf64_.get() != nullptr; }
 
-  ElfFileImpl32* GetImpl32() const {
-    return elf32_.get();
-  }
+  ElfFileImpl32* GetImpl32() const { return elf32_.get(); }
 
-  ElfFileImpl64* GetImpl64() const {
-    return elf64_.get();
-  }
+  ElfFileImpl64* GetImpl64() const { return elf64_.get(); }
 
  private:
   explicit ElfFile(ElfFileImpl32* elf32);

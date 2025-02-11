@@ -68,7 +68,6 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
                                                   size_t mmap_size,
                                                   bool mmap_reuse,
                                                   const std::string& vdex_filename,
-                                                  bool writable,
                                                   bool low_4gb,
                                                   std::string* error_msg) {
   ScopedTrace trace(("VdexFile::OpenAtAddress " + vdex_filename).c_str());
@@ -77,15 +76,9 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
     return nullptr;
   }
 
-  std::unique_ptr<File> vdex_file;
-  if (writable) {
-    vdex_file.reset(OS::OpenFileReadWrite(vdex_filename.c_str()));
-  } else {
-    vdex_file.reset(OS::OpenFileForReading(vdex_filename.c_str()));
-  }
+  std::unique_ptr<File> vdex_file(OS::OpenFileForReading(vdex_filename.c_str()));
   if (vdex_file == nullptr) {
-    *error_msg = "Could not open file " + vdex_filename +
-                 (writable ? " for read/write" : "for reading");
+    *error_msg = "Could not open file for reading";
     return nullptr;
   }
 
@@ -101,7 +94,6 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
                        vdex_file->Fd(),
                        vdex_length,
                        vdex_filename,
-                       writable,
                        low_4gb,
                        error_msg);
 }
@@ -112,7 +104,6 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
                                                   int file_fd,
                                                   size_t vdex_length,
                                                   const std::string& vdex_filename,
-                                                  bool writable,
                                                   bool low_4gb,
                                                   std::string* error_msg) {
   if (mmap_addr != nullptr && mmap_size < vdex_length) {
@@ -123,18 +114,17 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
   }
   CHECK_IMPLIES(mmap_reuse, mmap_addr != nullptr);
   // Start as PROT_WRITE so we can mprotect back to it if we want to.
-  MemMap mmap = MemMap::MapFileAtAddress(
-      mmap_addr,
-      vdex_length,
-      PROT_READ | PROT_WRITE,
-      writable ? MAP_SHARED : MAP_PRIVATE,
-      file_fd,
-      /* start= */ 0u,
-      low_4gb,
-      vdex_filename.c_str(),
-      mmap_reuse,
-      /* reservation= */ nullptr,
-      error_msg);
+  MemMap mmap = MemMap::MapFileAtAddress(mmap_addr,
+                                         vdex_length,
+                                         PROT_READ | PROT_WRITE,
+                                         MAP_PRIVATE,
+                                         file_fd,
+                                         /*start=*/0u,
+                                         low_4gb,
+                                         vdex_filename.c_str(),
+                                         mmap_reuse,
+                                         /*reservation=*/nullptr,
+                                         error_msg);
   if (!mmap.IsValid()) {
     *error_msg = "Failed to mmap file " + vdex_filename + " : " + *error_msg;
     return nullptr;

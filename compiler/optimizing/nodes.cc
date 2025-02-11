@@ -1332,17 +1332,19 @@ void HInstructionList::InsertInstructionAfter(HInstruction* instruction, HInstru
 }
 
 void HInstructionList::RemoveInstruction(HInstruction* instruction) {
-  if (instruction->previous_ != nullptr) {
-    instruction->previous_->next_ = instruction->next_;
-  }
-  if (instruction->next_ != nullptr) {
-    instruction->next_->previous_ = instruction->previous_;
-  }
+  DCHECK_EQ(instruction->previous_ == nullptr, instruction == first_instruction_);
+  DCHECK_EQ(instruction->next_ == nullptr, instruction == last_instruction_);
+
   if (instruction == first_instruction_) {
     first_instruction_ = instruction->next_;
+  } else {
+    instruction->previous_->next_ = instruction->next_;
   }
+
   if (instruction == last_instruction_) {
     last_instruction_ = instruction->previous_;
+  } else {
+    instruction->next_->previous_ = instruction->previous_;
   }
 }
 

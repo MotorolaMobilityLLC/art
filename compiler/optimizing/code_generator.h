@@ -703,7 +703,6 @@ class CodeGenerator : public DeletableArenaObject<kArenaAllocCodeGenerator> {
         return EmitReadBarrier()
             ? LocationSummary::kCallOnSlowPath
             : LocationSummary::kNoCall;
-        break;
       default:
         DCHECK(!load->NeedsEnvironment());
         return LocationSummary::kNoCall;

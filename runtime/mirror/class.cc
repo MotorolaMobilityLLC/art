@@ -1454,7 +1454,7 @@ const char* Class::GetDescriptor(std::string* storage) {
     // the contents of the String are also constant. See ReadBarrierOption.
     ObjPtr<mirror::String> name = klass->GetName<kVerifyNone, kWithoutReadBarrier>();
     DCHECK(name != nullptr);
-    *storage = DotToDescriptor(name->ToModifiedUtf8().c_str());
+    *storage = DotToDescriptor(name->ToModifiedUtf8());
   } else {
     const char* descriptor;
     if (klass->IsPrimitive()) {
@@ -1829,7 +1829,7 @@ bool Class::ProxyDescriptorEquals(ObjPtr<mirror::Class> match) {
   }
 
   // Note: Proxy descriptor should never match a non-proxy descriptor but ART does not enforce that.
-  std::string descriptor = DotToDescriptor(name->ToModifiedUtf8().c_str());
+  std::string descriptor = DotToDescriptor(name->ToModifiedUtf8());
   std::string_view match_descriptor =
       match->GetDexFile().GetTypeDescriptorView(match->GetDexTypeIndex());
   return descriptor == match_descriptor;

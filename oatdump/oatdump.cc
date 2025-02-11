@@ -700,7 +700,7 @@ class OatDumper {
         return false;
       }
       for (ClassAccessor accessor : dex_file->GetClasses()) {
-        const char* descriptor = accessor.GetDescriptor();
+        std::string_view descriptor = accessor.GetDescriptorView();
         if (DescriptorToDot(descriptor).find(options_.class_filter_) == std::string::npos) {
           continue;
         }
@@ -934,7 +934,7 @@ class OatDumper {
     ScopedIndentation indent1(&vios);
     for (ClassAccessor accessor : dex_file->GetClasses()) {
       // TODO: Support regex
-      const char* descriptor = accessor.GetDescriptor();
+      std::string_view descriptor = accessor.GetDescriptorView();
       if (DescriptorToDot(descriptor).find(options_.class_filter_) == std::string::npos) {
         continue;
       }
@@ -942,12 +942,10 @@ class OatDumper {
       const uint16_t class_def_index = accessor.GetClassDefIndex();
       uint32_t oat_class_offset = oat_dex_file.GetOatClassOffset(class_def_index);
       const OatFile::OatClass oat_class = oat_dex_file.GetOatClass(class_def_index);
-      os << StringPrintf("%zd: %s (offset=0x%08zx) (type_idx=%d)",
-                         static_cast<ssize_t>(class_def_index),
-                         descriptor,
-                         AdjustOffset(oat_class_offset),
-                         accessor.GetClassIdx().index_)
-         << " (" << oat_class.GetStatus() << ")" << " (" << oat_class.GetType() << ")\n";
+      os << static_cast<ssize_t>(class_def_index) << ": " << descriptor << " (offset=0x"
+         << StringPrintf("%08zx", AdjustOffset(oat_class_offset))
+         << ") (type_idx=" << accessor.GetClassIdx().index_
+         << ") (" << oat_class.GetStatus() << ")" << " (" << oat_class.GetType() << ")\n";
       // TODO: include bitmap here if type is kOatClassSomeCompiled?
       if (options_.list_classes_) {
         continue;
@@ -2932,7 +2930,7 @@ class IMTDumper {
     if (class_name[0] == 'L') {
       descriptor = class_name;
     } else {
-      descriptor = DotToDescriptor(class_name.c_str());
+      descriptor = DotToDescriptor(class_name);
     }
 
     ObjPtr<mirror::Class> klass = runtime->GetClassLinker()->FindClass(

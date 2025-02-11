@@ -238,10 +238,6 @@ class OatFileAssistant {
   // the OatFileAssistant object.
   std::unique_ptr<OatFile> GetBestOatFile();
 
-  // Returns a human readable description of the status of the code for the
-  // dex file. The returned description is for debugging purposes only.
-  std::string GetStatusDump();
-
   // Computes the optimization status of the given dex file. The result is
   // returned via the two output parameters.
   //   - out_odex_location: the location of the (best) odex that will be used

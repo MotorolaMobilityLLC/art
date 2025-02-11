@@ -45,12 +45,7 @@ class ElfFile {
                        bool program_header_only,
                        bool low_4gb,
                        /*out*/std::string* error_msg);
-  // Open with specific mmap flags, Always maps in the whole file, not just the
-  // program header sections.
-  static ElfFile* Open(File* file,
-                       int mmap_prot,
-                       int mmap_flags,
-                       /*out*/std::string* error_msg);
+
   ~ElfFile();
 
   // Load segments into memory based on PT_LOAD program headers
@@ -85,10 +80,6 @@ class ElfFile {
   size_t GetElfSegmentAlignmentFromFile() const;
 
   const uint8_t* GetBaseAddress() const;
-
-  // Strip an ELF file of unneeded debugging information.
-  // Returns true on success, false on failure.
-  static bool Strip(File* file, std::string* error_msg);
 
   bool Is64Bit() const {
     return elf64_.get() != nullptr;

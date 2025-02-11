@@ -100,6 +100,10 @@ class ZipArchive {
 
   ZipEntry* Find(const char* name, std::string* error_msg) const;
 
+  // Same as Find, but doesn't return an error message if the entry is not found. The callers
+  // should expect that the returned pointer is null while the error message is empty.
+  ZipEntry* FindOrNull(const char* name, std::string* error_msg) const;
+
   ~ZipArchive();
 
  private:
@@ -109,6 +113,8 @@ class ZipArchive {
                                         std::string* error_msg);
 
   explicit ZipArchive(ZipArchiveHandle handle) : handle_(handle) {}
+
+  ZipEntry* FindImpl(const char* name, bool allow_entry_not_found, std::string* error_msg) const;
 
   friend class ZipEntry;
 

@@ -66,8 +66,8 @@ template <LockOp kLockOp>
 inline void RegisterLine::SetRegisterType(uint32_t vdst, const RegType& new_type) {
   DCHECK(!new_type.IsLowHalf());
   DCHECK(!new_type.IsHighHalf());
-  // Should only keep locks for reference types.
-  DCHECK_IMPLIES(kLockOp == LockOp::kKeep, new_type.IsReferenceTypes());
+  // Should only keep locks for reference types, or when copying a conflict with `move-object`.
+  DCHECK_IMPLIES(kLockOp == LockOp::kKeep, new_type.IsReferenceTypes() || new_type.IsConflict());
   SetRegisterTypeImpl<kLockOp>(vdst, new_type.GetId());
 }
 
@@ -126,41 +126,14 @@ inline void RegisterLine::SetRegisterTypeForNewInstance(uint32_t vdst,
   allocation_dex_pcs_[vdst] = dex_pc;
 }
 
-inline void RegisterLine::CopyRegister1(MethodVerifier* verifier, uint32_t vdst, uint32_t vsrc,
-                                 TypeCategory cat) {
-  DCHECK(cat == kTypeCategory1nr || cat == kTypeCategoryRef);
-  const RegType& type = GetRegisterType(verifier, vsrc);
-  if (type.IsLowHalf() || type.IsHighHalf()) {
-    verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "Expected category1 register type not '"
-        << type << "'";
-    return;
-  }
-  // FIXME: If `vdst == vsrc`, we clear locking information before we try to copy it below. Adding
-  // `move-object v1, v1` to the middle of `OK.runStraightLine()` in run-test 088 makes it fail.
-  SetRegisterType<LockOp::kClear>(vdst, type);
-  if (!type.IsConflict() &&                                  // Allow conflicts to be copied around.
-      ((cat == kTypeCategory1nr && !type.IsCategory1Types()) ||
-       (cat == kTypeCategoryRef && !type.IsReferenceTypes()))) {
-    verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "copy1 v" << vdst << "<-v" << vsrc << " type=" << type
-                                                 << " cat=" << static_cast<int>(cat);
-  } else if (cat == kTypeCategoryRef) {
-    CopyRegToLockDepth(vdst, vsrc);
-    if (allocation_dex_pcs_ != nullptr) {
-      // Copy allocation dex pc for uninitialized types. (Copy unused value for other types.)
-      allocation_dex_pcs_[vdst] = allocation_dex_pcs_[vsrc];
-    }
-  }
-}
-
-inline void RegisterLine::CopyRegister2(MethodVerifier* verifier, uint32_t vdst, uint32_t vsrc) {
-  const RegType& type_l = GetRegisterType(verifier, vsrc);
-  const RegType& type_h = GetRegisterType(verifier, vsrc + 1);
-
-  if (!type_l.CheckWidePair(type_h)) {
-    verifier->Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "copy2 v" << vdst << "<-v" << vsrc
-                                                 << " type=" << type_l << "/" << type_h;
-  } else {
-    SetRegisterTypeWide(vdst, type_l, type_h);
+inline void RegisterLine::CopyReference(uint32_t vdst, uint32_t vsrc, const RegType& type) {
+  DCHECK_EQ(type.GetId(), GetRegisterTypeId(vsrc));
+  DCHECK(type.IsConflict() || type.IsReferenceTypes());
+  SetRegisterType<LockOp::kKeep>(vdst, type);
+  CopyRegToLockDepth(vdst, vsrc);
+  if (allocation_dex_pcs_ != nullptr) {
+    // Copy allocation dex pc for uninitialized types. (Copy unused value for other types.)
+    allocation_dex_pcs_[vdst] = allocation_dex_pcs_[vsrc];
   }
 }
 

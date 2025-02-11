@@ -80,20 +80,6 @@ ElfFileImpl<ElfTypes>* ElfFileImpl<ElfTypes>::Open(File* file,
 }
 
 template <typename ElfTypes>
-ElfFileImpl<ElfTypes>* ElfFileImpl<ElfTypes>::Open(File* file,
-                                                   int prot,
-                                                   int flags,
-                                                   bool low_4gb,
-                                                   std::string* error_msg) {
-  std::unique_ptr<ElfFileImpl<ElfTypes>> elf_file(
-      new ElfFileImpl<ElfTypes>(file, (prot & PROT_WRITE) != 0, /* program_header_only= */ false));
-  if (!elf_file->Setup(file, prot, flags, low_4gb, error_msg)) {
-    return nullptr;
-  }
-  return elf_file.release();
-}
-
-template <typename ElfTypes>
 bool ElfFileImpl<ElfTypes>::Setup(File* file,
                                   int prot,
                                   int flags,
@@ -960,66 +946,6 @@ typename ElfTypes::Dyn& ElfFileImpl<ElfTypes>::GetDynamic(Elf_Word i) const {
 }
 
 template <typename ElfTypes>
-typename ElfTypes::Dyn* ElfFileImpl<ElfTypes>::FindDynamicByType(Elf_Sword type) const {
-  for (Elf_Word i = 0; i < GetDynamicNum(); i++) {
-    Elf_Dyn* dyn = &GetDynamic(i);
-    if (dyn->d_tag == type) {
-      return dyn;
-    }
-  }
-  return nullptr;
-}
-
-template <typename ElfTypes>
-typename ElfTypes::Word ElfFileImpl<ElfTypes>::FindDynamicValueByType(Elf_Sword type) const {
-  Elf_Dyn* dyn = FindDynamicByType(type);
-  if (dyn == nullptr) {
-    return 0;
-  } else {
-    return dyn->d_un.d_val;
-  }
-}
-
-template <typename ElfTypes>
-typename ElfTypes::Rel* ElfFileImpl<ElfTypes>::GetRelSectionStart(Elf_Shdr& section_header) const {
-  CHECK(SHT_REL == section_header.sh_type) << file_path_ << " " << section_header.sh_type;
-  return reinterpret_cast<Elf_Rel*>(Begin() + section_header.sh_offset);
-}
-
-template <typename ElfTypes>
-typename ElfTypes::Word ElfFileImpl<ElfTypes>::GetRelNum(Elf_Shdr& section_header) const {
-  CHECK(SHT_REL == section_header.sh_type) << file_path_ << " " << section_header.sh_type;
-  CHECK_NE(0U, section_header.sh_entsize) << file_path_;
-  return section_header.sh_size / section_header.sh_entsize;
-}
-
-template <typename ElfTypes>
-typename ElfTypes::Rel& ElfFileImpl<ElfTypes>::GetRel(Elf_Shdr& section_header, Elf_Word i) const {
-  CHECK(SHT_REL == section_header.sh_type) << file_path_ << " " << section_header.sh_type;
-  CHECK_LT(i, GetRelNum(section_header)) << file_path_;
-  return *(GetRelSectionStart(section_header) + i);
-}
-
-template <typename ElfTypes>
-typename ElfTypes::Rela* ElfFileImpl<ElfTypes>::GetRelaSectionStart(Elf_Shdr& section_header) const {
-  CHECK(SHT_RELA == section_header.sh_type) << file_path_ << " " << section_header.sh_type;
-  return reinterpret_cast<Elf_Rela*>(Begin() + section_header.sh_offset);
-}
-
-template <typename ElfTypes>
-typename ElfTypes::Word ElfFileImpl<ElfTypes>::GetRelaNum(Elf_Shdr& section_header) const {
-  CHECK(SHT_RELA == section_header.sh_type) << file_path_ << " " << section_header.sh_type;
-  return section_header.sh_size / section_header.sh_entsize;
-}
-
-template <typename ElfTypes>
-typename ElfTypes::Rela& ElfFileImpl<ElfTypes>::GetRela(Elf_Shdr& section_header, Elf_Word i) const {
-  CHECK(SHT_RELA == section_header.sh_type) << file_path_ << " " << section_header.sh_type;
-  CHECK_LT(i, GetRelaNum(section_header)) << file_path_;
-  return *(GetRelaSectionStart(section_header) + i);
-}
-
-template <typename ElfTypes>
 bool ElfFileImpl<ElfTypes>::GetLoadedSize(size_t* size, std::string* error_msg) const {
   uint8_t* vaddr_begin;
   return GetLoadedAddressRange(&vaddr_begin, size, error_msg);
@@ -1383,107 +1309,6 @@ typename ElfTypes::Shdr* ElfFileImpl<ElfTypes>::FindSectionByName(
   return nullptr;
 }
 
-template <typename ElfTypes>
-bool ElfFileImpl<ElfTypes>::Strip(File* file, std::string* error_msg) {
-  // ELF files produced by MCLinker look roughly like this
-  //
-  // +------------+
-  // | Elf_Ehdr   | contains number of Elf_Shdr and offset to first
-  // +------------+
-  // | Elf_Phdr   | program headers
-  // | Elf_Phdr   |
-  // | ...        |
-  // | Elf_Phdr   |
-  // +------------+
-  // | section    | mixture of needed and unneeded sections
-  // +------------+
-  // | section    |
-  // +------------+
-  // | ...        |
-  // +------------+
-  // | section    |
-  // +------------+
-  // | Elf_Shdr   | section headers
-  // | Elf_Shdr   |
-  // | ...        | contains offset to section start
-  // | Elf_Shdr   |
-  // +------------+
-  //
-  // To strip:
-  // - leave the Elf_Ehdr and Elf_Phdr values in place.
-  // - walk the sections making a new set of Elf_Shdr section headers for what we want to keep
-  // - move the sections are keeping up to fill in gaps of sections we want to strip
-  // - write new Elf_Shdr section headers to end of file, updating Elf_Ehdr
-  // - truncate rest of file
-  //
-
-  std::vector<Elf_Shdr> section_headers;
-  std::vector<Elf_Word> section_headers_original_indexes;
-  section_headers.reserve(GetSectionHeaderNum());
-
-
-  Elf_Shdr* string_section = GetSectionNameStringSection();
-  CHECK(string_section != nullptr);
-  for (Elf_Word i = 0; i < GetSectionHeaderNum(); i++) {
-    Elf_Shdr* sh = GetSectionHeader(i);
-    CHECK(sh != nullptr);
-    const char* name = GetString(*string_section, sh->sh_name);
-    if (name == nullptr) {
-      CHECK_EQ(0U, i);
-      section_headers.push_back(*sh);
-      section_headers_original_indexes.push_back(0);
-      continue;
-    }
-    std::string_view name_sv(name);
-    if (name_sv.starts_with(".debug") || (name_sv == ".strtab") || (name_sv == ".symtab")) {
-      continue;
-    }
-    section_headers.push_back(*sh);
-    section_headers_original_indexes.push_back(i);
-  }
-  CHECK_NE(0U, section_headers.size());
-  CHECK_EQ(section_headers.size(), section_headers_original_indexes.size());
-
-  // section 0 is the null section, sections start at offset of first section
-  CHECK(GetSectionHeader(1) != nullptr);
-  Elf_Off offset = GetSectionHeader(1)->sh_offset;
-  for (size_t i = 1; i < section_headers.size(); i++) {
-    Elf_Shdr& new_sh = section_headers[i];
-    Elf_Shdr* old_sh = GetSectionHeader(section_headers_original_indexes[i]);
-    CHECK(old_sh != nullptr);
-    CHECK_EQ(new_sh.sh_name, old_sh->sh_name);
-    if (old_sh->sh_addralign > 1) {
-      offset = RoundUp(offset, old_sh->sh_addralign);
-    }
-    if (old_sh->sh_offset == offset) {
-      // already in place
-      offset += old_sh->sh_size;
-      continue;
-    }
-    // shift section earlier
-    memmove(Begin() + offset,
-            Begin() + old_sh->sh_offset,
-            old_sh->sh_size);
-    new_sh.sh_offset = offset;
-    offset += old_sh->sh_size;
-  }
-
-  Elf_Off shoff = offset;
-  size_t section_headers_size_in_bytes = section_headers.size() * sizeof(Elf_Shdr);
-  memcpy(Begin() + offset, &section_headers[0], section_headers_size_in_bytes);
-  offset += section_headers_size_in_bytes;
-
-  GetHeader().e_shnum = section_headers.size();
-  GetHeader().e_shoff = shoff;
-  int result = ftruncate(file->Fd(), offset);
-  if (result != 0) {
-    *error_msg = StringPrintf("Failed to truncate while stripping ELF file: '%s': %s",
-                              file->GetPath().c_str(), strerror(errno));
-    return false;
-  }
-  return true;
-}
-
 // Explicit instantiations
 template class ElfFileImpl<ElfTypes32>;
 template class ElfFileImpl<ElfTypes64>;
@@ -1535,55 +1360,6 @@ ElfFile* ElfFile::Open(File* file,
     ElfFileImpl32* elf_file_impl = ElfFileImpl32::Open(file,
                                                        writable,
                                                        program_header_only,
-                                                       low_4gb,
-                                                       error_msg);
-    if (elf_file_impl == nullptr) {
-      return nullptr;
-    }
-    return new ElfFile(elf_file_impl);
-  } else {
-    *error_msg = StringPrintf("Failed to find expected EI_CLASS value %d or %d in %s, found %d",
-                              ELFCLASS32, ELFCLASS64,
-                              file->GetPath().c_str(),
-                              header[EI_CLASS]);
-    return nullptr;
-  }
-}
-
-ElfFile* ElfFile::Open(File* file, int mmap_prot, int mmap_flags, /*out*/std::string* error_msg) {
-  // low_4gb support not required for this path.
-  constexpr bool low_4gb = false;
-  if (file->GetLength() < EI_NIDENT) {
-    *error_msg = StringPrintf("File %s is too short to be a valid ELF file",
-                              file->GetPath().c_str());
-    return nullptr;
-  }
-  MemMap map = MemMap::MapFile(EI_NIDENT,
-                               PROT_READ,
-                               MAP_PRIVATE,
-                               file->Fd(),
-                               /* start= */ 0,
-                               low_4gb,
-                               file->GetPath().c_str(),
-                               error_msg);
-  if (!map.IsValid() || map.Size() != EI_NIDENT) {
-    return nullptr;
-  }
-  uint8_t* header = map.Begin();
-  if (header[EI_CLASS] == ELFCLASS64) {
-    ElfFileImpl64* elf_file_impl = ElfFileImpl64::Open(file,
-                                                       mmap_prot,
-                                                       mmap_flags,
-                                                       low_4gb,
-                                                       error_msg);
-    if (elf_file_impl == nullptr) {
-      return nullptr;
-    }
-    return new ElfFile(elf_file_impl);
-  } else if (header[EI_CLASS] == ELFCLASS32) {
-    ElfFileImpl32* elf_file_impl = ElfFileImpl32::Open(file,
-                                                       mmap_prot,
-                                                       mmap_flags,
                                                        low_4gb,
                                                        error_msg);
     if (elf_file_impl == nullptr) {
@@ -1689,18 +1465,5 @@ size_t ElfFile::GetElfSegmentAlignmentFromFile() const {
 }
 
 const uint8_t* ElfFile::GetBaseAddress() const { DELEGATE_TO_IMPL(GetBaseAddress); }
-
-bool ElfFile::Strip(File* file, std::string* error_msg) {
-  std::unique_ptr<ElfFile> elf_file(ElfFile::Open(file, true, false, /*low_4gb=*/false, error_msg));
-  if (elf_file.get() == nullptr) {
-    return false;
-  }
-
-  if (elf_file->elf64_.get() != nullptr) {
-    return elf_file->elf64_->Strip(file, error_msg);
-  } else {
-    return elf_file->elf32_->Strip(file, error_msg);
-  }
-}
 
 }  // namespace art

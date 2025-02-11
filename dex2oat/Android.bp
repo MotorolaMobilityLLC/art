@@ -37,7 +37,6 @@ art_cc_defaults {
         "driver/compiler_driver.cc",
         "interpreter/interpreter_switch_impl1.cc",
         "linker/code_info_table_deduper.cc",
-        "linker/elf_writer.cc",
         "linker/elf_writer_quick.cc",
         "linker/image_writer.cc",
         "linker/multi_oat_relative_patcher.cc",

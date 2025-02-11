@@ -836,6 +836,25 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
         << ", target index " << target_index;
   }
 
+  NO_INLINE void FailForCopyReference(uint32_t vdst, uint32_t vsrc, const RegType& type)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "copy-reference v" << vdst << "<-v" << vsrc << " type=" << type;
+  }
+
+  NO_INLINE void FailForCopyCat1(uint32_t vdst, uint32_t vsrc, const RegType& type)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "copy-cat1 v" << vdst << "<-v" << vsrc << " type=" << type;
+  }
+
+  NO_INLINE void FailForCopyCat2(
+      uint32_t vdst, uint32_t vsrc, const RegType& type_l, const RegType& type_h)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    Fail(VERIFY_ERROR_BAD_CLASS_HARD)
+        << "copy-cat2 v" << vdst << "<-v" << vsrc << " type=" << type_l << "/" << type_h;
+  }
+
   NO_INLINE void FailForRegisterType(uint32_t vsrc,
                                      const RegType& check_type,
                                      const RegType& src_type,
@@ -867,6 +886,60 @@ class MethodVerifierImpl : public ::art::verifier::MethodVerifier {
       REQUIRES_SHARED(Locks::mutator_lock_) {
     FailForRegisterTypeWide(
         vsrc, reg_types_.GetFromId(src_type_id), reg_types_.GetFromId(src_type_id_h));
+  }
+
+  ALWAYS_INLINE inline bool VerifyCopyReference(uint32_t vdst, uint32_t vsrc)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    const RegType& type = work_line_->GetRegisterType(this, vsrc);
+    // Allow conflicts to be copied around.
+    if (UNLIKELY(!type.IsConflict() && !type.IsReferenceTypes())) {
+      FailForCopyReference(vdst, vsrc, type);
+      return false;
+    }
+    work_line_->CopyReference(vdst, vsrc, type);
+    return true;
+  }
+
+  ALWAYS_INLINE inline bool VerifyCopyCat1(uint32_t vdst, uint32_t vsrc)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    uint16_t src_type_id = work_line_->GetRegisterTypeId(vsrc);
+    if (UNLIKELY(src_type_id >= RegTypeCache::NumberOfRegKindCacheIds()) ||
+        UNLIKELY(RegTypeCache::RegKindForId(src_type_id) != RegType::kConflict &&
+                 !RegType::IsCategory1Types(RegTypeCache::RegKindForId(src_type_id)))) {
+      const RegType& type = reg_types_.GetFromId(src_type_id);
+      DCHECK(!type.IsConflict() && !type.IsCategory1Types()) << type;
+      FailForCopyCat1(vdst, vsrc, type);
+      return false;
+    }
+    RegType::Kind kind = RegTypeCache::RegKindForId(src_type_id);
+    DCHECK(kind == RegType::kConflict || RegType::IsCategory1Types(kind)) << kind;
+    work_line_->SetRegisterType(vdst, kind);
+    return true;
+  }
+
+  ALWAYS_INLINE inline bool VerifyCopyCat2(uint32_t vdst, uint32_t vsrc)
+      REQUIRES_SHARED(Locks::mutator_lock_) {
+    uint16_t src_type_id_l = work_line_->GetRegisterTypeId(vsrc);
+    uint16_t src_type_id_h = work_line_->GetRegisterTypeId(vsrc + 1);
+    auto to_high_id = [](uint16_t low_id) ALWAYS_INLINE {
+      RegType::Kind low_kind = RegTypeCache::RegKindForId(low_id);
+      DCHECK(RegType::IsLowHalf(low_kind));
+      return RegTypeCache::IdForRegKind(RegType::ToHighHalf(low_kind));
+    };
+    if (UNLIKELY(src_type_id_l >= RegTypeCache::NumberOfRegKindCacheIds()) ||
+        UNLIKELY(!RegType::IsLowHalf(RegTypeCache::RegKindForId(src_type_id_l))) ||
+        UNLIKELY(src_type_id_h != to_high_id(src_type_id_l))) {
+      const RegType& type_l = reg_types_.GetFromId(src_type_id_l);
+      const RegType& type_h = reg_types_.GetFromId(src_type_id_h);
+      DCHECK(!type_l.CheckWidePair(type_h));
+      FailForCopyCat2(vdst, vsrc, type_l, type_h);
+      return false;
+    }
+    DCHECK(reg_types_.GetFromId(src_type_id_l).CheckWidePair(reg_types_.GetFromId(src_type_id_h)));
+    work_line_->SetRegisterTypeWide(vdst,
+                                    RegTypeCache::RegKindForId(src_type_id_l),
+                                    RegTypeCache::RegKindForId(src_type_id_h));
+    return true;
   }
 
   ALWAYS_INLINE inline bool VerifyRegisterType(uint32_t vsrc, const RegType& check_type)
@@ -2664,35 +2737,49 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       break;
 
     case Instruction::MOVE:
-      work_line_->CopyRegister1(
-          this, inst->VRegA_12x(inst_data), inst->VRegB_12x(inst_data), kTypeCategory1nr);
+      if (!VerifyCopyCat1(inst->VRegA_12x(inst_data), inst->VRegB_12x(inst_data))) {
+        return false;
+      }
       break;
     case Instruction::MOVE_FROM16:
-      work_line_->CopyRegister1(
-          this, inst->VRegA_22x(inst_data), inst->VRegB_22x(), kTypeCategory1nr);
+      if (!VerifyCopyCat1(inst->VRegA_22x(inst_data), inst->VRegB_22x())) {
+        return false;
+      }
       break;
     case Instruction::MOVE_16:
-      work_line_->CopyRegister1(this, inst->VRegA_32x(), inst->VRegB_32x(), kTypeCategory1nr);
+      if (!VerifyCopyCat1(inst->VRegA_32x(), inst->VRegB_32x())) {
+        return false;
+      }
       break;
     case Instruction::MOVE_WIDE:
-      work_line_->CopyRegister2(this, inst->VRegA_12x(inst_data), inst->VRegB_12x(inst_data));
+      if (!VerifyCopyCat2(inst->VRegA_12x(inst_data), inst->VRegB_12x(inst_data))) {
+        return false;
+      }
       break;
     case Instruction::MOVE_WIDE_FROM16:
-      work_line_->CopyRegister2(this, inst->VRegA_22x(inst_data), inst->VRegB_22x());
+      if (!VerifyCopyCat2(inst->VRegA_22x(inst_data), inst->VRegB_22x())) {
+        return false;
+      }
       break;
     case Instruction::MOVE_WIDE_16:
-      work_line_->CopyRegister2(this, inst->VRegA_32x(), inst->VRegB_32x());
+      if (!VerifyCopyCat2(inst->VRegA_32x(), inst->VRegB_32x())) {
+        return false;
+      }
       break;
     case Instruction::MOVE_OBJECT:
-      work_line_->CopyRegister1(
-          this, inst->VRegA_12x(inst_data), inst->VRegB_12x(inst_data), kTypeCategoryRef);
+      if (!VerifyCopyReference(inst->VRegA_12x(inst_data), inst->VRegB_12x(inst_data))) {
+        return false;
+      }
       break;
     case Instruction::MOVE_OBJECT_FROM16:
-      work_line_->CopyRegister1(
-          this, inst->VRegA_22x(inst_data), inst->VRegB_22x(), kTypeCategoryRef);
+      if (!VerifyCopyReference(inst->VRegA_22x(inst_data), inst->VRegB_22x())) {
+        return false;
+      }
       break;
     case Instruction::MOVE_OBJECT_16:
-      work_line_->CopyRegister1(this, inst->VRegA_32x(), inst->VRegB_32x(), kTypeCategoryRef);
+      if (!VerifyCopyReference(inst->VRegA_32x(), inst->VRegB_32x())) {
+        return false;
+      }
       break;
 
     /*
@@ -2882,8 +2969,14 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
       work_line_->SetRegisterType<LockOp::kClear>(
           inst->VRegA_21c(inst_data), reg_types_.JavaLangInvokeMethodType());
       break;
-    case Instruction::MONITOR_ENTER:
-      work_line_->PushMonitor(this, inst->VRegA_11x(inst_data), work_insn_idx_);
+    case Instruction::MONITOR_ENTER: {
+      uint32_t vreg = inst->VRegA_11x(inst_data);
+      const RegType& reg_type = work_line_->GetRegisterType(this, vreg);
+      if (!reg_type.IsReferenceTypes()) {
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "monitor-enter on non-object (" << reg_type << ")";
+        return false;
+      }
+      work_line_->PushMonitor(this, vreg, reg_type, work_insn_idx_);
       // Check whether the previous instruction is a move-object with vAA as a source, creating
       // untracked lock aliasing.
       if (0 != work_insn_idx_ && !GetInstructionFlags(work_insn_idx_).IsBranchTarget()) {
@@ -2896,13 +2989,10 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
           case Instruction::MOVE_OBJECT:
           case Instruction::MOVE_OBJECT_16:
           case Instruction::MOVE_OBJECT_FROM16:
-            if (prev_inst.VRegB() == inst->VRegA_11x(inst_data)) {
+            if (static_cast<uint32_t>(prev_inst.VRegB()) == vreg) {
               // Redo the copy. This won't change the register types, but update the lock status
               // for the aliased register.
-              work_line_->CopyRegister1(this,
-                                        prev_inst.VRegA(),
-                                        prev_inst.VRegB(),
-                                        kTypeCategoryRef);
+              work_line_->CopyReference(prev_inst.VRegA(), vreg, reg_type);
             }
             break;
 
@@ -2931,16 +3021,12 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
             }
 
             // Update the lock status for the aliased register.
-            if (prev_inst.VRegA() == inst->VRegA_11x(inst_data)) {
-              work_line_->CopyRegister1(this,
-                                        prev2_inst.VRegA(),
-                                        inst->VRegA_11x(inst_data),
-                                        kTypeCategoryRef);
-            } else if (prev2_inst.VRegA() == inst->VRegA_11x(inst_data)) {
-              work_line_->CopyRegister1(this,
-                                        prev_inst.VRegA(),
-                                        inst->VRegA_11x(inst_data),
-                                        kTypeCategoryRef);
+            uint32_t prev_inst_vregA = prev_inst.VRegA_21c(prev_inst.Fetch16(0));
+            uint32_t prev2_inst_vregA = prev2_inst.VRegA_21c(prev2_inst.Fetch16(0));
+            if (prev_inst_vregA == vreg) {
+              work_line_->CopyReference(prev2_inst_vregA, vreg, reg_type);
+            } else if (prev2_inst_vregA == vreg) {
+              work_line_->CopyReference(prev_inst_vregA, vreg, reg_type);
             }
             break;
           }
@@ -2950,7 +3036,8 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
         }
       }
       break;
-    case Instruction::MONITOR_EXIT:
+    }
+    case Instruction::MONITOR_EXIT: {
       /*
        * monitor-exit instructions are odd. They can throw exceptions,
        * but when they do they act as if they succeeded and the PC is
@@ -2972,8 +3059,15 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
        * "live" so we still need to check it.
        */
       opcode_flags &= ~Instruction::kThrow;
-      work_line_->PopMonitor(this, inst->VRegA_11x(inst_data));
+      uint32_t vreg = inst->VRegA_11x(inst_data);
+      const RegType& reg_type = work_line_->GetRegisterType(this, vreg);
+      if (!reg_type.IsReferenceTypes()) {
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "monitor-exit on non-object (" << reg_type << ")";
+        return false;
+      }
+      work_line_->PopMonitor(this, vreg, reg_type);
       break;
+    }
     case Instruction::CHECK_CAST:
     case Instruction::INSTANCE_OF: {
       /*

@@ -1739,6 +1739,13 @@ void HGraphVisitor::VisitNonPhiInstructions(HBasicBlock* block) {
   }
 }
 
+void HGraphVisitor::VisitNonPhiInstructionsHandleChanges(HBasicBlock* block) {
+  for (HInstructionIteratorHandleChanges it(block->GetInstructions()); !it.Done(); it.Advance()) {
+    DCHECK(!it.Current()->IsPhi());
+    it.Current()->Accept(this);
+  }
+}
+
 HConstant* HTypeConversion::TryStaticEvaluation() const { return TryStaticEvaluation(GetInput()); }
 
 HConstant* HTypeConversion::TryStaticEvaluation(HInstruction* input) const {

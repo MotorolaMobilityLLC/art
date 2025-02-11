@@ -316,7 +316,7 @@ void ReferenceTypePropagation::RTPVisitor::VisitBasicBlock(HBasicBlock* block) {
 
   // Handle instructions. Since RTP may add HBoundType instructions just after the
   // last visited instruction, use `HInstructionIteratorHandleChanges` iterator.
-  VisitNonPhiInstructions(block);
+  VisitNonPhiInstructionsHandleChanges(block);
 
   // Add extra nodes to bound types.
   BoundTypeForIfNotNull(block);

@@ -8399,6 +8399,7 @@ class HGraphVisitor : public ValueObject {
  protected:
   void VisitPhis(HBasicBlock* block);
   void VisitNonPhiInstructions(HBasicBlock* block);
+  void VisitNonPhiInstructionsHandleChanges(HBasicBlock* block);
 
   OptimizingCompilerStats* stats_;
 

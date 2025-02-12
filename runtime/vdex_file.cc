@@ -18,6 +18,7 @@
 
 #include <sys/mman.h>  // For the PROT_* and MAP_* constants.
 #include <sys/stat.h>  // for mkdir()
+#include <sys/types.h>
 
 #include <memory>
 #include <unordered_set>
@@ -92,6 +93,7 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
                        mmap_size,
                        mmap_reuse,
                        vdex_file->Fd(),
+                       /*start=*/0,
                        vdex_length,
                        vdex_filename,
                        low_4gb,
@@ -102,6 +104,7 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
                                                   size_t mmap_size,
                                                   bool mmap_reuse,
                                                   int file_fd,
+                                                  off_t start,
                                                   size_t vdex_length,
                                                   const std::string& vdex_filename,
                                                   bool low_4gb,
@@ -119,7 +122,7 @@ std::unique_ptr<VdexFile> VdexFile::OpenAtAddress(uint8_t* mmap_addr,
                                          PROT_READ | PROT_WRITE,
                                          MAP_PRIVATE,
                                          file_fd,
-                                         /*start=*/0u,
+                                         start,
                                          low_4gb,
                                          vdex_filename.c_str(),
                                          mmap_reuse,
@@ -163,6 +166,39 @@ std::unique_ptr<VdexFile> VdexFile::OpenFromDm(const std::string& filename,
   if (vdex_file->HasDexSection()) {
     *error_msg = "The dex metadata is not allowed to contain dex files";
     android_errorWriteLog(0x534e4554, "178055795");  // Report to SafetyNet.
+    return nullptr;
+  }
+  return vdex_file;
+}
+
+std::unique_ptr<VdexFile> VdexFile::OpenFromDm(const std::string& filename,
+                                               uint8_t* vdex_begin_,
+                                               uint8_t* vdex_end_,
+                                               std::string* error_msg) {
+  std::string vdex_filename = filename + OatFile::kZipSeparator + kVdexNameInDmFile;
+  // This overload of `OpenFromDm` is for loading both odex and vdex. We need to map the vdex at the
+  // address required by the odex, so the vdex must be uncompressed and page-aligned.
+  // To load vdex only, use the other overload.
+  FileWithRange vdex_file_with_range = OS::OpenFileDirectlyOrFromZip(
+      vdex_filename, OatFile::kZipSeparator, /*alignment=*/MemMap::GetPageSize(), error_msg);
+  if (vdex_file_with_range.file == nullptr) {
+    return nullptr;
+  }
+  std::unique_ptr<VdexFile> vdex_file =
+      VdexFile::OpenAtAddress(vdex_begin_,
+                              vdex_end_ - vdex_begin_,
+                              /*mmap_reuse=*/vdex_begin_ != nullptr,
+                              vdex_file_with_range.file->Fd(),
+                              vdex_file_with_range.start,
+                              vdex_file_with_range.length,
+                              vdex_filename,
+                              /*low_4gb=*/false,
+                              error_msg);
+  if (vdex_file == nullptr) {
+    return nullptr;
+  }
+  if (vdex_file->HasDexSection()) {
+    *error_msg = "The dex metadata is not allowed to contain dex files";
     return nullptr;
   }
   return vdex_file;

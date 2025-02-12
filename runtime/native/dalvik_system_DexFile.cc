@@ -883,8 +883,7 @@ static jobjectArray DexFile_getDexFileOutputPaths(JNIEnv* env,
       for (const OatDexFile* oat_dex_file : oat_dex_files) {
         if (DexFileLoader::GetBaseLocation(oat_dex_file->GetDexFileLocation()) ==
                 filename.c_str()) {
-          oat_filename = GetSystemImageFilename(oat_file->GetLocation().c_str(),
-                                                target_instruction_set);
+          oat_filename = oat_file->GetLocation();
           is_vdex_only = oat_file->IsBackedByVdexOnly();
           break;
         }

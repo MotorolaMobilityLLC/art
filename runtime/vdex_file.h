@@ -191,7 +191,6 @@ class VdexFile {
                                                         size_t mmap_size,
                                                         bool mmap_reuse,
                                                         const std::string& vdex_filename,
-                                                        bool writable,
                                                         bool low_4gb,
                                                         std::string* error_msg);
 
@@ -203,40 +202,24 @@ class VdexFile {
                                                         int file_fd,
                                                         size_t vdex_length,
                                                         const std::string& vdex_filename,
-                                                        bool writable,
                                                         bool low_4gb,
                                                         std::string* error_msg);
 
   // Returns nullptr if the vdex file cannot be opened or is not valid.
   static std::unique_ptr<VdexFile> Open(const std::string& vdex_filename,
-                                        bool writable,
                                         bool low_4gb,
                                         std::string* error_msg) {
-    return OpenAtAddress(nullptr,
-                         0,
-                         false,
-                         vdex_filename,
-                         writable,
-                         low_4gb,
-                         error_msg);
+    return OpenAtAddress(nullptr, 0, false, vdex_filename, low_4gb, error_msg);
   }
 
   // Returns nullptr if the vdex file cannot be opened or is not valid.
   static std::unique_ptr<VdexFile> Open(int file_fd,
                                         size_t vdex_length,
                                         const std::string& vdex_filename,
-                                        bool writable,
                                         bool low_4gb,
                                         std::string* error_msg) {
-    return OpenAtAddress(nullptr,
-                         0,
-                         false,
-                         file_fd,
-                         vdex_length,
-                         vdex_filename,
-                         writable,
-                         low_4gb,
-                         error_msg);
+    return OpenAtAddress(
+        nullptr, 0, false, file_fd, vdex_length, vdex_filename, low_4gb, error_msg);
   }
 
   EXPORT static std::unique_ptr<VdexFile> OpenFromDm(const std::string& filename,

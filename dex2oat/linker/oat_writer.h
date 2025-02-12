@@ -517,7 +517,7 @@ class OatWriter {
   std::vector<std::unique_ptr<art::OatDexFile>> type_lookup_table_oat_dex_files_;
 
   // data to write
-  std::unique_ptr<OatHeader> oat_header_;
+  OatHeader* oat_header_;
   dchecked_vector<OatDexFile> oat_dex_files_;
   dchecked_vector<OatClassHeader> oat_class_headers_;
   dchecked_vector<OatClass> oat_classes_;

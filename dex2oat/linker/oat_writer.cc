@@ -655,6 +655,9 @@ void OatWriter::PrepareLayout(MultiOatRelativePatcher* relative_patcher) {
 }
 
 OatWriter::~OatWriter() {
+  if (oat_header_ != nullptr) {
+    operator delete (oat_header_, oat_header_->GetHeaderSize());
+  }
 }
 
 class OatWriter::DexMethodVisitor {
@@ -1977,11 +1980,11 @@ size_t OatWriter::InitOatHeader(uint32_t num_dex_files,
   // when dex2oat was compiled. We have seen cases where they got out of sync.
   constexpr std::array<uint8_t, 4> dex2oat_oat_version = OatHeader::kOatVersion;
   OatHeader::CheckOatVersion(dex2oat_oat_version);
-  oat_header_.reset(OatHeader::Create(GetCompilerOptions().GetInstructionSet(),
-                                      GetCompilerOptions().GetInstructionSetFeatures(),
-                                      num_dex_files,
-                                      key_value_store,
-                                      oat_data_offset_));
+  oat_header_ = OatHeader::Create(GetCompilerOptions().GetInstructionSet(),
+                                  GetCompilerOptions().GetInstructionSetFeatures(),
+                                  num_dex_files,
+                                  key_value_store,
+                                  oat_data_offset_);
   size_oat_header_ += sizeof(OatHeader);
   size_oat_header_key_value_store_ += oat_header_->GetHeaderSize() - sizeof(OatHeader);
   return oat_header_->GetHeaderSize();
@@ -2750,7 +2753,7 @@ bool OatWriter::WriteHeader(OutputStream* out) {
 
   // Update checksum with header data.
   DCHECK_EQ(oat_header_->GetChecksum(), 0u);  // For checksum calculation.
-  const uint8_t* header_begin = reinterpret_cast<const uint8_t*>(oat_header_.get());
+  const uint8_t* header_begin = reinterpret_cast<const uint8_t*>(oat_header_);
   const uint8_t* header_end = oat_header_->GetKeyValueStore() + oat_header_->GetKeyValueStoreSize();
   uint32_t old_checksum = oat_checksum_;
   oat_checksum_ = adler32(old_checksum, header_begin, header_end - header_begin);
@@ -2776,7 +2779,7 @@ bool OatWriter::WriteHeader(OutputStream* out) {
   }
   // Write the header.
   size_t header_size = oat_header_->GetHeaderSize();
-  if (!out->WriteFully(oat_header_.get(), header_size)) {
+  if (!out->WriteFully(oat_header_, header_size)) {
     PLOG(ERROR) << "Failed to write oat header to " << out->GetLocation();
     return false;
   }

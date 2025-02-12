@@ -37,7 +37,6 @@ art_cc_defaults {
         "driver/compiler_driver.cc",
         "interpreter/interpreter_switch_impl1.cc",
         "linker/code_info_table_deduper.cc",
-        "linker/elf_writer.cc",
         "linker/elf_writer_quick.cc",
         "linker/image_writer.cc",
         "linker/multi_oat_relative_patcher.cc",
@@ -411,6 +410,9 @@ art_cc_library_static {
 
 art_cc_defaults {
     name: "art_dex2oat_tests_defaults",
+    defaults: [
+        "elfutils_transitive_defaults", // For libelf
+    ],
     device_common_data: [
         ":art-gtest-jars-AbstractMethod",
         ":art-gtest-jars-ArrayClassWithUnresolvedComponent",
@@ -507,6 +509,7 @@ art_cc_defaults {
         "liblog",
     ],
     static_libs: [
+        "libelf",
         "libgmock",
         "liblz4", // libart(d)-dex2oat dependency; must be repeated here since it's a static lib.
     ],

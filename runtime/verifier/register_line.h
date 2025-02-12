@@ -78,13 +78,8 @@ class RegisterLine {
   // Create a register line of num_regs registers.
   static RegisterLine* Create(size_t num_regs, ArenaAllocator& allocator);
 
-  // Implement category-1 "move" instructions. Copy a 32-bit value from "vsrc" to "vdst".
-  void CopyRegister1(MethodVerifier* verifier, uint32_t vdst, uint32_t vsrc, TypeCategory cat)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  // Implement category-2 "move" instructions. Copy a 64-bit value from "vsrc" to "vdst". This
-  // copies both halves of the register.
-  void CopyRegister2(MethodVerifier* verifier, uint32_t vdst, uint32_t vsrc)
+  // Copy reference (or conflict) register.
+  void CopyReference(uint32_t vdst, uint32_t vsrc, const RegType& type)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Implement "move-result". Copy the category-1 value from the result register to another
@@ -205,11 +200,12 @@ class RegisterLine {
   ALWAYS_INLINE static size_t ComputeSize(size_t num_regs);
 
   // Verify/push monitor onto the monitor stack, locking the value in reg_idx at location insn_idx.
-  void PushMonitor(MethodVerifier* verifier, uint32_t reg_idx, int32_t insn_idx)
+  void PushMonitor(
+      MethodVerifier* verifier, uint32_t vreg, const RegType& reg_type, int32_t insn_idx)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Verify/pop monitor from monitor stack ensuring that we believe the monitor is locked
-  void PopMonitor(MethodVerifier* verifier, uint32_t reg_idx)
+  void PopMonitor(MethodVerifier* verifier, uint32_t vreg, const RegType& reg_type)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Stack of currently held monitors and where they were locked
@@ -263,9 +259,13 @@ class RegisterLine {
       REQUIRES_SHARED(Locks::mutator_lock_);
 
   void CopyRegToLockDepth(size_t dst, size_t src) {
+    // Note: We do not clear the entry for `dst` before copying, so we need to `Overwrite()`
+    // or `erase()`. This preserves the lock depths in the unlikely case that `dst == src`.
     auto it = reg_to_lock_depths_.find(src);
     if (it != reg_to_lock_depths_.end()) {
-      reg_to_lock_depths_.Put(dst, it->second);
+      reg_to_lock_depths_.Overwrite(dst, it->second);
+    } else {
+      reg_to_lock_depths_.erase(dst);
     }
   }
 

@@ -96,6 +96,7 @@
 #include "hidden_api.h"
 #include "imt_conflict_table.h"
 #include "imtable-inl.h"
+#include "instrumentation-inl.h"
 #include "intern_table-inl.h"
 #include "interpreter/interpreter.h"
 #include "interpreter/mterp/nterp.h"
@@ -228,7 +229,7 @@ static void UpdateClassAfterVerification(Handle<mirror::Class> klass,
   if (interpreter::CanRuntimeUseNterp()) {
     for (ArtMethod& m : klass->GetMethods(pointer_size)) {
       if (class_linker->IsQuickToInterpreterBridge(m.GetEntryPointFromQuickCompiledCode())) {
-        runtime->GetInstrumentation()->InitializeMethodsCode(&m, /*aot_code=*/nullptr);
+        runtime->GetInstrumentation()->ReinitializeMethodsCode(&m);
       }
     }
   }
@@ -3958,7 +3959,7 @@ class ClassLinker::LoadClassHelper {
               PointerSize pointer_size,
               LengthPrefixedArray<ArtField>* fields,
               LengthPrefixedArray<ArtMethod>* methods)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+      REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(Roles::uninterruptible_);
 
   uint32_t NumFields() const {
     return dchecked_integral_cast<uint32_t>(fields_.size());
@@ -4003,7 +4004,7 @@ class ClassLinker::LoadClassHelper {
   template <PointerSize kPointerSize>
   ALWAYS_INLINE
   void FillMethods(ObjPtr<mirror::Class> klass, /*out*/ LengthPrefixedArray<ArtMethod>* methods)
-      REQUIRES_SHARED(Locks::mutator_lock_);
+      REQUIRES_SHARED(Locks::mutator_lock_) REQUIRES(Roles::uninterruptible_);
 
   Runtime* const runtime_;
   const DexFile& dex_file_;
@@ -4135,28 +4136,29 @@ inline void ClassLinker::LoadClassHelper::LinkCode(ArtMethodData* method,
   // Method shouldn't have already been linked.
   DCHECK_EQ(method->entrypoint, nullptr);
 
-  if (!ArtMethod::IsInvokable(method->access_flags)) {
+  uint32_t access_flags = method->access_flags;
+  if (!ArtMethod::IsInvokable(access_flags)) {
     method->entrypoint = GetQuickToInterpreterBridge();
     occi->SkipAbstract(class_def_method_index);
     return;
   }
 
   const void* quick_code = occi->GetAndAdvance(class_def_method_index);
-  if (ArtMethod::IsNative(method->access_flags) && quick_code == nullptr) {
+  if (ArtMethod::IsNative(access_flags) && quick_code == nullptr) {
     std::string_view shorty = dex_file_.GetMethodShortyView(method->dex_method_index);
-    const void* boot_jni_stub =
-        runtime_->GetClassLinker()->FindBootJniStub(method->access_flags, shorty);
+    const void* boot_jni_stub = runtime_->GetClassLinker()->FindBootJniStub(access_flags, shorty);
     if (boot_jni_stub != nullptr) {
       // Use boot JNI stub if found.
       quick_code = boot_jni_stub;
     }
   }
-  method->entrypoint = quick_code;
+  method->entrypoint =
+      runtime_->GetInstrumentation()->GetInitialEntrypoint(access_flags, quick_code);
 
-  if (ArtMethod::IsNative(method->access_flags)) {
+  if (ArtMethod::IsNative(access_flags)) {
     // Set up the dlsym lookup stub. Do not go through `UnregisterNative()`
     // as the extra processing for @CriticalNative is not needed yet.
-    method->data = ArtMethod::IsCriticalNative(method->access_flags)
+    method->data = ArtMethod::IsCriticalNative(access_flags)
         ? GetJniDlsymLookupCriticalStub()
         : GetJniDlsymLookupStub();
   }
@@ -4278,8 +4280,12 @@ void ClassLinker::LoadClassHelper::FillMethods(ObjPtr<mirror::Class> klass,
   DCHECK_EQ(methods_.size(), (methods != nullptr) ? methods->size() : 0u);
   static constexpr size_t kMethodAlignment = ArtMethod::Alignment(kPointerSize);
   static constexpr size_t kMethodSize = ArtMethod::Size(kPointerSize);
-  instrumentation::Instrumentation* instr =
-      is_aot_compiler_ ? nullptr : runtime_->GetInstrumentation();
+  instrumentation::Instrumentation* instr = nullptr;
+  bool use_stubs = false;
+  if (!is_aot_compiler_) {
+    instr = runtime_->GetInstrumentation();
+    use_stubs = instr->InitialEntrypointNeedsInstrumentationStubs();
+  }
   for (size_t i = 0, size = methods_.size(); i != size; ++i) {
     const ArtMethodData& src = methods_[i];
     ArtMethod* dst = &methods->At(i, kMethodSize, kMethodAlignment);
@@ -4305,12 +4311,12 @@ void ClassLinker::LoadClassHelper::FillMethods(ObjPtr<mirror::Class> klass,
     dst->SetDataPtrSize(src.data, kPointerSize);
     if (instr != nullptr) {
       DCHECK_IMPLIES(dst->IsNative(), dst->GetEntryPointFromJniPtrSize(kPointerSize) == src.data);
-      if (ArtMethod::IsInvokable(access_flags)) {
-        instr->InitializeMethodsCode(dst, src.entrypoint);
-      } else {
-        DCHECK_EQ(src.entrypoint, GetQuickToInterpreterBridge());
-        dst->SetEntryPointFromQuickCompiledCodePtrSize(src.entrypoint, kPointerSize);
+      const void* entrypoint = src.entrypoint;
+      if (UNLIKELY(use_stubs)) {
+        bool is_native = ArtMethod::IsNative(access_flags);
+        entrypoint = is_native ? GetQuickGenericJniStub() : GetQuickToInterpreterBridge();
       }
+      instr->InitializeMethodsCode(dst, entrypoint, kPointerSize);
     }
   }
 }

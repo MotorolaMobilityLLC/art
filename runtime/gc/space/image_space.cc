@@ -2872,14 +2872,12 @@ class ImageSpace::BootImageLoader {
       TimingLogger::ScopedTiming timing("OpenOatFile", logger);
       std::string oat_filename =
           ImageHeader::GetOatLocationFromImageLocation(space->GetImageFilename());
-      std::string oat_location =
-          ImageHeader::GetOatLocationFromImageLocation(space->GetImageLocation());
 
       DCHECK_EQ(vdex_fd.get() != -1, oat_fd.get() != -1);
       if (vdex_fd.get() == -1) {
         oat_file.reset(OatFile::Open(/*zip_fd=*/-1,
                                      oat_filename,
-                                     oat_location,
+                                     oat_filename,
                                      executable_,
                                      /*low_4gb=*/false,
                                      dex_filenames,
@@ -2890,7 +2888,7 @@ class ImageSpace::BootImageLoader {
         oat_file.reset(OatFile::Open(/*zip_fd=*/-1,
                                      vdex_fd.get(),
                                      oat_fd.get(),
-                                     oat_location,
+                                     oat_filename,
                                      executable_,
                                      /*low_4gb=*/false,
                                      dex_filenames,

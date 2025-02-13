@@ -177,7 +177,7 @@ TEST_F(PaletteClientTest, DebugStore) {
   EXPECT_TRUE(len < result.size());
 
   const char* start = "1,0,";
-  const char* end = "::";
+  const char* end = "::;;";
   EXPECT_TRUE(len > strlen(start) + strlen(end));
   EXPECT_EQ(strncmp(result.data() + len - strlen(end), end, strlen(end)), 0);
 #endif

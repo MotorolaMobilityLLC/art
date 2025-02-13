@@ -424,14 +424,11 @@ Result<File> ExtractEmbeddedProfileToFd(const std::string& dex_path) {
     return Error() << error_msg;
   }
   constexpr const char* kEmbeddedProfileEntry = "assets/art-profile/baseline.prof";
-  std::unique_ptr<ZipEntry> zip_entry(zip_archive->Find(kEmbeddedProfileEntry, &error_msg));
+  std::unique_ptr<ZipEntry> zip_entry(zip_archive->FindOrNull(kEmbeddedProfileEntry, &error_msg));
   size_t size;
   if (zip_entry == nullptr || (size = zip_entry->GetUncompressedLength()) == 0) {
-    // From system/libziparchive/zip_error.cpp.
-    constexpr const char* kEntryNotFound = "Entry not found";
-    if (error_msg != kEntryNotFound) {
-      LOG(WARNING) << ART_FORMAT(
-          "Failed to find zip entry '{}' in '{}': {}", kEmbeddedProfileEntry, dex_path, error_msg);
+    if (!error_msg.empty()) {
+      LOG(WARNING) << error_msg;
     }
     // The dex file doesn't necessarily contain a profile. This is expected.
     return File();

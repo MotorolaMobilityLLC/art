@@ -424,6 +424,18 @@ std::string GetOsThreadStatQuick(pid_t tid) {
 #endif
 }
 
+char GetStateFromStatString(const std::string& stat_output) {
+  size_t rparen_pos = stat_output.find(")");
+  if (rparen_pos == std::string::npos || rparen_pos >= stat_output.length() - 3) {
+    return '?';
+  }
+  size_t state_pos = stat_output.find_first_not_of(" ", rparen_pos + 1);
+  if (rparen_pos == std::string::npos) {
+    return '?';
+  }
+  return stat_output[state_pos];
+}
+
 std::string GetOtherThreadOsStats() {
 #if defined(__linux__)
   DIR* dir = opendir("/proc/self/task");

@@ -655,9 +655,7 @@ void OatWriter::PrepareLayout(MultiOatRelativePatcher* relative_patcher) {
 }
 
 OatWriter::~OatWriter() {
-  if (oat_header_ != nullptr) {
-    operator delete (oat_header_, oat_header_->GetHeaderSize());
-  }
+  OatHeader::Delete(oat_header_);
 }
 
 class OatWriter::DexMethodVisitor {

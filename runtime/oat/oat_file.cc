@@ -1690,9 +1690,7 @@ class OatFileBackedByVdex final : public OatFileBase {
         oat_header_(nullptr) {}
 
   ~OatFileBackedByVdex() {
-    if (oat_header_ != nullptr) {
-      operator delete (oat_header_, oat_header_->GetHeaderSize());
-    }
+    OatHeader::Delete(oat_header_);
   }
 
   static OatFileBackedByVdex* Open(const std::vector<const DexFile*>& dex_files,

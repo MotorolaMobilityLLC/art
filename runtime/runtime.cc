@@ -2450,8 +2450,8 @@ void Runtime::DumpDeoptimizations(std::ostream& os) {
   }
 }
 
-std::optional<uint64_t> Runtime::SiqQuitNanoTime() const {
-  return signal_catcher_ != nullptr ? signal_catcher_->SiqQuitNanoTime() : std::nullopt;
+std::optional<uint64_t> Runtime::SigQuitNanoTime() const {
+  return signal_catcher_ != nullptr ? signal_catcher_->SigQuitNanoTime() : std::nullopt;
 }
 
 void Runtime::DumpForSigQuit(std::ostream& os) {

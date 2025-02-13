@@ -314,7 +314,7 @@ class Runtime {
   void DetachCurrentThread(bool should_run_callbacks = true) REQUIRES(!Locks::mutator_lock_);
 
   // If we are handling SIQQUIT return the time when we received it.
-  std::optional<uint64_t> SiqQuitNanoTime() const;
+  std::optional<uint64_t> SigQuitNanoTime() const;
 
   void DumpDeoptimizations(std::ostream& os);
   void DumpForSigQuit(std::ostream& os);

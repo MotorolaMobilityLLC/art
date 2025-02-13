@@ -2817,98 +2817,104 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     }
 
     case Instruction::RETURN_VOID:
-      if (!IsInstanceConstructor() || work_line_->CheckConstructorReturn(this)) {
-        if (!GetMethodReturnType().IsConflict()) {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-void not expected";
-          return false;
+      if (IsInstanceConstructor() && UNLIKELY(!work_line_->CheckConstructorReturn(this))) {
+        return false;
+      }
+      if (!GetMethodReturnType().IsConflict()) {
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-void not expected";
+        return false;
+      }
+      break;
+    case Instruction::RETURN: {
+      if (IsInstanceConstructor() && UNLIKELY(!work_line_->CheckConstructorReturn(this))) {
+        return false;
+      }
+      /* check the method signature */
+      const RegType& return_type = GetMethodReturnType();
+      if (!return_type.IsCategory1Types()) {
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unexpected non-category 1 return type "
+                                          << return_type;
+        return false;
+      } else {
+        // Compilers may generate synthetic functions that write byte values into boolean fields.
+        // Also, it may use integer values for boolean, byte, short, and character return types.
+        const uint32_t vregA = inst->VRegA_11x(inst_data);
+        const RegType& src_type = work_line_->GetRegisterType(this, vregA);
+        bool use_src = ((return_type.IsBoolean() && src_type.IsByte()) ||
+                        ((return_type.IsBoolean() || return_type.IsByte() ||
+                         return_type.IsShort() || return_type.IsChar()) &&
+                         src_type.IsInteger()));
+        /* check the register contents */
+        bool success = VerifyRegisterType(vregA, use_src ? src_type : return_type);
+        if (!success) {
+          LastFailureMessageStream() << " return-1nr on invalid register v" << vregA;
         }
       }
       break;
-    case Instruction::RETURN:
-      if (!IsInstanceConstructor() || work_line_->CheckConstructorReturn(this)) {
-        /* check the method signature */
-        const RegType& return_type = GetMethodReturnType();
-        if (!return_type.IsCategory1Types()) {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "unexpected non-category 1 return type "
-                                            << return_type;
+    }
+    case Instruction::RETURN_WIDE: {
+      if (IsInstanceConstructor() && UNLIKELY(!work_line_->CheckConstructorReturn(this))) {
+        return false;
+      }
+      /* check the method signature */
+      const RegType& return_type = GetMethodReturnType();
+      if (!return_type.IsCategory2Types()) {
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-wide not expected";
+        return false;
+      } else {
+        /* check the register contents */
+        const uint32_t vregA = inst->VRegA_11x(inst_data);
+        bool success = VerifyRegisterTypeWide(vregA, return_type.GetKind());
+        if (!success) {
+          LastFailureMessageStream() << " return-wide on invalid register v" << vregA;
+        }
+      }
+      break;
+    }
+    case Instruction::RETURN_OBJECT: {
+      if (IsInstanceConstructor() && UNLIKELY(!work_line_->CheckConstructorReturn(this))) {
+        return false;
+      }
+      const RegType& return_type = GetMethodReturnType();
+      if (!return_type.IsReferenceTypes()) {
+        Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-object not expected";
+        return false;
+      } else {
+        /* return_type is the *expected* return type, not register value */
+        DCHECK(!return_type.IsZeroOrNull());
+        DCHECK(!return_type.IsUninitializedReference());
+        const uint32_t vregA = inst->VRegA_11x(inst_data);
+        const RegType& reg_type = work_line_->GetRegisterType(this, vregA);
+        // Disallow returning undefined, conflict & uninitialized values and verify that the
+        // reference in vAA is an instance of the "return_type."
+        if (reg_type.IsUndefined()) {
+          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning undefined register";
           return false;
-        } else {
-          // Compilers may generate synthetic functions that write byte values into boolean fields.
-          // Also, it may use integer values for boolean, byte, short, and character return types.
-          const uint32_t vregA = inst->VRegA_11x(inst_data);
-          const RegType& src_type = work_line_->GetRegisterType(this, vregA);
-          bool use_src = ((return_type.IsBoolean() && src_type.IsByte()) ||
-                          ((return_type.IsBoolean() || return_type.IsByte() ||
-                           return_type.IsShort() || return_type.IsChar()) &&
-                           src_type.IsInteger()));
-          /* check the register contents */
-          bool success = VerifyRegisterType(vregA, use_src ? src_type : return_type);
-          if (!success) {
-            LastFailureMessageStream() << " return-1nr on invalid register v" << vregA;
+        } else if (reg_type.IsConflict()) {
+          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning register with conflict";
+          return false;
+        } else if (reg_type.IsUninitializedTypes()) {
+          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning uninitialized object '"
+                                            << reg_type << "'";
+          return false;
+        } else if (!reg_type.IsReferenceTypes()) {
+          // We really do expect a reference here.
+          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-object returns a non-reference type "
+                                            << reg_type;
+          return false;
+        } else if (!IsAssignableFrom(return_type, reg_type)) {
+          if (reg_type.IsUnresolvedTypes() || return_type.IsUnresolvedTypes()) {
+            Fail(VERIFY_ERROR_UNRESOLVED_TYPE_CHECK)
+                << " can't resolve returned type '" << return_type << "' or '" << reg_type << "'";
+          } else {
+            Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning '" << reg_type
+                << "', but expected from declaration '" << return_type << "'";
+            return false;
           }
         }
       }
       break;
-    case Instruction::RETURN_WIDE:
-      if (!IsInstanceConstructor() || work_line_->CheckConstructorReturn(this)) {
-        /* check the method signature */
-        const RegType& return_type = GetMethodReturnType();
-        if (!return_type.IsCategory2Types()) {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-wide not expected";
-          return false;
-        } else {
-          /* check the register contents */
-          const uint32_t vregA = inst->VRegA_11x(inst_data);
-          bool success = VerifyRegisterTypeWide(vregA, return_type.GetKind());
-          if (!success) {
-            LastFailureMessageStream() << " return-wide on invalid register v" << vregA;
-          }
-        }
-      }
-      break;
-    case Instruction::RETURN_OBJECT:
-      if (!IsInstanceConstructor() || work_line_->CheckConstructorReturn(this)) {
-        const RegType& return_type = GetMethodReturnType();
-        if (!return_type.IsReferenceTypes()) {
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-object not expected";
-          return false;
-        } else {
-          /* return_type is the *expected* return type, not register value */
-          DCHECK(!return_type.IsZeroOrNull());
-          DCHECK(!return_type.IsUninitializedReference());
-          const uint32_t vregA = inst->VRegA_11x(inst_data);
-          const RegType& reg_type = work_line_->GetRegisterType(this, vregA);
-          // Disallow returning undefined, conflict & uninitialized values and verify that the
-          // reference in vAA is an instance of the "return_type."
-          if (reg_type.IsUndefined()) {
-            Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning undefined register";
-            return false;
-          } else if (reg_type.IsConflict()) {
-            Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning register with conflict";
-            return false;
-          } else if (reg_type.IsUninitializedTypes()) {
-            Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning uninitialized object '"
-                                              << reg_type << "'";
-            return false;
-          } else if (!reg_type.IsReferenceTypes()) {
-            // We really do expect a reference here.
-            Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "return-object returns a non-reference type "
-                                              << reg_type;
-            return false;
-          } else if (!IsAssignableFrom(return_type, reg_type)) {
-            if (reg_type.IsUnresolvedTypes() || return_type.IsUnresolvedTypes()) {
-              Fail(VERIFY_ERROR_UNRESOLVED_TYPE_CHECK)
-                  << " can't resolve returned type '" << return_type << "' or '" << reg_type << "'";
-            } else {
-              Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "returning '" << reg_type
-                  << "', but expected from declaration '" << return_type << "'";
-              return false;
-            }
-          }
-        }
-      }
-      break;
-
+    }
       /* could be boolean, int, float, or a null reference */
     case Instruction::CONST_4: {
       int32_t val = static_cast<int32_t>(inst->VRegB_11n(inst_data) << 28) >> 28;
@@ -3122,18 +3128,12 @@ bool MethodVerifier<kVerifierDebug>::CodeFlowVerifyInstruction(uint32_t* start_g
     }
     case Instruction::ARRAY_LENGTH: {
       const RegType& res_type = work_line_->GetRegisterType(this, inst->VRegB_12x(inst_data));
-      if (res_type.IsReferenceTypes()) {
-        if (!res_type.IsArrayTypes() && !res_type.IsZeroOrNull()) {
-          // ie not an array or null
-          Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "array-length on non-array " << res_type;
-          return false;
-        } else {
-          work_line_->SetRegisterType(inst->VRegA_12x(inst_data), kInteger);
-        }
-      } else {
+      if (!res_type.IsReferenceTypes() || (!res_type.IsArrayTypes() && !res_type.IsZeroOrNull())) {
+        // ie not an array or null
         Fail(VERIFY_ERROR_BAD_CLASS_HARD) << "array-length on non-array " << res_type;
         return false;
       }
+      work_line_->SetRegisterType(inst->VRegA_12x(inst_data), kInteger);
       break;
     }
     case Instruction::NEW_INSTANCE: {

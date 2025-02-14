@@ -90,8 +90,17 @@ void TraceProfiler::AllocateBuffer(Thread* thread) {
   }
 
   auto buffer = new uintptr_t[kAlwaysOnTraceBufSize];
-  memset(buffer, 0, kAlwaysOnTraceBufSize * sizeof(uintptr_t));
-  thread->SetMethodTraceBuffer(buffer, kAlwaysOnTraceBufSize);
+  size_t index = kAlwaysOnTraceBufSize;
+  if (trace_data_->GetTraceType() == LowOverheadTraceType::kAllMethods) {
+    memset(buffer, 0, kAlwaysOnTraceBufSize * sizeof(uintptr_t));
+  } else {
+    DCHECK(trace_data_->GetTraceType() == LowOverheadTraceType::kLongRunningMethods);
+    // For long running methods add a placeholder method exit entry. This avoids
+    // additional checks on method exits to see if the previous entry is valid.
+    index--;
+    buffer[index] = 0x1;
+  }
+  thread->SetMethodTraceBuffer(buffer, index);
 }
 
 LowOverheadTraceType TraceProfiler::GetTraceType() {

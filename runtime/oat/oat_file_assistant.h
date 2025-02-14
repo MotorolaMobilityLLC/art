@@ -400,6 +400,9 @@ class OatFileAssistant {
     DexOptNeeded GetDexOptNeeded(CompilerFilter::Filter target_compiler_filter,
                                  const DexOptTrigger dexopt_trigger);
 
+    // Returns true if the file exists.
+    bool FileExists() const;
+
     // Returns the loaded file.
     // Loads the file if needed. Returns null if the file failed to load.
     // The caller shouldn't clean up or free the returned pointer.
@@ -567,8 +570,7 @@ class OatFileAssistant {
   OatFileInfo vdex_for_oat_;
 
   // The vdex-only file next to the apk.
-  OatFileInfo dm_for_odex_;
-  OatFileInfo dm_for_oat_;
+  OatFileInfo dm_;
 
   // File descriptor corresponding to apk, dex file, or zip.
   int zip_fd_;

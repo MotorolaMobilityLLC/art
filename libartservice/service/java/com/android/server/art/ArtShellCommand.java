@@ -939,10 +939,11 @@ public final class ArtShellCommand extends BasicShellCommandHandler {
         pw.println("       better than that of the current dexopt artifacts for a package.");
         pw.println("    --reset Reset the dexopt state of the package as if the package is newly");
         pw.println("       installed.");
-        pw.println("       More specifically, it clears reference profiles, current profiles, and");
-        pw.println("       any code compiled from those local profiles. If there is an external");
-        pw.println("       profile (e.g., a cloud profile), the code compiled from that profile");
-        pw.println("       will be kept.");
+        pw.println("       More specifically, it clears current profiles, reference profiles");
+        pw.println("       from local profiles, and any code compiled from those local profiles.");
+        pw.println("       If there is an external profile (e.g., a cloud profile), the reference");
+        pw.println("       profile from that profile and the code compiled from that profile will");
+        pw.println("       be kept.");
         pw.println("       For secondary dex files, it also clears all dexopt artifacts.");
         pw.println("       When this flag is set, all the other flags are ignored.");
         pw.println("    -v Verbose mode. This mode prints detailed results.");

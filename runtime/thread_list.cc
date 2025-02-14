@@ -720,7 +720,7 @@ static constexpr unsigned kSuspendBarrierIters = kShortSuspendTimeouts ? 5 : 20;
 
 #if ART_USE_FUTEXES
 
-// Returns true if it timed out.
+// Returns true if it timed out. Times out after timeout_ns/kSuspendBarrierIters nsecs
 static bool WaitOnceForSuspendBarrier(AtomicInteger* barrier,
                                       int32_t cur_val,
                                       uint64_t timeout_ns) {
@@ -804,10 +804,23 @@ std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barr
     return std::nullopt;
   }
 
+  // Extra timeout to compensate for concurrent thread dumps, so that we are less likely to time
+  // out during ANR dumps.
+  uint64_t dump_adjustment_ns = 0;
+  // Total timeout increment if we see a concurrent thread dump. Distributed evenly across
+  // remaining iterations.
+  static constexpr uint64_t kDumpWaitNSecs = 30'000'000'000ull;  // 30 seconds
+  // Replacement timeout if thread is stopped for tracing, probably by a debugger.
+  static constexpr uint64_t kTracingWaitNSecs = 7'200'000'000'000ull;  // wait a bit < 2 hours;
+
   // Long wait; gather information in case of timeout.
   std::string sampled_state = collect_state ? GetOsThreadStatQuick(t) : "";
+  if (collect_state && GetStateFromStatString(sampled_state) == 't') {
+    LOG(WARNING) << "Thread suspension nearly timed out due to Tracing stop (debugger attached?)";
+    timeout_ns = kTracingWaitNSecs;
+  }
   while (i < kSuspendBarrierIters) {
-    if (WaitOnceForSuspendBarrier(barrier, cur_val, timeout_ns)) {
+    if (WaitOnceForSuspendBarrier(barrier, cur_val, timeout_ns + dump_adjustment_ns)) {
       ++i;
 #if ART_USE_FUTEXES
       if (!kShortSuspendTimeouts) {
@@ -820,6 +833,15 @@ std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barr
       DCHECK_EQ(cur_val, 0);
       return std::nullopt;
     }
+    std::optional<uint64_t> last_sigquit_nanotime = Runtime::Current()->SigQuitNanoTime();
+    if (last_sigquit_nanotime.has_value() && i < kSuspendBarrierIters) {
+      // Adjust dump_adjustment_ns to reflect the number of iterations we have left and how long
+      // ago we started dumping threads.
+      uint64_t new_unscaled_adj = kDumpWaitNSecs + last_sigquit_nanotime.value() - NanoTime();
+      // Scale by the fraction of iterations still remaining.
+      dump_adjustment_ns = new_unscaled_adj * kSuspendBarrierIters / kSuspendBarrierIters - i;
+    }
+    // Keep the old dump_adjustment_ns if SigQuitNanoTime() was cleared.
   }
   uint64_t final_wait_time = NanoTime() - start_time;
   uint64_t total_wait_time = attempt_of_4 == 0 ?

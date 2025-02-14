@@ -64,6 +64,15 @@ flag {
 }
 
 flag {
+  name: "virtual_thread_impl_v1"
+  namespace: "core_libraries"
+  description: "Flag for version 1 of Virtual Thread implementation."
+  bug: "346542404"
+  is_fixed_read_only: true
+  is_exported: false
+}
+
+flag {
   name: "fast_baseline_compiler"
   namespace: "art_performance"
   description: "Flag to enable the fast ARM64 baseline compiler"

@@ -124,6 +124,13 @@ TEST_F(UtilsTest, GetProcessStatus) {
   EXPECT_EQ("<unknown>", GetProcessStatus("InvalidFieldName"));
 }
 
+TEST_F(UtilsTest, GetOsThreadStatQuick) {
+  std::string my_stat = GetOsThreadStatQuick(GetTid());
+  EXPECT_GT(my_stat.length(), 20);
+  EXPECT_LT(my_stat.length(), 1000);
+  EXPECT_EQ('R', GetStateFromStatString(my_stat));
+}
+
 TEST_F(UtilsTest, StringSplit) {
   auto range = SplitString("[ab[c[[d[e[", '[');
   auto it = range.begin();

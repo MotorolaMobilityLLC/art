@@ -2439,7 +2439,7 @@ Thread::DumpOrder Thread::DumpStack(std::ostream& os,
                                /*check_suspended=*/ !force_dump_stack,
                                /*dump_locks=*/ !force_dump_stack);
     Runtime* runtime = Runtime::Current();
-    std::optional<uint64_t> start = runtime != nullptr ? runtime->SiqQuitNanoTime() : std::nullopt;
+    std::optional<uint64_t> start = runtime != nullptr ? runtime->SigQuitNanoTime() : std::nullopt;
     if (start.has_value()) {
       os << "DumpLatencyMs: " << static_cast<float>(nanotime - start.value()) / 1000000.0 << "\n";
     }

@@ -292,13 +292,27 @@ ZipArchive* ZipArchive::OpenFromFdInternal(int fd,
 }
 
 ZipEntry* ZipArchive::Find(const char* name, std::string* error_msg) const {
+  return FindImpl(name, /*allow_entry_not_found=*/false, error_msg);
+}
+
+ZipEntry* ZipArchive::FindOrNull(const char* name, std::string* error_msg) const {
+  return FindImpl(name, /*allow_entry_not_found=*/true, error_msg);
+}
+
+ZipEntry* ZipArchive::FindImpl(const char* name,
+                               bool allow_entry_not_found,
+                               std::string* error_msg) const {
   DCHECK(name != nullptr);
 
   // Resist the urge to delete the space. <: is a bigraph sequence.
   std::unique_ptr< ::ZipEntry> zip_entry(new ::ZipEntry);
   const int32_t error = FindEntry(handle_, name, zip_entry.get());
   if (error != 0) {
-    *error_msg = StringPrintf("Failed to find entry '%s': %s", name, ErrorCodeString(error));
+    // From system/libziparchive/zip_error.cpp.
+    constexpr std::string_view kEntryNotFound = "Entry not found";
+    if (!allow_entry_not_found || ErrorCodeString(error) != kEntryNotFound) {
+      *error_msg = StringPrintf("Failed to find entry '%s': %s", name, ErrorCodeString(error));
+    }
     return nullptr;
   }
 

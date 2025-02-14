@@ -788,7 +788,7 @@ OatFileAssistant::OatFileInfo& OatFileAssistant::GetBestInfo() {
   ScopedTrace trace("GetBestInfo");
 
   auto log_status = [&](std::string_view location, OatFileInfo* info) {
-    if (!VLOG_IS_ON(oat)) {
+    if (!VLOG_IS_ON(oat) || !info->FileExists()) {
       return;
     }
     std::string error_msg;
@@ -810,42 +810,31 @@ OatFileAssistant::OatFileInfo& OatFileAssistant::GetBestInfo() {
   // If the oat location is useable, take it. This must be an app on a readonly filesystem
   // (typically, a system app or an incremental app). This must be prioritized over the odex
   // location, because the odex location probably has the dexpreopt artifacts.
-  if (oat_.FileExists()) {
-    log_status("odex in dalvik-cache", &oat_);
-    if (oat_.IsUseable()) {
-      return oat_;
-    }
+  log_status("odex in dalvik-cache", &oat_);
+  if (oat_.IsUseable()) {
+    return oat_;
   }
 
   // The odex location, which is the most common.
-  if (odex_.FileExists()) {
-    log_status("odex next to the dex file", &odex_);
-    if (odex_.IsUseable()) {
-      return odex_;
-    }
+  log_status("odex next to the dex file", &odex_);
+  if (odex_.IsUseable()) {
+    return odex_;
   }
 
   // No odex/oat available, look for a useable vdex file.
-  if (vdex_for_oat_.FileExists()) {
-    log_status("vdex in dalvik-cache", &vdex_for_oat_);
-    if (vdex_for_oat_.IsUseable()) {
-      return vdex_for_oat_;
-    }
+  log_status("vdex in dalvik-cache", &vdex_for_oat_);
+  if (vdex_for_oat_.IsUseable()) {
+    return vdex_for_oat_;
   }
-  if (vdex_for_odex_.FileExists()) {
-    VLOG(oat) << ART_FORMAT("GetBestInfo checking vdex next to the dex file ({})",
-                            vdex_for_odex_.DisplayFilename());
-    if (vdex_for_odex_.IsUseable()) {
-      return vdex_for_odex_;
-    }
+  log_status("vdex next to the dex file", &vdex_for_odex_);
+  if (vdex_for_odex_.IsUseable()) {
+    return vdex_for_odex_;
   }
 
   // A .dm file may be available, look for it.
-  if (dm_.FileExists()) {
-    log_status("dm", &dm_);
-    if (dm_.IsUseable()) {
-      return dm_;
-    }
+  log_status("dm", &dm_);
+  if (dm_.IsUseable()) {
+    return dm_;
   }
 
   // No usable artifact. Pick the odex if it exists, or the oat if not.

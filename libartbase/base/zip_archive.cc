@@ -233,6 +233,13 @@ static void SetCloseOnExec(int fd) {
 ZipArchive* ZipArchive::Open(const char* filename, std::string* error_msg) {
   DCHECK(filename != nullptr);
 
+  // Don't call into `OpenArchive` on file absence. `OpenArchive` prints a warning even if the file
+  // absence is expected.
+  if (!OS::FileExists(filename)) {
+    *error_msg = StringPrintf("Failed to open '%s': File not found", filename);
+    return nullptr;
+  }
+
   ZipArchiveHandle handle;
   const int32_t error = OpenArchive(filename, &handle);
   if (error != 0) {

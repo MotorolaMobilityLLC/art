@@ -28,6 +28,7 @@
 #include <tuple>
 #include <vector>
 
+#include "android-base/properties.h"
 #include "android-base/stringprintf.h"
 #include "art_field-inl.h"
 #include "base/aborting.h"
@@ -765,13 +766,21 @@ static bool WaitOnceForSuspendBarrier(AtomicInteger* barrier,
 std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barrier,
                                                              pid_t t,
                                                              int attempt_of_4) {
-  // Only fail after kIter timeouts, to make us robust against app freezing.
 #if ART_USE_FUTEXES
   const uint64_t start_time = NanoTime();
 #endif
   uint64_t timeout_ns =
       attempt_of_4 == 0 ? thread_suspend_timeout_ns_ : thread_suspend_timeout_ns_ / 4;
-
+  static bool is_user_build = (android::base::GetProperty("ro.build.type", "") == "user");
+  // Significantly increase timeouts in user builds, since they result in crashes.
+  // Many of these are likely to turn into ANRs, which are less informative for the developer, but
+  // friendlier to the user. We do not completely suppress timeouts, so that we avoid invisible
+  // problems for cases not covered by ANR detection, e.g. a problem in a clean-up daemon.
+  if (is_user_build) {
+    static constexpr int USER_MULTIPLIER = 2;  // Start out small, perhaps increase later if we
+                                               // still have an issue?
+    timeout_ns *= USER_MULTIPLIER;
+  }
   uint64_t avg_wait_multiplier = 1;
   uint64_t wait_multiplier = 1;
   if (attempt_of_4 != 1) {
@@ -819,6 +828,7 @@ std::optional<std::string> ThreadList::WaitForSuspendBarrier(AtomicInteger* barr
     LOG(WARNING) << "Thread suspension nearly timed out due to Tracing stop (debugger attached?)";
     timeout_ns = kTracingWaitNSecs;
   }
+  // Only fail after kSuspendBarrierIters timeouts, to make us robust against app freezing.
   while (i < kSuspendBarrierIters) {
     if (WaitOnceForSuspendBarrier(barrier, cur_val, timeout_ns + dump_adjustment_ns)) {
       ++i;

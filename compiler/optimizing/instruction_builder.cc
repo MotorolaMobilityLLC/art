@@ -2552,9 +2552,7 @@ HNewArray* HInstructionBuilder::BuildFilledNewArray(uint32_t dex_pc,
   const char* descriptor = dex_file_->GetTypeDescriptor(type_index);
   DCHECK_EQ(descriptor[0], '[') << descriptor;
   char primitive = descriptor[1];
-  DCHECK(primitive == 'I'
-      || primitive == 'L'
-      || primitive == '[') << descriptor;
+  DCHECK(primitive == 'I' || primitive == 'L' || primitive == '[') << descriptor;
   bool is_reference_array = (primitive == 'L') || (primitive == '[');
   DataType::Type type = is_reference_array ? DataType::Type::kReference : DataType::Type::kInt32;
 

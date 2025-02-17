@@ -56,6 +56,11 @@ void HGraph::AddBlock(HBasicBlock* block) {
   blocks_.push_back(block);
 }
 
+inline int32_t HGraph::AllocateInstructionId() {
+  CHECK_NE(current_instruction_id_, INT32_MAX);
+  return current_instruction_id_++;
+}
+
 void HGraph::FindBackEdges(ArenaBitVector* visited) {
   // "visited" must be empty on entry, it's an output argument for all visited (i.e. live) blocks.
   DCHECK_EQ(visited->GetHighestBitSet(), -1);
@@ -1068,7 +1073,7 @@ void HBasicBlock::ReplaceAndRemoveInstructionWith(HInstruction* initial,
     DCHECK(initial->GetEnvUses().empty());
     replacement->SetBlock(this);
     HGraph* graph = GetGraph();
-    replacement->SetId(graph->GetNextInstructionId());
+    replacement->SetId(graph->AllocateInstructionId());
     instructions_.InsertInstructionBefore(replacement, initial);
     UpdateInputsUsers(graph, replacement);
   } else {
@@ -1085,7 +1090,7 @@ static void Add(HInstructionList* instruction_list,
   DCHECK_EQ(instruction->GetId(), -1);
   instruction->SetBlock(block);
   HGraph* graph = block->GetGraph();
-  instruction->SetId(graph->GetNextInstructionId());
+  instruction->SetId(graph->AllocateInstructionId());
   UpdateInputsUsers(graph, instruction);
   instruction_list->AddInstruction(instruction);
 }
@@ -1107,7 +1112,7 @@ void HBasicBlock::InsertInstructionBefore(HInstruction* instruction, HInstructio
   DCHECK(!instruction->IsControlFlow());
   instruction->SetBlock(this);
   HGraph* graph = GetGraph();
-  instruction->SetId(graph->GetNextInstructionId());
+  instruction->SetId(graph->AllocateInstructionId());
   UpdateInputsUsers(graph, instruction);
   instructions_.InsertInstructionBefore(instruction, cursor);
 }
@@ -1122,7 +1127,7 @@ void HBasicBlock::InsertInstructionAfter(HInstruction* instruction, HInstruction
   DCHECK(!cursor->IsControlFlow());
   instruction->SetBlock(this);
   HGraph* graph = GetGraph();
-  instruction->SetId(graph->GetNextInstructionId());
+  instruction->SetId(graph->AllocateInstructionId());
   UpdateInputsUsers(graph, instruction);
   instructions_.InsertInstructionAfter(instruction, cursor);
 }
@@ -1133,7 +1138,7 @@ void HBasicBlock::InsertPhiAfter(HPhi* phi, HPhi* cursor) {
   DCHECK_EQ(cursor->GetBlock(), this);
   phi->SetBlock(this);
   HGraph* graph = GetGraph();
-  phi->SetId(graph->GetNextInstructionId());
+  phi->SetId(graph->AllocateInstructionId());
   UpdateInputsUsers(graph, phi);
   phis_.InsertInstructionAfter(phi, cursor);
 }

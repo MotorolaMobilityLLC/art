@@ -745,8 +745,7 @@ void QuickExceptionHandler::DeoptimizeSingleFrame(DeoptimizationKind kind) {
     runtime->GetJit()->GetCodeCache()->InvalidateCompiledCodeFor(
         deopt_method, visitor.GetSingleFrameDeoptQuickMethodHeader());
   } else {
-    runtime->GetInstrumentation()->InitializeMethodsCode(
-        deopt_method, /*aot_code=*/ nullptr);
+    runtime->GetInstrumentation()->ReinitializeMethodsCode(deopt_method);
   }
 
   // If the deoptimization is due to an inline cache, update it with the type

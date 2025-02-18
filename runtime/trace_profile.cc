@@ -76,6 +76,18 @@ void TraceData::AddTracedThread(Thread* thread) {
   traced_threads_.emplace(thread_id, thread_name);
 }
 
+void TraceData::MaybeWaitForTraceDumpToFinish() {
+  if (!trace_dump_in_progress_) {
+    return;
+  }
+  trace_dump_condition_.Wait(Thread::Current());
+}
+
+void TraceData::SignalTraceDumpComplete() {
+  trace_dump_in_progress_ = false;
+  trace_dump_condition_.Broadcast(Thread::Current());
+}
+
 void TraceProfiler::AllocateBuffer(Thread* thread) {
   if (!art_flags::always_enable_profile_code()) {
     return;
@@ -299,6 +311,10 @@ void TraceProfiler::StopLocked() {
     return;
   }
 
+  // We should not delete trace_data_ when there is an ongoing trace dump. So
+  // wait for any in progress trace dump to finish.
+  trace_data_->MaybeWaitForTraceDumpToFinish();
+
   static FunctionClosure reset_buffer([](Thread* thread) {
     auto buffer = thread->GetMethodTraceBuffer();
     if (buffer != nullptr) {
@@ -393,25 +409,33 @@ void TraceProfiler::Dump(const char* filename) {
 }
 
 void TraceProfiler::Dump(std::unique_ptr<File>&& trace_file, std::ostringstream& os) {
-  MutexLock mu(Thread::Current(), *Locks::trace_lock_);
-  if (!profile_in_progress_) {
-    if (trace_file != nullptr && !trace_file->Close()) {
-      PLOG(WARNING) << "Failed to close file.";
-    }
-    return;
-  }
-
   Thread* self = Thread::Current();
-  // Collect long running methods from all the threads;
   Runtime* runtime = Runtime::Current();
 
-  TraceDumpCheckpoint checkpoint(trace_data_, trace_file);
-  size_t threads_running_checkpoint = runtime->GetThreadList()->RunCheckpoint(&checkpoint);
-  if (threads_running_checkpoint != 0) {
-    checkpoint.WaitForThreadsToRunThroughCheckpoint(threads_running_checkpoint);
+  size_t threads_running_checkpoint = 0;
+  std::unique_ptr<TraceDumpCheckpoint> checkpoint;
+  {
+    MutexLock mu(self, *Locks::trace_lock_);
+    if (!profile_in_progress_ || trace_data_->IsTraceDumpInProgress()) {
+      if (trace_file != nullptr && !trace_file->Close()) {
+        PLOG(WARNING) << "Failed to close file.";
+      }
+      return;
+    }
+
+    trace_data_->SetTraceDumpInProgress();
+
+    // Collect long running methods from all the threads;
+    checkpoint.reset(new TraceDumpCheckpoint(trace_data_, trace_file));
+    threads_running_checkpoint = runtime->GetThreadList()->RunCheckpoint(checkpoint.get());
   }
 
-  trace_data_->DumpData(os);
+  // Wait for all threads to dump their data.
+  if (threads_running_checkpoint != 0) {
+    checkpoint->WaitForThreadsToRunThroughCheckpoint(threads_running_checkpoint);
+  }
+  checkpoint->FinishTraceDump(os);
+
   if (trace_file != nullptr) {
     std::string info = os.str();
     if (!trace_file->WriteFully(info.c_str(), info.length())) {
@@ -591,16 +615,35 @@ void TraceDumpCheckpoint::WaitForThreadsToRunThroughCheckpoint(size_t threads_ru
   barrier_.Increment(self, threads_running_checkpoint);
 }
 
+void TraceDumpCheckpoint::FinishTraceDump(std::ostringstream& os) {
+  // Dump all the data.
+  trace_data_->DumpData(os);
+
+  // Any trace stop requests will be blocked while a dump is in progress. So
+  // broadcast the completion condition for any waiting requests.
+  MutexLock mu(Thread::Current(), *Locks::trace_lock_);
+  trace_data_->SignalTraceDumpComplete();
+}
+
 void TraceData::DumpData(std::ostringstream& os) {
-  MutexLock mu(Thread::Current(), trace_data_lock_);
-  if (long_running_methods_.length() > 0) {
-    os << long_running_methods_;
+  std::unordered_set<ArtMethod*> methods;
+  std::unordered_map<size_t, std::string> threads;
+  {
+    // We cannot dump method information while holding trace_lock_, since we have to also
+    // acquire a mutator lock. Take a snapshot of thread and method information.
+    MutexLock mu(Thread::Current(), trace_data_lock_);
+    if (long_running_methods_.length() > 0) {
+      os << long_running_methods_;
+    }
+
+    methods = traced_methods_;
+    threads = traced_threads_;
   }
 
   // Dump the information about traced_methods and threads
   {
     ScopedObjectAccess soa(Thread::Current());
-    DumpThreadMethodInfo(traced_threads_, traced_methods_, os);
+    DumpThreadMethodInfo(threads, methods, os);
   }
 }
 

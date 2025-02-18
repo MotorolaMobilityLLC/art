@@ -48,6 +48,8 @@ class TraceData {
   explicit TraceData(LowOverheadTraceType trace_type)
       : trace_type_(trace_type),
         trace_end_time_(0),
+        trace_dump_in_progress_(false),
+        trace_dump_condition_("trace dump condition", *Locks::trace_lock_),
         trace_data_lock_("Trace Data lock", LockLevel::kGenericBottomLock) {}
 
   LowOverheadTraceType GetTraceType() const {
@@ -83,6 +85,22 @@ class TraceData {
 
   void AddTracedThread(Thread* thread);
 
+  // If there is no trace dump in progress this returns immediately. Otherwise
+  // it waits on a condition variable waiting for the trace dump to finish.
+  void MaybeWaitForTraceDumpToFinish() REQUIRES(Locks::trace_lock_);
+
+  // Called when a trace dump is finished to notify any waiting requests. This
+  // also resets the trace_dump_in_progress_ to false.
+  void SignalTraceDumpComplete() REQUIRES(Locks::trace_lock_);
+
+  void SetTraceDumpInProgress() REQUIRES(Locks::trace_lock_) {
+    trace_dump_in_progress_ = true;
+  }
+
+  bool IsTraceDumpInProgress() const REQUIRES(Locks::trace_lock_) {
+    return trace_dump_in_progress_;
+  }
+
  private:
   // This is used to hold the initial methods on stack and also long running methods when there is a
   // buffer overflow.
@@ -100,6 +118,14 @@ class TraceData {
   // thread.
   std::unordered_map<size_t, std::string> traced_threads_ GUARDED_BY(trace_data_lock_);
 
+  // This specifies if a trace dump is in progress. We release the trace_lock_
+  // when waiting for the checkpoints to finish. We shouldn't delete trace data
+  // when a dump is in progress. trace_dump_in_progress_ and
+  // trace_dump_condition_ are used to make sure we wait for any in progress
+  // trace dumps to finish before deleting the trace data.
+  bool trace_dump_in_progress_ GUARDED_BY(Locks::trace_lock_);
+  ConditionVariable trace_dump_condition_ GUARDED_BY(Locks::trace_lock_);
+
   // Lock to synchronize access to traced_methods_, traced_threads_ and long_running_methods_ which
   // can be accessed simultaneously by multiple threads when running TraceDumpCheckpoint.
   Mutex trace_data_lock_;
@@ -115,6 +141,7 @@ class TraceDumpCheckpoint final : public Closure {
 
   void Run(Thread* thread) override REQUIRES_SHARED(Locks::mutator_lock_);
   void WaitForThreadsToRunThroughCheckpoint(size_t threads_running_checkpoint);
+  void FinishTraceDump(std::ostringstream& os);
 
  private:
   // The barrier to be passed through and for the requestor to wait upon.

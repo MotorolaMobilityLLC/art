@@ -354,7 +354,7 @@ void MemberSignature::Dump(std::ostream& os) const {
 }
 
 void MemberSignature::LogAccessToLogcat(AccessMethod access_method,
-                                        hiddenapi::ApiList list,
+                                        ApiList api_list,
                                         bool access_denied,
                                         uint32_t runtime_flags,
                                         const AccessContext& caller_context,
@@ -368,10 +368,10 @@ void MemberSignature::LogAccessToLogcat(AccessMethod access_method,
       << "hiddenapi: Accessing hidden " << (type_ == kField ? "field " : "method ")
       << Dumpable<MemberSignature>(*this)
       << " (runtime_flags=" << FormatHiddenApiRuntimeFlags(runtime_flags)
-      << ", domain=" << callee_context.GetDomain() << ", api=" << list << ") from "
+      << ", domain=" << callee_context.GetDomain() << ", api=" << api_list << ") from "
       << caller_context << " (domain=" << caller_context.GetDomain() << ") using " << access_method
       << (access_denied ? ": denied" : ": allowed");
-  if (access_denied && list.IsTestApi()) {
+  if (access_denied && api_list.IsTestApi()) {
     // see b/177047045 for more details about test api access getting denied
     LOG(WARNING) << "hiddenapi: If this is a platform test consider enabling "
                  << "VMRuntime.ALLOW_TEST_API_ACCESS change id for this package.";
@@ -533,8 +533,7 @@ uint32_t GetDexFlags(T* member) REQUIRES_SHARED(Locks::mutator_lock_) {
   ObjPtr<mirror::Class> declaring_class = member->GetDeclaringClass();
   DCHECK(!declaring_class.IsNull()) << "Attempting to access a runtime method";
 
-  ApiList flags;
-  DCHECK(!flags.IsValid());
+  ApiList flags = ApiList::Invalid();
 
   // Check if the declaring class has ClassExt allocated. If it does, check if
   // the pre-JVMTI redefine dex file has been set to determine if the declaring
@@ -556,7 +555,7 @@ uint32_t GetDexFlags(T* member) REQUIRES_SHARED(Locks::mutator_lock_) {
       uint32_t member_index = GetMemberDexIndex(member);
       auto fn_visit = [&](const AccessorType& dex_member) {
         if (dex_member.GetIndex() == member_index) {
-          flags = ApiList(dex_member.GetHiddenapiFlags());
+          flags = ApiList::FromDexFlags(dex_member.GetHiddenapiFlags());
         }
       };
       VisitMembers(declaring_class->GetDexFile(), *class_def, fn_visit);
@@ -576,7 +575,7 @@ uint32_t GetDexFlags(T* member) REQUIRES_SHARED(Locks::mutator_lock_) {
       MemberSignature cur_signature(dex_member);
       if (member_signature.MemberNameAndTypeMatch(cur_signature)) {
         DCHECK(member_signature.Equals(cur_signature));
-        flags = ApiList(dex_member.GetHiddenapiFlags());
+        flags = ApiList::FromDexFlags(dex_member.GetHiddenapiFlags());
       }
     };
     VisitMembers(*original_dex, original_class_def, fn_visit);
@@ -811,7 +810,7 @@ bool ShouldDenyAccessToMember(T* member,
       // Decode hidden API access flags from the dex file.
       // This is an O(N) operation scaling with the number of fields/methods
       // in the class. Only do this on slow path and only do it once.
-      ApiList api_list(detail::GetDexFlags(member));
+      ApiList api_list = ApiList::FromDexFlags(detail::GetDexFlags(member));
       DCHECK(api_list.IsValid());
 
       // Member is hidden and caller is not exempted. Enter slow path.

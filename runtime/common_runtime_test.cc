@@ -49,6 +49,7 @@
 #include "gc_root-inl.h"
 #include "gtest/gtest.h"
 #include "handle_scope-inl.h"
+#include "instrumentation.h"
 #include "interpreter/unstarted_runtime.h"
 #include "jni/java_vm_ext.h"
 #include "jni/jni_internal.h"

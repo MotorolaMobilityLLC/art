@@ -35,6 +35,7 @@
 #include "dex/class_reference.h"
 #include "handle.h"
 #include "handle_scope-inl.h"
+#include "instrumentation.h"
 #include "mirror/class-alloc-inl.h"
 #include "mirror/class_loader.h"
 #include "monitor-inl.h"

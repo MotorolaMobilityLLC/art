@@ -40,7 +40,6 @@
 #include "dex/dex_file_types.h"
 #include "experimental_flags.h"
 #include "gc_root.h"
-#include "instrumentation.h"
 #include "jdwp_provider.h"
 #include "jni/jni_id_manager.h"
 #include "jni_id_type.h"
@@ -62,6 +61,10 @@ class Heap;
 namespace hiddenapi {
 enum class EnforcementPolicy;
 }  // namespace hiddenapi
+
+namespace instrumentation {
+class Instrumentation;
+}  // namespace instrumentation
 
 namespace jit {
 class Jit;
@@ -607,11 +610,11 @@ class Runtime {
       bool profile_system_server = false);
 
   const instrumentation::Instrumentation* GetInstrumentation() const {
-    return &instrumentation_;
+    return instrumentation_.get();
   }
 
   instrumentation::Instrumentation* GetInstrumentation() {
-    return &instrumentation_;
+    return instrumentation_.get();
   }
 
   void RegisterAppInfo(const std::string& package_name,
@@ -1331,7 +1334,7 @@ class Runtime {
 
   std::unique_ptr<TraceConfig> trace_config_;
 
-  instrumentation::Instrumentation instrumentation_;
+  std::unique_ptr<instrumentation::Instrumentation> instrumentation_;
 
   jobject main_thread_group_;
   jobject system_thread_group_;

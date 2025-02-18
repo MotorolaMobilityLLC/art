@@ -446,7 +446,7 @@ class OptimizingUnitTestHelper {
         instruction->GetDexPc(),
         instruction);
 
-    environment->CopyFrom(ArrayRef<HInstruction* const>(*current_locals));
+    environment->CopyFrom(GetAllocator(), ArrayRef<HInstruction* const>(*current_locals));
     instruction->SetRawEnvironment(environment);
     return environment;
   }

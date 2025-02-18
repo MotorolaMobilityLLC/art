@@ -1035,10 +1035,13 @@ bool HBasicBlock::Dominates(const HBasicBlock* other) const {
   return false;
 }
 
-static void UpdateInputsUsers(HInstruction* instruction) {
+static void UpdateInputsUsers(HGraph* graph, HInstruction* instruction) {
   HInputsRef inputs = instruction->GetInputs();
-  for (size_t i = 0; i < inputs.size(); ++i) {
-    inputs[i]->AddUseAt(instruction, i);
+  if (inputs.size() != 0u) {
+    ArenaAllocator* allocator = graph->GetAllocator();
+    for (size_t i = 0; i < inputs.size(); ++i) {
+      inputs[i]->AddUseAt(allocator, instruction, i);
+    }
   }
   // Environment should be created later.
   DCHECK(!instruction->HasEnvironment());
@@ -1064,9 +1067,10 @@ void HBasicBlock::ReplaceAndRemoveInstructionWith(HInstruction* initial,
     DCHECK(initial->GetUses().empty());
     DCHECK(initial->GetEnvUses().empty());
     replacement->SetBlock(this);
-    replacement->SetId(GetGraph()->GetNextInstructionId());
+    HGraph* graph = GetGraph();
+    replacement->SetId(graph->GetNextInstructionId());
     instructions_.InsertInstructionBefore(replacement, initial);
-    UpdateInputsUsers(replacement);
+    UpdateInputsUsers(graph, replacement);
   } else {
     InsertInstructionBefore(replacement, initial);
     initial->ReplaceWith(replacement);
@@ -1080,8 +1084,9 @@ static void Add(HInstructionList* instruction_list,
   DCHECK(instruction->GetBlock() == nullptr);
   DCHECK_EQ(instruction->GetId(), -1);
   instruction->SetBlock(block);
-  instruction->SetId(block->GetGraph()->GetNextInstructionId());
-  UpdateInputsUsers(instruction);
+  HGraph* graph = block->GetGraph();
+  instruction->SetId(graph->GetNextInstructionId());
+  UpdateInputsUsers(graph, instruction);
   instruction_list->AddInstruction(instruction);
 }
 
@@ -1101,8 +1106,9 @@ void HBasicBlock::InsertInstructionBefore(HInstruction* instruction, HInstructio
   DCHECK_EQ(cursor->GetBlock(), this);
   DCHECK(!instruction->IsControlFlow());
   instruction->SetBlock(this);
-  instruction->SetId(GetGraph()->GetNextInstructionId());
-  UpdateInputsUsers(instruction);
+  HGraph* graph = GetGraph();
+  instruction->SetId(graph->GetNextInstructionId());
+  UpdateInputsUsers(graph, instruction);
   instructions_.InsertInstructionBefore(instruction, cursor);
 }
 
@@ -1115,8 +1121,9 @@ void HBasicBlock::InsertInstructionAfter(HInstruction* instruction, HInstruction
   DCHECK(!instruction->IsControlFlow());
   DCHECK(!cursor->IsControlFlow());
   instruction->SetBlock(this);
-  instruction->SetId(GetGraph()->GetNextInstructionId());
-  UpdateInputsUsers(instruction);
+  HGraph* graph = GetGraph();
+  instruction->SetId(graph->GetNextInstructionId());
+  UpdateInputsUsers(graph, instruction);
   instructions_.InsertInstructionAfter(instruction, cursor);
 }
 
@@ -1125,8 +1132,9 @@ void HBasicBlock::InsertPhiAfter(HPhi* phi, HPhi* cursor) {
   DCHECK_NE(cursor->GetId(), -1);
   DCHECK_EQ(cursor->GetBlock(), this);
   phi->SetBlock(this);
-  phi->SetId(GetGraph()->GetNextInstructionId());
-  UpdateInputsUsers(phi);
+  HGraph* graph = GetGraph();
+  phi->SetId(graph->GetNextInstructionId());
+  UpdateInputsUsers(graph, phi);
   phis_.InsertInstructionAfter(phi, cursor);
 }
 
@@ -1161,27 +1169,30 @@ void HBasicBlock::RemoveInstructionOrPhi(HInstruction* instruction, bool ensure_
   }
 }
 
-void HEnvironment::CopyFrom(ArrayRef<HInstruction* const> locals) {
+void HEnvironment::CopyFrom(ArenaAllocator* allocator, ArrayRef<HInstruction* const> locals) {
+  DCHECK_EQ(locals.size(), Size());
   for (size_t i = 0; i < locals.size(); i++) {
     HInstruction* instruction = locals[i];
     SetRawEnvAt(i, instruction);
     if (instruction != nullptr) {
-      instruction->AddEnvUseAt(this, i);
+      instruction->AddEnvUseAt(allocator, this, i);
     }
   }
 }
 
-void HEnvironment::CopyFrom(const HEnvironment* env) {
+void HEnvironment::CopyFrom(ArenaAllocator* allocator, const HEnvironment* env) {
+  DCHECK_EQ(env->Size(), Size());
   for (size_t i = 0; i < env->Size(); i++) {
     HInstruction* instruction = env->GetInstructionAt(i);
     SetRawEnvAt(i, instruction);
     if (instruction != nullptr) {
-      instruction->AddEnvUseAt(this, i);
+      instruction->AddEnvUseAt(allocator, this, i);
     }
   }
 }
 
-void HEnvironment::CopyFromWithLoopPhiAdjustment(HEnvironment* env,
+void HEnvironment::CopyFromWithLoopPhiAdjustment(ArenaAllocator* allocator,
+                                                 HEnvironment* env,
                                                  HBasicBlock* loop_header) {
   DCHECK(loop_header->IsLoopHeader());
   for (size_t i = 0; i < env->Size(); i++) {
@@ -1195,9 +1206,9 @@ void HEnvironment::CopyFromWithLoopPhiAdjustment(HEnvironment* env,
       // is the first input of the phi.
       HInstruction* initial = instruction->AsPhi()->InputAt(0);
       SetRawEnvAt(i, initial);
-      initial->AddEnvUseAt(this, i);
+      initial->AddEnvUseAt(allocator, this, i);
     } else {
-      instruction->AddEnvUseAt(this, i);
+      instruction->AddEnvUseAt(allocator, this, i);
     }
   }
 }
@@ -1538,7 +1549,7 @@ size_t HInstruction::EnvironmentSize() const {
 void HVariableInputSizeInstruction::AddInput(HInstruction* input) {
   DCHECK(input->GetBlock() != nullptr);
   inputs_.push_back(HUserRecord<HInstruction*>(input));
-  input->AddUseAt(this, inputs_.size() - 1);
+  input->AddUseAt(GetBlock()->GetGraph()->GetAllocator(), this, inputs_.size() - 1);
 }
 
 void HVariableInputSizeInstruction::InsertInputAt(size_t index, HInstruction* input) {
@@ -1550,7 +1561,7 @@ void HVariableInputSizeInstruction::InsertInputAt(size_t index, HInstruction* in
   }
   // Add the use after updating the indexes. If the `input` is already used by `this`,
   // the fixup after use insertion can use those indexes.
-  input->AddUseAt(this, index);
+  input->AddUseAt(GetBlock()->GetGraph()->GetAllocator(), this, index);
 }
 
 void HVariableInputSizeInstruction::RemoveInputAt(size_t index) {

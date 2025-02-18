@@ -65,6 +65,7 @@
 #include "stack.h"
 #include "vdex_file.h"
 #include "verifier/method_verifier.h"
+#include "verifier_compiler_binding.h"
 #include "verifier_deps.h"
 
 namespace art HIDDEN {
@@ -5587,25 +5588,6 @@ MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
   }
 }
 
-// Return whether the runtime knows how to execute a method without needing to
-// re-verify it at runtime (and therefore save on first use of the class).
-// The AOT/JIT compiled code is not affected.
-static inline bool CanRuntimeHandleVerificationFailure(uint32_t encountered_failure_types) {
-  constexpr uint32_t unresolved_mask =
-      verifier::VerifyError::VERIFY_ERROR_UNRESOLVED_TYPE_CHECK |
-      verifier::VerifyError::VERIFY_ERROR_NO_CLASS |
-      verifier::VerifyError::VERIFY_ERROR_CLASS_CHANGE |
-      verifier::VerifyError::VERIFY_ERROR_INSTANTIATION |
-      verifier::VerifyError::VERIFY_ERROR_FILLED_NEW_ARRAY |
-      verifier::VerifyError::VERIFY_ERROR_ACCESS_CLASS |
-      verifier::VerifyError::VERIFY_ERROR_ACCESS_FIELD |
-      verifier::VerifyError::VERIFY_ERROR_NO_METHOD |
-      verifier::VerifyError::VERIFY_ERROR_NO_FIELD |
-      verifier::VerifyError::VERIFY_ERROR_ACCESS_METHOD |
-      verifier::VerifyError::VERIFY_ERROR_RUNTIME_THROW;
-  return (encountered_failure_types & (~unresolved_mask)) == 0;
-}
-
 template <bool kVerifierDebug>
 MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
                                                          ArenaPool* arena_pool,
@@ -5650,13 +5632,16 @@ MethodVerifier::FailureData MethodVerifier::VerifyMethod(Thread* self,
         LOG(INFO) << verifier.InfoMessages().view();
         verifier.Dump(LOG_STREAM(INFO));
       }
-      if (CanRuntimeHandleVerificationFailure(verifier.encountered_failure_types_)) {
+      if (CanCompilerHandleVerificationFailure(verifier.encountered_failure_types_)) {
         if (verifier.encountered_failure_types_ & VERIFY_ERROR_UNRESOLVED_TYPE_CHECK) {
           result.kind = FailureKind::kTypeChecksFailure;
         } else {
           result.kind = FailureKind::kAccessChecksFailure;
         }
       } else {
+        // If the compiler cannot handle the failure, force a soft failure to
+        // ensure the class will be re-verified at runtime and the method marked
+        // as not compilable.
         result.kind = FailureKind::kSoftFailure;
       }
     }

@@ -998,6 +998,7 @@ class ClassLinker {
   class LinkFieldsHelper;
   template <PointerSize kPointerSize>
   class LinkMethodsHelper;
+  class LoadClassHelper;
   class MethodAnnotationsIterator;
   class OatClassCodeIterator;
   class VisiblyInitializedCallback;
@@ -1113,20 +1114,6 @@ class ClassLinker {
   // sufficient to hold all static fields.
   uint32_t SizeOfClassWithoutEmbeddedTables(const DexFile& dex_file,
                                             const dex::ClassDef& dex_class_def);
-
-  void LoadField(const ClassAccessor::Field& field, Handle<mirror::Class> klass, ArtField* dst)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void LoadMethod(const DexFile& dex_file,
-                  const ClassAccessor::Method& method,
-                  ObjPtr<mirror::Class> klass,
-                  /*inout*/ MethodAnnotationsIterator* mai,
-                  /*out*/ ArtMethod* dst)
-      REQUIRES_SHARED(Locks::mutator_lock_);
-
-  void LinkCode(ArtMethod* method,
-                uint32_t class_def_method_index,
-                /*inout*/ OatClassCodeIterator* occi) REQUIRES_SHARED(Locks::mutator_lock_);
 
   void FixupStaticTrampolines(Thread* self, ObjPtr<mirror::Class> klass)
       REQUIRES_SHARED(Locks::mutator_lock_);

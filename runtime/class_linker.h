@@ -540,13 +540,19 @@ class ClassLinker {
       REQUIRES(!Locks::dex_lock_)
       REQUIRES_SHARED(Locks::mutator_lock_);
 
+  // Allocating `ArtField` and `ArtMethod` arrays can lead to adding new arenas to
+  // the `LinearAlloc` but the CMC GC's `CompactionPause()` does not expect new
+  // arenas being concurrently added. Therefore we require these allocations to be
+  // done with the mutator lock held shared as this prevents concurrent execution
+  // with the `CompactionPause()` where we hold the mutator lock exclusively.
   LengthPrefixedArray<ArtField>* AllocArtFieldArray(Thread* self,
                                                     LinearAlloc* allocator,
-                                                    size_t length);
-
+                                                    size_t length)
+      REQUIRES_SHARED(Locks::mutator_lock_);
   LengthPrefixedArray<ArtMethod>* AllocArtMethodArray(Thread* self,
                                                       LinearAlloc* allocator,
-                                                      size_t length);
+                                                      size_t length)
+      REQUIRES_SHARED(Locks::mutator_lock_);
 
   // Convenience AllocClass() overload that uses mirror::Class::InitializeClassVisitor
   // for the class initialization and uses the `java_lang_Class` from class roots

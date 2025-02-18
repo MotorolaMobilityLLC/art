@@ -2032,8 +2032,7 @@ TEST_F(Dex2oatTest, LoadOutOfDateOatFile) {
                                                       /*low_4gb=*/false,
                                                       &error_msg));
       ASSERT_TRUE(elf_file != nullptr) << error_msg;
-      ASSERT_TRUE(elf_file->Load(file.get(),
-                                 /*executable=*/false,
+      ASSERT_TRUE(elf_file->Load(/*executable=*/false,
                                  /*low_4gb=*/false,
                                  /*reservation=*/nullptr,
                                  &error_msg))

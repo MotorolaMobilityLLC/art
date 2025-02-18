@@ -44,6 +44,9 @@ class ElfFileImpl : public ElfFile {
   using Elf_Dyn = typename ElfTypes::Dyn;
 
   static ElfFileImpl* Open(File* file,
+                           off_t start,
+                           size_t file_length,
+                           const std::string& file_location,
                            bool low_4gb,
                            /*out*/ std::string* error_msg);
 
@@ -73,8 +76,7 @@ class ElfFileImpl : public ElfFile {
 
   // Load segments into memory based on PT_LOAD program headers.
   // executable is true at run time, false at compile time.
-  bool Load(File* file,
-            bool executable,
+  bool Load(bool executable,
             bool low_4gb,
             /*inout*/ MemMap* reservation,
             /*out*/ std::string* error_msg) override;
@@ -82,15 +84,16 @@ class ElfFileImpl : public ElfFile {
   bool Is64Bit() const override { return std::is_same_v<ElfTypes, ElfTypes64>; }
 
  private:
-  explicit ElfFileImpl(File* file);
+  ElfFileImpl(File* file, off_t start, size_t file_length, const std::string& file_location)
+      : ElfFile(file, start, file_length, file_location) {}
 
   bool GetLoadedAddressRange(/*out*/uint8_t** vaddr_begin,
                              /*out*/size_t* vaddr_size,
                              /*out*/std::string* error_msg) const;
 
-  bool Setup(File* file, int prot, int flags, bool low_4gb, std::string* error_msg);
+  bool Setup(bool low_4gb, std::string* error_msg);
 
-  bool SetMap(File* file, MemMap&& map, std::string* error_msg);
+  bool SetMap(MemMap&& map, std::string* error_msg);
 
   uint8_t* GetProgramHeadersStart() const;
   Elf_Phdr& GetDynamicProgramHeader() const;
@@ -108,24 +111,24 @@ class ElfFileImpl : public ElfFile {
   const Elf_Sym* FindDynamicSymbol(const std::string& symbol_name) const;
 
   // Check that certain sections and their dependencies exist.
-  bool CheckSectionsExist(File* file, std::string* error_msg) const;
+  bool CheckSectionsExist(std::string* error_msg) const;
 
   Elf_Phdr* FindProgamHeaderByType(Elf_Word type) const;
 
   // Lookup a string by section type. Returns null for special 0 offset.
   const char* GetString(Elf_Word section_type, Elf_Word) const;
 
-  Elf_Ehdr* header_;
+  Elf_Ehdr* header_ = nullptr;
 
   // Conditionally available values. Use accessors to ensure they exist if they are required.
-  uint8_t* section_headers_start_;
-  Elf_Phdr* dynamic_program_header_;
-  Elf_Dyn* dynamic_section_start_;
-  Elf_Sym* symtab_section_start_;
-  Elf_Sym* dynsym_section_start_;
-  char* strtab_section_start_;
-  char* dynstr_section_start_;
-  Elf_Word* hash_section_start_;
+  uint8_t* section_headers_start_ = nullptr;
+  Elf_Phdr* dynamic_program_header_ = nullptr;
+  Elf_Dyn* dynamic_section_start_ = nullptr;
+  Elf_Sym* symtab_section_start_ = nullptr;
+  Elf_Sym* dynsym_section_start_ = nullptr;
+  char* strtab_section_start_ = nullptr;
+  char* dynstr_section_start_ = nullptr;
+  Elf_Word* hash_section_start_ = nullptr;
 
   DISALLOW_COPY_AND_ASSIGN(ElfFileImpl);
 };

@@ -315,10 +315,10 @@ void TraceProfiler::StopLocked() {
   trace_data_ = nullptr;
 }
 
-uint8_t* TraceProfiler::DumpBuffer(uint32_t thread_id,
-                                   uintptr_t* method_trace_entries,
-                                   uint8_t* buffer,
-                                   std::unordered_set<ArtMethod*>& methods) {
+size_t TraceProfiler::DumpBuffer(uint32_t thread_id,
+                                 uintptr_t* method_trace_entries,
+                                 uint8_t* buffer,
+                                 std::unordered_set<ArtMethod*>& methods) {
   // Encode header at the end once we compute the number of records.
   uint8_t* curr_buffer_ptr = buffer + kAlwaysOnTraceHeaderSize;
 
@@ -362,7 +362,7 @@ uint8_t* TraceProfiler::DumpBuffer(uint32_t thread_id,
   buffer[0] = kEntryHeaderV2;
   Append4LE(buffer + 1, thread_id);
   Append3LE(buffer + 5, num_records);
-  return curr_buffer_ptr;
+  return curr_buffer_ptr - buffer;
 }
 
 void TraceProfiler::Dump(int fd) {
@@ -372,7 +372,8 @@ void TraceProfiler::Dump(int fd) {
   }
 
   std::unique_ptr<File> trace_file(new File(fd, /*check_usage=*/true));
-  Dump(std::move(trace_file));
+  std::ostringstream os;
+  Dump(std::move(trace_file), os);
 }
 
 void TraceProfiler::Dump(const char* filename) {
@@ -387,80 +388,39 @@ void TraceProfiler::Dump(const char* filename) {
     return;
   }
 
-  Dump(std::move(trace_file));
+  std::ostringstream os;
+  Dump(std::move(trace_file), os);
 }
 
-void TraceProfiler::Dump(std::unique_ptr<File>&& trace_file) {
+void TraceProfiler::Dump(std::unique_ptr<File>&& trace_file, std::ostringstream& os) {
   MutexLock mu(Thread::Current(), *Locks::trace_lock_);
   if (!profile_in_progress_) {
-    LOG(ERROR) << "No Profile in progress. Nothing to dump.";
+    if (trace_file != nullptr && !trace_file->Close()) {
+      PLOG(WARNING) << "Failed to close file.";
+    }
     return;
   }
 
-  if (trace_data_->GetTraceType() == LowOverheadTraceType::kAllMethods) {
-    DumpTrace(std::move(trace_file));
-  } else {
-    DumpLongRunningMethods(std::move(trace_file));
-  }
-}
-
-void TraceProfiler::DumpTrace(std::unique_ptr<File>&& trace_file) {
   Thread* self = Thread::Current();
-  std::unordered_set<ArtMethod*> traced_methods;
-  std::unordered_map<size_t, std::string> traced_threads;
-  uint8_t* buffer_ptr = new uint8_t[kBufSizeForEncodedData];
-  uint8_t* curr_buffer_ptr = buffer_ptr;
+  // Collect long running methods from all the threads;
+  Runtime* runtime = Runtime::Current();
 
-  // Add a header for the trace: 4-bits of magic value and 2-bits for the version.
-  Append4LE(curr_buffer_ptr, kProfileMagicValue);
-  Append2LE(curr_buffer_ptr + 4, /*trace_version=*/ 1);
-  curr_buffer_ptr += 6;
-
-  ScopedSuspendAll ssa(__FUNCTION__);
-  MutexLock tl(self, *Locks::thread_list_lock_);
-  for (Thread* thread : Runtime::Current()->GetThreadList()->GetList()) {
-    auto method_trace_entries = thread->GetMethodTraceBuffer();
-    if (method_trace_entries == nullptr) {
-      continue;
-    }
-
-    std::string thread_name;
-    thread->GetThreadName(thread_name);
-    traced_threads.emplace(thread->GetTid(), thread_name);
-
-    size_t offset = curr_buffer_ptr - buffer_ptr;
-    if (offset >= kMinBufSizeForEncodedData) {
-      if (!trace_file->WriteFully(buffer_ptr, offset)) {
-        PLOG(WARNING) << "Failed streaming a tracing event.";
-      }
-      curr_buffer_ptr = buffer_ptr;
-    }
-    curr_buffer_ptr =
-        DumpBuffer(thread->GetTid(), method_trace_entries, curr_buffer_ptr, traced_methods);
-    // Reset the buffer and continue profiling. We need to set the buffer to
-    // zeroes, since we use a circular buffer and detect empty entries by
-    // checking for zeroes.
-    memset(method_trace_entries, 0, kAlwaysOnTraceBufSize * sizeof(uintptr_t));
-    // Reset the current pointer.
-    thread->SetMethodTraceBufferCurrentEntry(kAlwaysOnTraceBufSize);
+  TraceDumpCheckpoint checkpoint(trace_data_, trace_file);
+  size_t threads_running_checkpoint = runtime->GetThreadList()->RunCheckpoint(&checkpoint);
+  if (threads_running_checkpoint != 0) {
+    checkpoint.WaitForThreadsToRunThroughCheckpoint(threads_running_checkpoint);
   }
 
-  // Write any remaining data to file and close the file.
-  if (curr_buffer_ptr != buffer_ptr) {
-    if (!trace_file->WriteFully(buffer_ptr, curr_buffer_ptr - buffer_ptr)) {
-      PLOG(WARNING) << "Failed streaming a tracing event.";
+  trace_data_->DumpData(os);
+  if (trace_file != nullptr) {
+    std::string info = os.str();
+    if (!trace_file->WriteFully(info.c_str(), info.length())) {
+      PLOG(WARNING) << "Failed writing information to file";
     }
-  }
 
-  std::ostringstream os;
-  DumpThreadMethodInfo(traced_threads, traced_methods, os);
-  std::string info = os.str();
-  if (!trace_file->WriteFully(info.c_str(), info.length())) {
-    PLOG(WARNING) << "Failed writing information to file";
-  }
-
-  if (!trace_file->Close()) {
-    PLOG(WARNING) << "Failed to close file.";
+    if (!trace_file->Close()) {
+      PLOG(WARNING) << "Failed to close file.";
+    }
   }
 }
 
@@ -595,25 +555,32 @@ std::string TraceProfiler::GetLongRunningMethodsString() {
     return std::string();
   }
 
-  MutexLock mu(Thread::Current(), *Locks::trace_lock_);
-  if (!profile_in_progress_) {
-    return std::string();
-  }
-
-  return GetLongRunningMethodsStringLocked();
+  std::ostringstream os;
+  Dump(std::unique_ptr<File>(), os);
+  return os.str();
 }
 
 void TraceDumpCheckpoint::Run(Thread* thread) {
   auto method_trace_entries = thread->GetMethodTraceBuffer();
   if (method_trace_entries != nullptr) {
     std::unordered_set<ArtMethod*> traced_methods;
-    uintptr_t* method_trace_curr_ptr = *(thread->GetTraceBufferCurrEntryPtr());
-    std::ostringstream os;
-    TraceProfiler::DumpLongRunningMethodBuffer(
-        thread->GetTid(), method_trace_entries, method_trace_curr_ptr, traced_methods, os);
+    if (trace_data_->GetTraceType() == LowOverheadTraceType::kLongRunningMethods) {
+      uintptr_t* method_trace_curr_ptr = *(thread->GetTraceBufferCurrEntryPtr());
+      std::ostringstream os;
+      TraceProfiler::DumpLongRunningMethodBuffer(
+          thread->GetTid(), method_trace_entries, method_trace_curr_ptr, traced_methods, os);
+      trace_data_->AppendToLongRunningMethods(os.str());
+    } else {
+      std::unique_ptr<uint8_t> buffer_ptr(new uint8_t[kBufSizeForEncodedData]);
+      size_t num_bytes = TraceProfiler::DumpBuffer(
+          thread->GetTid(), method_trace_entries, buffer_ptr.get(), traced_methods);
+      MutexLock mu(Thread::Current(), trace_file_lock_);
+      if (!trace_file_->WriteFully(buffer_ptr.get(), num_bytes)) {
+        PLOG(WARNING) << "Failed streaming a tracing event.";
+      }
+    }
     trace_data_->AddTracedThread(thread);
     trace_data_->AddTracedMethods(traced_methods);
-    trace_data_->AppendToLongRunningMethods(os.str());
   }
   barrier_.Pass(Thread::Current());
 }
@@ -622,21 +589,6 @@ void TraceDumpCheckpoint::WaitForThreadsToRunThroughCheckpoint(size_t threads_ru
   Thread* self = Thread::Current();
   ScopedThreadStateChange tsc(self, ThreadState::kWaitingForCheckPointsToRun);
   barrier_.Increment(self, threads_running_checkpoint);
-}
-
-std::string TraceProfiler::GetLongRunningMethodsStringLocked() {
-  Thread* self = Thread::Current();
-  std::ostringstream os;
-  // Collect long running methods from all the threads;
-  Runtime* runtime = Runtime::Current();
-  TraceDumpCheckpoint checkpoint(trace_data_);
-  size_t threads_running_checkpoint = runtime->GetThreadList()->RunCheckpoint(&checkpoint);
-  if (threads_running_checkpoint != 0) {
-    checkpoint.WaitForThreadsToRunThroughCheckpoint(threads_running_checkpoint);
-  }
-
-  trace_data_->DumpData(os);
-  return os.str();
 }
 
 void TraceData::DumpData(std::ostringstream& os) {
@@ -649,17 +601,6 @@ void TraceData::DumpData(std::ostringstream& os) {
   {
     ScopedObjectAccess soa(Thread::Current());
     DumpThreadMethodInfo(traced_threads_, traced_methods_, os);
-  }
-}
-
-void TraceProfiler::DumpLongRunningMethods(std::unique_ptr<File>&& trace_file) {
-  std::string info = GetLongRunningMethodsStringLocked();
-  if (!trace_file->WriteFully(info.c_str(), info.length())) {
-    PLOG(WARNING) << "Failed writing information to file";
-  }
-
-  if (!trace_file->Close()) {
-    PLOG(WARNING) << "Failed to close file.";
   }
 }
 

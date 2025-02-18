@@ -602,6 +602,11 @@ void OatWriter::PrepareLayout(MultiOatRelativePatcher* relative_patcher) {
   CHECK_EQ(instruction_set, oat_header_->GetInstructionSet());
 
   {
+    TimingLogger::ScopedTiming split("InitBssAndRelRoData", timings_);
+    InitBssAndRelRoData();
+  }
+
+  {
     TimingLogger::ScopedTiming split("InitBssLayout", timings_);
     InitBssLayout(instruction_set);
   }
@@ -732,88 +737,84 @@ static bool HasCompiledCode(const CompiledMethod* method) {
   return method != nullptr && !method->GetQuickCode().empty();
 }
 
-class OatWriter::InitBssLayoutMethodVisitor : public DexMethodVisitor {
- public:
-  explicit InitBssLayoutMethodVisitor(OatWriter* writer)
-      : DexMethodVisitor(writer, /* offset */ 0u) {}
-
-  bool VisitMethod([[maybe_unused]] size_t class_def_method_index,
-                   const ClassAccessor::Method& method) override {
-    // Look for patches with .bss references and prepare maps with placeholders for their offsets.
-    CompiledMethod* compiled_method = writer_->compiler_driver_->GetCompiledMethod(
-        MethodReference(dex_file_, method.GetIndex()));
-    if (HasCompiledCode(compiled_method)) {
+void OatWriter::InitBssAndRelRoData() {
+  for (const DexFile* dex_file : *dex_files_) {
+    const dchecked_vector<Atomic<CompiledMethod*>>* compiled_methods =
+        compiler_driver_->GetCompiledMethods(dex_file);
+    if (compiled_methods == nullptr) {
+      continue;
+    }
+    for (const Atomic<CompiledMethod*>& entry : *compiled_methods) {
+      CompiledMethod* compiled_method = entry.load(std::memory_order_relaxed);
+      if (compiled_method == nullptr) {
+        continue;
+      }
+      DCHECK_IMPLIES(!compiled_method->GetPatches().empty(), HasCompiledCode(compiled_method));
       for (const LinkerPatch& patch : compiled_method->GetPatches()) {
         if (patch.GetType() == LinkerPatch::Type::kBootImageRelRo) {
-          writer_->boot_image_rel_ro_entries_.Overwrite(patch.BootImageOffset(),
-                                                        /* placeholder */ 0u);
+          boot_image_rel_ro_entries_.Overwrite(patch.BootImageOffset(), /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kMethodAppImageRelRo) {
           MethodReference target_method = patch.TargetMethod();
-          writer_->app_image_rel_ro_method_entries_.Overwrite(target_method, /* placeholder */ 0u);
+          app_image_rel_ro_method_entries_.Overwrite(target_method, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kMethodBssEntry) {
           MethodReference target_method = patch.TargetMethod();
           AddBssReference(target_method,
                           target_method.dex_file->NumMethodIds(),
-                          &writer_->bss_method_entry_references_);
-          writer_->bss_method_entries_.Overwrite(target_method, /* placeholder */ 0u);
+                          &bss_method_entry_references_);
+          bss_method_entries_.Overwrite(target_method, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kTypeAppImageRelRo) {
-          writer_->app_image_rel_ro_type_entries_.Overwrite(patch.TargetType(),
-                                                            /* placeholder */ 0u);
+          app_image_rel_ro_type_entries_.Overwrite(patch.TargetType(), /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kTypeBssEntry) {
           TypeReference target_type = patch.TargetType();
           AddBssReference(target_type,
                           target_type.dex_file->NumTypeIds(),
-                          &writer_->bss_type_entry_references_);
-          writer_->bss_type_entries_.Overwrite(target_type, /* placeholder */ 0u);
+                          &bss_type_entry_references_);
+          bss_type_entries_.Overwrite(target_type, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kPublicTypeBssEntry) {
           TypeReference target_type = patch.TargetType();
           AddBssReference(target_type,
                           target_type.dex_file->NumTypeIds(),
-                          &writer_->bss_public_type_entry_references_);
-          writer_->bss_public_type_entries_.Overwrite(target_type, /* placeholder */ 0u);
+                          &bss_public_type_entry_references_);
+          bss_public_type_entries_.Overwrite(target_type, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kPackageTypeBssEntry) {
           TypeReference target_type = patch.TargetType();
           AddBssReference(target_type,
                           target_type.dex_file->NumTypeIds(),
-                          &writer_->bss_package_type_entry_references_);
-          writer_->bss_package_type_entries_.Overwrite(target_type, /* placeholder */ 0u);
+                          &bss_package_type_entry_references_);
+          bss_package_type_entries_.Overwrite(target_type, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kStringBssEntry) {
           StringReference target_string = patch.TargetString();
           AddBssReference(target_string,
                           target_string.dex_file->NumStringIds(),
-                          &writer_->bss_string_entry_references_);
-          writer_->bss_string_entries_.Overwrite(target_string, /* placeholder */ 0u);
+                          &bss_string_entry_references_);
+          bss_string_entries_.Overwrite(target_string, /* placeholder */ 0u);
         } else if (patch.GetType() == LinkerPatch::Type::kMethodTypeBssEntry) {
           ProtoReference target_proto = patch.TargetProto();
           AddBssReference(target_proto,
                           target_proto.dex_file->NumProtoIds(),
-                          &writer_->bss_method_type_entry_references_);
-          writer_->bss_method_type_entries_.Overwrite(target_proto, /* placeholder */ 0u);
+                          &bss_method_type_entry_references_);
+          bss_method_type_entries_.Overwrite(target_proto, /* placeholder */ 0u);
         }
       }
-    } else {
-      DCHECK(compiled_method == nullptr || compiled_method->GetPatches().empty());
     }
-    return true;
   }
+}
 
- private:
-  void AddBssReference(const DexFileReference& ref,
-                       size_t number_of_indexes,
-                       /*inout*/ SafeMap<const DexFile*, BitVector>* references) {
-    DCHECK(ContainsElement(*writer_->dex_files_, ref.dex_file) ||
-           ContainsElement(Runtime::Current()->GetClassLinker()->GetBootClassPath(), ref.dex_file));
-    DCHECK_LT(ref.index, number_of_indexes);
+inline void OatWriter::AddBssReference(const DexFileReference& ref,
+                                       size_t number_of_indexes,
+                                       /*inout*/ SafeMap<const DexFile*, BitVector>* references) {
+  DCHECK(ContainsElement(*dex_files_, ref.dex_file) ||
+         ContainsElement(Runtime::Current()->GetClassLinker()->GetBootClassPath(), ref.dex_file));
+  DCHECK_LT(ref.index, number_of_indexes);
 
-    auto refs_it = references->find(ref.dex_file);
-    if (refs_it == references->end()) {
-      refs_it = references->Put(
-          ref.dex_file,
-          BitVector(number_of_indexes, /* expandable */ false, Allocator::GetCallocAllocator()));
-    }
-    refs_it->second.SetBit(ref.index);
+  auto refs_it = references->find(ref.dex_file);
+  if (refs_it == references->end()) {
+    refs_it = references->Put(
+        ref.dex_file,
+        BitVector(number_of_indexes, /* expandable */ false, Allocator::GetCallocAllocator()));
   }
-};
+  refs_it->second.SetBit(ref.index);
+}
 
 class OatWriter::InitOatClassesMethodVisitor : public DexMethodVisitor {
  public:
@@ -2432,12 +2433,6 @@ size_t OatWriter::InitDataImgRelRoLayout(size_t offset) {
 }
 
 void OatWriter::InitBssLayout(InstructionSet instruction_set) {
-  {
-    InitBssLayoutMethodVisitor visitor(this);
-    bool success = VisitDexMethods(&visitor);
-    DCHECK(success);
-  }
-
   DCHECK_EQ(bss_size_, 0u);
   if (bss_method_entries_.empty() &&
       bss_type_entries_.empty() &&

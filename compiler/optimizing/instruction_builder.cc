@@ -305,7 +305,7 @@ void HInstructionBuilder::InitializeInstruction(HInstruction* instruction) {
         graph_->GetArtMethod(),
         instruction->GetDexPc(),
         instruction);
-    environment->CopyFrom(ArrayRef<HInstruction* const>(*current_locals_));
+    environment->CopyFrom(allocator_, ArrayRef<HInstruction* const>(*current_locals_));
     instruction->SetRawEnvironment(environment);
   }
 }

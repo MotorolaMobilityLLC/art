@@ -2233,6 +2233,10 @@ class HInstruction : public ArenaObject<kArenaAllocInstruction> {
     // Note: `old_begin` remains valid across `push_front()`.
     auto old_begin = uses_.begin();
     uses_.push_front(*new_node);
+    // To speed up this code, we inline the
+    //     FixUpUserRecordsAfterUseInsertion(
+    //         old_begin != uses_.end() ? ++old_begin : old_begin);
+    // to reduce branching as we know that we're going to fix up either one or two entries.
     auto new_begin = uses_.begin();
     user->SetRawInputRecordAt(index, HUserRecord<HInstruction*>(this, uses_.before_begin()));
     if (old_begin != uses_.end()) {
@@ -2250,6 +2254,10 @@ class HInstruction : public ArenaObject<kArenaAllocInstruction> {
     // Note: `old_env_begin` remains valid across `push_front()`.
     auto old_env_begin = env_uses_.begin();
     env_uses_.push_front(*new_node);
+    // To speed up this code, we inline the
+    //     FixUpUserRecordsAfterEnvUseInsertion(
+    //         old_env_begin != env_uses_.end() ? ++old_env_begin : old_env_begin);
+    // to reduce branching as we know that we're going to fix up either one or two entries.
     auto new_env_begin = env_uses_.begin();
     user->GetVRegs()[index] = HUserRecord<HEnvironment*>(this, env_uses_.before_begin());
     if (old_env_begin != env_uses_.end()) {

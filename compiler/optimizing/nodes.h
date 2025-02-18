@@ -359,10 +359,7 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
 
   void SimplifyLoop(HBasicBlock* header);
 
-  int32_t GetNextInstructionId() {
-    CHECK_NE(current_instruction_id_, INT32_MAX);
-    return current_instruction_id_++;
-  }
+  ALWAYS_INLINE int32_t AllocateInstructionId();
 
   int32_t GetCurrentInstructionId() const {
     return current_instruction_id_;

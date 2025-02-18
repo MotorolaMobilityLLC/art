@@ -282,7 +282,7 @@ Runtime::Runtime()
       abort_(nullptr),
       stats_enabled_(false),
       is_running_on_memory_tool_(kRunningOnMemoryTool),
-      instrumentation_(),
+      instrumentation_(new instrumentation::Instrumentation()),
       main_thread_group_(nullptr),
       system_thread_group_(nullptr),
       system_class_loader_(nullptr),

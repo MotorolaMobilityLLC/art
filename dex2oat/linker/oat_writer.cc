@@ -2494,6 +2494,7 @@ void OatWriter::InitBssLayout(InstructionSet instruction_set) {
 }
 
 bool OatWriter::WriteRodata(OutputStream* out) {
+  TimingLogger::ScopedTiming split("WriteRodata", timings_);
   CHECK(write_state_ == WriteState::kWriteRoData);
 
   size_t file_offset = oat_data_offset_;
@@ -2585,6 +2586,7 @@ void OatWriter::WriteVerifierDeps(verifier::VerifierDeps* verifier_deps,
 }
 
 bool OatWriter::WriteCode(OutputStream* out) {
+  TimingLogger::ScopedTiming split("WriteCode", timings_);
   CHECK(write_state_ == WriteState::kWriteText);
 
   // Wrap out to update checksum with each write.
@@ -2621,6 +2623,7 @@ bool OatWriter::WriteCode(OutputStream* out) {
 }
 
 bool OatWriter::WriteDataImgRelRo(OutputStream* out) {
+  TimingLogger::ScopedTiming split("WriteDataImgRelRo", timings_);
   CHECK(write_state_ == WriteState::kWriteDataImgRelRo);
 
   // Wrap out to update checksum with each write.
@@ -2747,6 +2750,8 @@ bool OatWriter::CheckOatSize(OutputStream* out, size_t file_offset, size_t relat
 }
 
 bool OatWriter::WriteHeader(OutputStream* out) {
+  TimingLogger::ScopedTiming split("WriteHeader", timings_);
+
   CHECK(write_state_ == WriteState::kWriteHeader);
 
   // Update checksum with header data.
@@ -3040,7 +3045,6 @@ size_t OatWriter::WriteIndexBssMappingsHelper(OutputStream* out,
 size_t OatWriter::WriteIndexBssMappings(OutputStream* out,
                                         size_t file_offset,
                                         size_t relative_offset) {
-  TimingLogger::ScopedTiming split("WriteMethodBssMappings", timings_);
   if (bss_method_entry_references_.empty() &&
       bss_type_entry_references_.empty() &&
       bss_public_type_entry_references_.empty() &&
@@ -3110,8 +3114,6 @@ size_t OatWriter::WriteIndexBssMappings(OutputStream* out,
 }
 
 size_t OatWriter::WriteOatDexFiles(OutputStream* out, size_t file_offset, size_t relative_offset) {
-  TimingLogger::ScopedTiming split("WriteOatDexFiles", timings_);
-
   for (size_t i = 0, size = oat_dex_files_.size(); i != size; ++i) {
     OatDexFile* oat_dex_file = &oat_dex_files_[i];
     DCHECK_EQ(relative_offset, oat_dex_file->offset_);
@@ -3128,8 +3130,6 @@ size_t OatWriter::WriteOatDexFiles(OutputStream* out, size_t file_offset, size_t
 }
 
 size_t OatWriter::WriteBcpBssInfo(OutputStream* out, size_t file_offset, size_t relative_offset) {
-  TimingLogger::ScopedTiming split("WriteBcpBssInfo", timings_);
-
   const uint32_t number_of_bcp_dexfiles = bcp_bss_info_.size();
   // We skip adding the number of DexFiles if we have no .bss mappings.
   if (number_of_bcp_dexfiles == 0) {

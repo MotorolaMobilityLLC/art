@@ -2298,7 +2298,8 @@ static bool IsInterfaceMethodAccessible(ArtMethod* interface_method)
     REQUIRES_SHARED(Locks::mutator_lock_) {
   // If the interface method is part of the public SDK, return it.
   if ((hiddenapi::GetRuntimeFlags(interface_method) & kAccPublicApi) != 0) {
-    hiddenapi::ApiList api_list(hiddenapi::detail::GetDexFlags(interface_method));
+    hiddenapi::ApiList api_list =
+        hiddenapi::ApiList::FromDexFlags(hiddenapi::detail::GetDexFlags(interface_method));
     // The kAccPublicApi flag is also used as an optimization to avoid
     // other hiddenapi checks to always go on the slow path. Therefore, we
     // need to check here if the method is in the SDK list.

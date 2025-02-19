@@ -23,6 +23,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <sstream>
 #include <type_traits>
 
@@ -40,6 +41,7 @@
 #include "base/systrace.h"
 #include "base/unix_file/fd_file.h"
 #include "base/utils.h"
+#include "base/zip_archive.h"
 #include "class_loader_context.h"
 #include "dex/art_dex_file_loader.h"
 #include "dex/dex_file.h"
@@ -344,6 +346,7 @@ bool OatFileBase::LoadVdex(int vdex_fd,
                                       vdex_end_ - vdex_begin_,
                                       /*mmap_reuse=*/vdex_begin_ != nullptr,
                                       vdex_fd,
+                                      /*start=*/0,
                                       s.st_size,
                                       vdex_filename,
                                       low_4gb,
@@ -1622,6 +1625,9 @@ class ElfOatFile final : public OatFileBase {
 
  private:
   bool ElfFileOpen(File* file,
+                   off_t start,
+                   size_t file_length,
+                   const std::string& file_location,
                    bool executable,
                    bool low_4gb,
                    /*inout*/ MemMap* reservation,  // Where to load if not null.
@@ -1640,12 +1646,18 @@ bool ElfOatFile::Load(const std::string& elf_filename,
                       /*inout*/ MemMap* reservation,
                       /*out*/ std::string* error_msg) {
   ScopedTrace trace(__PRETTY_FUNCTION__);
-  std::unique_ptr<File> file(OS::OpenFileForReading(elf_filename.c_str()));
+
+  // Mirrors the alignment in the Bionic's dlopen. Actually, ART's MemMap only requires 4096 byte
+  // alignment, but we want to be more strict here, to reflect what the Bionic's dlopen would be
+  // able to load.
+  auto [file, start, length] = OS::OpenFileDirectlyOrFromZip(
+      elf_filename, kZipSeparator, /*alignment=*/MemMap::GetPageSize(), error_msg);
   if (file == nullptr) {
-    *error_msg = StringPrintf("Failed to open oat filename for reading: %s", strerror(errno));
     return false;
   }
-  return ElfOatFile::ElfFileOpen(file.get(), executable, low_4gb, reservation, error_msg);
+
+  return ElfOatFile::ElfFileOpen(
+      file.get(), start, length, elf_filename, executable, low_4gb, reservation, error_msg);
 }
 
 bool ElfOatFile::Load(int oat_fd,
@@ -1658,27 +1670,41 @@ bool ElfOatFile::Load(int oat_fd,
     int duped_fd = DupCloexec(oat_fd);
     std::unique_ptr<File> file = std::make_unique<File>(duped_fd, false);
     if (file == nullptr) {
-      *error_msg = StringPrintf("Failed to open oat filename for reading: %s",
-                                strerror(errno));
+      *error_msg = StringPrintf("Failed to open oat file for reading: %s", strerror(errno));
       return false;
     }
-    return ElfOatFile::ElfFileOpen(file.get(), executable, low_4gb, reservation, error_msg);
+    int64_t file_length = file->GetLength();
+    if (file_length < 0) {
+      *error_msg = StringPrintf("Failed to get file length of oat file: %s", strerror(errno));
+      return false;
+    }
+    return ElfOatFile::ElfFileOpen(file.get(),
+                                   /*start=*/0,
+                                   file_length,
+                                   file->GetPath(),
+                                   executable,
+                                   low_4gb,
+                                   reservation,
+                                   error_msg);
   }
   return false;
 }
 
 bool ElfOatFile::ElfFileOpen(File* file,
+                             off_t start,
+                             size_t file_length,
+                             const std::string& file_location,
                              bool executable,
                              bool low_4gb,
                              /*inout*/ MemMap* reservation,
                              /*out*/ std::string* error_msg) {
   ScopedTrace trace(__PRETTY_FUNCTION__);
-  elf_file_.reset(ElfFile::Open(file, low_4gb, error_msg));
+  elf_file_.reset(ElfFile::Open(file, start, file_length, file_location, low_4gb, error_msg));
   if (elf_file_ == nullptr) {
     DCHECK(!error_msg->empty());
     return false;
   }
-  bool loaded = elf_file_->Load(file, executable, low_4gb, reservation, error_msg);
+  bool loaded = elf_file_->Load(executable, low_4gb, reservation, error_msg);
   DCHECK(loaded || !error_msg->empty());
   return loaded;
 }

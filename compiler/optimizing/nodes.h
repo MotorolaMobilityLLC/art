@@ -359,10 +359,7 @@ class HGraph : public ArenaObject<kArenaAllocGraph> {
 
   void SimplifyLoop(HBasicBlock* header);
 
-  int32_t GetNextInstructionId() {
-    CHECK_NE(current_instruction_id_, INT32_MAX);
-    return current_instruction_id_++;
-  }
+  ALWAYS_INLINE int32_t AllocateInstructionId();
 
   int32_t GetCurrentInstructionId() const {
     return current_instruction_id_;
@@ -1893,20 +1890,22 @@ class HEnvironment : public ArenaObject<kArenaAllocEnvironment> {
       parent_->SetAndCopyParentChain(allocator, parent);
     } else {
       parent_ = Create(allocator, *parent, holder_);
-      parent_->CopyFrom(parent);
+      parent_->CopyFrom(allocator, parent);
       if (parent->GetParent() != nullptr) {
         parent_->SetAndCopyParentChain(allocator, parent->GetParent());
       }
     }
   }
 
-  void CopyFrom(ArrayRef<HInstruction* const> locals);
-  void CopyFrom(const HEnvironment* environment);
+  void CopyFrom(ArenaAllocator* allocator, ArrayRef<HInstruction* const> locals);
+  void CopyFrom(ArenaAllocator* allocator, const HEnvironment* environment);
 
   // Copy from `env`. If it's a loop phi for `loop_header`, copy the first
   // input to the loop phi instead. This is for inserting instructions that
   // require an environment (like HDeoptimization) in the loop pre-header.
-  void CopyFromWithLoopPhiAdjustment(HEnvironment* env, HBasicBlock* loop_header);
+  void CopyFromWithLoopPhiAdjustment(ArenaAllocator* allocator,
+                                     HEnvironment* env,
+                                     HBasicBlock* loop_header);
 
   void SetRawEnvAt(size_t index, HInstruction* instruction) {
     GetVRegs()[index] = HUserRecord<HEnvironment*>(instruction);
@@ -2227,25 +2226,46 @@ class HInstruction : public ArenaObject<kArenaAllocInstruction> {
                                               GetPackedFlag<kFlagReferenceTypeIsExact>());
   }
 
-  void AddUseAt(HInstruction* user, size_t index) {
+  void AddUseAt(ArenaAllocator* allocator, HInstruction* user, size_t index) {
     DCHECK(user != nullptr);
-    // Note: fixup_end remains valid across push_front().
-    auto fixup_end = uses_.empty() ? uses_.begin() : ++uses_.begin();
-    ArenaAllocator* allocator = user->GetBlock()->GetGraph()->GetAllocator();
     HUseListNode<HInstruction*>* new_node =
         new (allocator) HUseListNode<HInstruction*>(user, index);
+    // Note: `old_begin` remains valid across `push_front()`.
+    auto old_begin = uses_.begin();
     uses_.push_front(*new_node);
-    FixUpUserRecordsAfterUseInsertion(fixup_end);
+    // To speed up this code, we inline the
+    //     FixUpUserRecordsAfterUseInsertion(
+    //         old_begin != uses_.end() ? ++old_begin : old_begin);
+    // to reduce branching as we know that we're going to fix up either one or two entries.
+    auto new_begin = uses_.begin();
+    user->SetRawInputRecordAt(index, HUserRecord<HInstruction*>(this, uses_.before_begin()));
+    if (old_begin != uses_.end()) {
+      HInstruction* old_begin_user = old_begin->GetUser();
+      size_t old_begin_index = old_begin->GetIndex();
+      old_begin_user->SetRawInputRecordAt(
+          old_begin_index, HUserRecord<HInstruction*>(this, new_begin));
+    }
   }
 
-  void AddEnvUseAt(HEnvironment* user, size_t index) {
+  void AddEnvUseAt(ArenaAllocator* allocator, HEnvironment* user, size_t index) {
     DCHECK(user != nullptr);
-    // Note: env_fixup_end remains valid across push_front().
-    auto env_fixup_end = env_uses_.empty() ? env_uses_.begin() : ++env_uses_.begin();
     HUseListNode<HEnvironment*>* new_node =
-        new (GetBlock()->GetGraph()->GetAllocator()) HUseListNode<HEnvironment*>(user, index);
+        new (allocator) HUseListNode<HEnvironment*>(user, index);
+    // Note: `old_env_begin` remains valid across `push_front()`.
+    auto old_env_begin = env_uses_.begin();
     env_uses_.push_front(*new_node);
-    FixUpUserRecordsAfterEnvUseInsertion(env_fixup_end);
+    // To speed up this code, we inline the
+    //     FixUpUserRecordsAfterEnvUseInsertion(
+    //         old_env_begin != env_uses_.end() ? ++old_env_begin : old_env_begin);
+    // to reduce branching as we know that we're going to fix up either one or two entries.
+    auto new_env_begin = env_uses_.begin();
+    user->GetVRegs()[index] = HUserRecord<HEnvironment*>(this, env_uses_.before_begin());
+    if (old_env_begin != env_uses_.end()) {
+      HEnvironment* old_env_begin_user = old_env_begin->GetUser();
+      size_t old_env_begin_index = old_env_begin->GetIndex();
+      old_env_begin_user->GetVRegs()[old_env_begin_index] =
+          HUserRecord<HEnvironment*>(this, new_env_begin);
+    }
   }
 
   void RemoveAsUserOfInput(size_t input) {
@@ -2343,18 +2363,18 @@ class HInstruction : public ArenaObject<kArenaAllocInstruction> {
     DCHECK(environment_ == nullptr);
     ArenaAllocator* allocator = GetBlock()->GetGraph()->GetAllocator();
     environment_ = HEnvironment::Create(allocator, *environment, this);
-    environment_->CopyFrom(environment);
+    environment_->CopyFrom(allocator, environment);
     if (environment->GetParent() != nullptr) {
       environment_->SetAndCopyParentChain(allocator, environment->GetParent());
     }
   }
 
   void CopyEnvironmentFromWithLoopPhiAdjustment(HEnvironment* environment,
-                                                HBasicBlock* block) {
+                                                HBasicBlock* loop_header) {
     DCHECK(environment_ == nullptr);
-    ArenaAllocator* allocator = GetBlock()->GetGraph()->GetAllocator();
+    ArenaAllocator* allocator = loop_header->GetGraph()->GetAllocator();
     environment_ = HEnvironment::Create(allocator, *environment, this);
-    environment_->CopyFromWithLoopPhiAdjustment(environment, block);
+    environment_->CopyFromWithLoopPhiAdjustment(allocator, environment, loop_header);
     if (environment->GetParent() != nullptr) {
       environment_->SetAndCopyParentChain(allocator, environment->GetParent());
     }
@@ -6845,7 +6865,7 @@ inline void HLoadClass::AddSpecialInput(HInstruction* special_input) {
          GetLoadKind() == LoadKind::kJitBootImageAddress) << GetLoadKind();
   DCHECK(special_input_.GetInstruction() == nullptr);
   special_input_ = HUserRecord<HInstruction*>(special_input);
-  special_input->AddUseAt(this, 0);
+  special_input->AddUseAt(GetBlock()->GetGraph()->GetAllocator(), this, 0);
 }
 
 class HLoadString final : public HInstruction {
@@ -7013,7 +7033,7 @@ inline void HLoadString::AddSpecialInput(HInstruction* special_input) {
   // so use the GetInputRecords() from the base class to set the input record.
   DCHECK(special_input_.GetInstruction() == nullptr);
   special_input_ = HUserRecord<HInstruction*>(special_input);
-  special_input->AddUseAt(this, 0);
+  special_input->AddUseAt(GetBlock()->GetGraph()->GetAllocator(), this, 0);
 }
 
 class HLoadMethodHandle final : public HInstruction {

@@ -305,7 +305,7 @@ void HInstructionBuilder::InitializeInstruction(HInstruction* instruction) {
         graph_->GetArtMethod(),
         instruction->GetDexPc(),
         instruction);
-    environment->CopyFrom(ArrayRef<HInstruction* const>(*current_locals_));
+    environment->CopyFrom(allocator_, ArrayRef<HInstruction* const>(*current_locals_));
     instruction->SetRawEnvironment(environment);
   }
 }
@@ -2554,8 +2554,6 @@ bool HInstructionBuilder::BuildFilledNewArray(uint32_t dex_pc,
   char primitive = descriptor[1];
   if (primitive != 'I' && primitive != 'L' && primitive != '[') {
     DCHECK(primitive != 'J' && primitive != 'D');  // Rejected by the verifier.
-    // FIXME: Why do we JIT compile a method with `VERIFY_ERROR_FILLED_NEW_ARRAY` when
-    // `CanCompilerHandleVerificationFailure(VERIFY_ERROR_FILLED_NEW_ARRAY)` returns false?
     MaybeRecordStat(compilation_stats_, MethodCompilationStat::kNotCompiledMalformedOpcode);
     return false;
   }

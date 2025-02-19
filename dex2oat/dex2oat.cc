@@ -1990,7 +1990,6 @@ class Dex2Oat final {
                         dex_files,
                         timings_,
                         &compiler_options_->image_classes_);
-    callbacks_->SetVerificationResults(nullptr);  // Should not be needed anymore.
     driver_->CompileAll(class_loader, dex_files, timings_);
     driver_->FreeThreadPools();
     return class_loader;

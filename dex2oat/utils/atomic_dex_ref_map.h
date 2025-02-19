@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ART_COMPILER_UTILS_ATOMIC_DEX_REF_MAP_H_
-#define ART_COMPILER_UTILS_ATOMIC_DEX_REF_MAP_H_
+#ifndef ART_DEX2OAT_UTILS_ATOMIC_DEX_REF_MAP_H_
+#define ART_DEX2OAT_UTILS_ATOMIC_DEX_REF_MAP_H_
 
 #include "base/atomic.h"
 #include "base/dchecked_vector.h"
@@ -83,4 +83,4 @@ class AtomicDexRefMap {
 
 }  // namespace art
 
-#endif  // ART_COMPILER_UTILS_ATOMIC_DEX_REF_MAP_H_
+#endif  // ART_DEX2OAT_UTILS_ATOMIC_DEX_REF_MAP_H_

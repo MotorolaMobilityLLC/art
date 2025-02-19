@@ -4538,7 +4538,14 @@ void MarkCompact::ScanObject(mirror::Object* obj) {
     }
     if (klass == nullptr) {
       // It must be heap corruption.
-      LOG(FATAL_WITHOUT_ABORT) << "klass pointer for obj: " << obj << " found to be null.";
+      LOG(FATAL_WITHOUT_ABORT) << "klass pointer for obj: " << obj << " found to be null."
+                               << " black_dense_end: " << static_cast<void*>(black_dense_end_)
+                               << " mid_gen_end: " << static_cast<void*>(mid_gen_end_)
+                               << " prev_post_compact_end: " << prev_post_compact_end_
+                               << " prev_black_allocations_begin: " << prev_black_allocations_begin_
+                               << " prev_black_dense_end: " << prev_black_dense_end_
+                               << " prev_gc_young: " << prev_gc_young_
+                               << " prev_gc_performed_comaction: " << prev_gc_performed_compaction_;
       heap_->GetVerification()->LogHeapCorruption(
           obj, mirror::Object::ClassOffset(), klass, /*fatal=*/true);
     }
@@ -4817,6 +4824,14 @@ void MarkCompact::FinishPhase(bool performed_compaction) {
   compacting_ = false;
   marking_done_ = false;
   uint8_t* mark_bitmap_clear_end = black_dense_end_;
+  // Retain values of some fields for logging in next GC cycle, in case there is
+  // a memory corruption detected.
+  prev_black_allocations_begin_ = static_cast<void*>(black_allocations_begin_);
+  prev_black_dense_end_ = static_cast<void*>(black_dense_end_);
+  prev_post_compact_end_ = static_cast<void*>(post_compact_end_);
+  prev_gc_young_ = young_gen_;
+  prev_gc_performed_compaction_ = performed_compaction;
+
   // Whether compaction is performend or not, we always set post_compact_end_
   // before reaching here.
   CHECK_NE(post_compact_end_, nullptr);

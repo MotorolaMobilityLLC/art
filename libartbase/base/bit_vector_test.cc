@@ -25,6 +25,94 @@
 
 namespace art {
 
+template <typename StorageType, StorageType kWord0, StorageType kWord1>
+void TestBitVectorViewSetBitAndClearBit() {
+  static constexpr StorageType kStorage[2] = { kWord0, kWord1 };
+  static constexpr size_t kSizeInBits = 2 * BitSizeOf<StorageType>();
+  static constexpr BitVectorView<const StorageType> kRbv(kStorage, kSizeInBits);
+  auto get_bit_from_params = [](size_t index) constexpr {
+    StorageType word = (index < BitSizeOf<StorageType>()) ? kWord0 : kWord1;
+    size_t shift = index % BitSizeOf<StorageType>();
+    return (word & (static_cast<StorageType>(1u) << shift)) != 0u;
+  };
+  auto verify_is_bit_set = [get_bit_from_params]() constexpr {
+    for (size_t index = 0; index != kSizeInBits; ++index) {
+      // If the `CHECK_EQ()` fails, the `static_assert` evaluation fails at compile time.
+      CHECK_EQ(get_bit_from_params(index), kRbv.IsBitSet(index)) << index;
+    }
+    return true;
+  };
+  static_assert(verify_is_bit_set());
+
+  auto verify_size_in_bits = []() constexpr {
+    for (size_t size = 0; size != kSizeInBits; ++size) {
+      // If the `CHECK_EQ()` fails, the `static_assert` evaluation fails at compile time.
+      CHECK_EQ(size, BitVectorView(kStorage, size).SizeInBits());
+    }
+    return true;
+  };
+  static_assert(verify_size_in_bits());
+
+  StorageType storage[2] = {0u, 0u};
+  size_t size_in_bits = 2 * BitSizeOf<StorageType>();
+  BitVectorView<StorageType> rbv(storage, size_in_bits);
+  for (size_t index = 0; index != size_in_bits; ++index) {
+    ASSERT_FALSE(rbv.IsBitSet(index));
+  }
+  // Set one bit at a time, then clear it.
+  for (size_t bit_to_set = 0; bit_to_set != size_in_bits; ++bit_to_set) {
+    rbv.SetBit(bit_to_set);
+    for (size_t index = 0; index != size_in_bits; ++index) {
+      ASSERT_EQ(index == bit_to_set, rbv.IsBitSet(index));
+    }
+    rbv.ClearBit(bit_to_set);
+    for (size_t index = 0; index != size_in_bits; ++index) {
+      ASSERT_FALSE(rbv.IsBitSet(index));
+    }
+  }
+  // Set bits for `kWord0` and `kWord1`.
+  for (size_t index = 0; index != size_in_bits; ++index) {
+    if (get_bit_from_params(index)) {
+      rbv.SetBit(index);
+    }
+  }
+  ASSERT_EQ(kWord0, storage[0]);
+  ASSERT_EQ(kWord1, storage[1]);
+  // Clear all bits that are already clear.
+  for (size_t index = 0; index != size_in_bits; ++index) {
+    if (!get_bit_from_params(index)) {
+      rbv.ClearBit(index);
+    }
+  }
+  ASSERT_EQ(kWord0, storage[0]);
+  ASSERT_EQ(kWord1, storage[1]);
+  // Clear all bits that are set.
+  for (size_t index = 0; index != size_in_bits; ++index) {
+    if (get_bit_from_params(index)) {
+      rbv.ClearBit(index);
+    }
+  }
+  ASSERT_EQ(0u, storage[0]);
+  ASSERT_EQ(0u, storage[1]);
+}
+
+TEST(BitVectorView, Uint32T) {
+  TestBitVectorViewSetBitAndClearBit<uint32_t, 0x12345678u, 0x87654321u>();
+}
+
+TEST(BitVectorView, Uint64T) {
+  TestBitVectorViewSetBitAndClearBit<uint64_t,
+                                     UINT64_C(0x1234567890abcdef),
+                                     UINT64_C(0xfedcba0987654321)>();
+}
+
+TEST(BitVectorView, SizeT) {
+  // Note: The constants below are truncated on 32-bit architectures.
+  TestBitVectorViewSetBitAndClearBit<size_t,
+                                     static_cast<size_t>(UINT64_C(0xfedcba0987654321)),
+                                     static_cast<size_t>(UINT64_C(0x1234567890abcdef))>();
+}
+
 TEST(BitVector, Test) {
   const size_t kBits = 32;
 

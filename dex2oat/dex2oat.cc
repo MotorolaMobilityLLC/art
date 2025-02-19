@@ -878,6 +878,12 @@ class Dex2Oat final {
         break;
     }
 
+#ifdef ART_USE_RESTRICTED_MODE
+    // TODO(Simulator): support signal handling and implicit checks.
+    compiler_options_->implicit_suspend_checks_ = false;
+    compiler_options_->implicit_null_checks_ = false;
+#endif  // ART_USE_RESTRICTED_MODE
+
     // Done with usage checks, enable watchdog if requested
     if (parser_options->watch_dog_enabled) {
       int64_t timeout = parser_options->watch_dog_timeout_in_ms > 0

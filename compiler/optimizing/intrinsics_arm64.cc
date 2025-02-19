@@ -200,12 +200,18 @@ class InvokePolymorphicSlowPathARM64 : public SlowPathCodeARM64 {
 #undef __
 
 bool IntrinsicLocationsBuilderARM64::TryDispatch(HInvoke* invoke) {
+#ifdef ART_USE_RESTRICTED_MODE
+  // TODO(Simulator): support intrinsics.
+  USE(invoke);
+  return false;
+#else
   Dispatch(invoke);
   LocationSummary* res = invoke->GetLocations();
   if (res == nullptr) {
     return false;
   }
   return res->Intrinsified();
+#endif  // ART_USE_RESTRICTED_MODE
 }
 
 #define __ masm->

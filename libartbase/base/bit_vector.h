@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include <iterator>
+#include <limits>
 
 #include "bit_utils.h"
 #include "globals.h"
@@ -27,7 +28,59 @@
 namespace art {
 
 class Allocator;
-class ArenaBitVector;
+
+// A bit vector view encapsulating externally-provided fixed-size storage for bits.
+template <typename StorageType = size_t>
+class BitVectorView {
+ public:
+  using WordType = StorageType;
+  static_assert(std::numeric_limits<WordType>::is_integer);
+  static_assert(!std::numeric_limits<WordType>::is_signed);
+  static constexpr size_t kWordBits = BitSizeOf<WordType>();
+  static_assert(IsPowerOfTwo(kWordBits));
+
+  static constexpr size_t BitsToWords(size_t bits) {
+    return (bits + /* round up */ (kWordBits - 1)) / kWordBits;
+  }
+
+  constexpr BitVectorView(WordType* storage, size_t size_in_bits)
+      : storage_(storage), size_in_bits_(size_in_bits) {}
+
+  // The `BitVectorView<>` can be copied and passed to functions by value.
+  // The new copy shall reference the same underlying data, similarly to `std::string_view`.
+  BitVectorView(const BitVectorView& src) = default;
+
+  constexpr size_t SizeInBits() const {
+    return size_in_bits_;
+  }
+
+  void SetBit(size_t index) {
+    DCHECK_LT(index, size_in_bits_);
+    storage_[WordIndex(index)] |= BitMask(index);
+  }
+
+  void ClearBit(size_t index) {
+    DCHECK_LT(index, size_in_bits_);
+    storage_[WordIndex(index)] &= ~BitMask(index);
+  }
+
+  constexpr bool IsBitSet(size_t index) const {
+    DCHECK_LT(index, size_in_bits_);
+    return (storage_[WordIndex(index)] & BitMask(index)) != 0u;
+  }
+
+ private:
+  static constexpr size_t WordIndex(size_t index) {
+    return index >> WhichPowerOf2(kWordBits);
+  }
+
+  static constexpr WordType BitMask(size_t index) {
+    return static_cast<WordType>(1) << (index % kWordBits);
+  }
+
+  WordType* storage_;
+  size_t size_in_bits_;
+};
 
 /*
  * Expanding bitmap. Bits are numbered starting from zero. All operations on a BitVector are
@@ -154,7 +207,7 @@ class BitVector {
     if (idx >= storage_size_ * kWordBits) {
       EnsureSize(idx);
     }
-    storage_[WordIndex(idx)] |= BitMask(idx);
+    AsView().SetBit(idx);
   }
 
   // Mark the specified bit as "unset".
@@ -162,7 +215,7 @@ class BitVector {
     // If the index is over the size, we don't have to do anything, it is cleared.
     if (idx < storage_size_ * kWordBits) {
       // Otherwise, go ahead and clear it.
-      storage_[WordIndex(idx)] &= ~BitMask(idx);
+      AsView().ClearBit(idx);
     }
   }
 
@@ -170,7 +223,7 @@ class BitVector {
   bool IsBitSet(uint32_t idx) const {
     // If the index is over the size, whether it is expandable or not, this bit does not exist:
     // thus it is not set.
-    return (idx < (storage_size_ * kWordBits)) && IsBitSet(storage_, idx);
+    return (idx < (storage_size_ * kWordBits)) && AsView().IsBitSet(idx);
   }
 
   // Mark all bits bit as "clear".
@@ -290,6 +343,14 @@ class BitVector {
    * @param buffer the ostringstream used to dump the bitvector into.
    */
   void DumpHelper(const char* prefix, std::ostringstream& buffer) const;
+
+  BitVectorView<uint32_t> AsView() {
+    return {storage_, storage_size_ * kWordBits};
+  }
+
+  BitVectorView<const uint32_t> AsView() const {
+    return {storage_, storage_size_ * kWordBits};
+  }
 
   // Ensure there is space for a bit at idx.
   void EnsureSize(uint32_t idx);

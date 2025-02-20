@@ -68,8 +68,8 @@ void HGraph::FindBackEdges(ArenaBitVector* visited) {
   // Allocate memory from local ScopedArenaAllocator.
   ScopedArenaAllocator allocator(GetArenaStack());
   // Nodes that we're currently visiting, indexed by block id.
-  ArenaBitVector visiting(
-      &allocator, blocks_.size(), /* expandable= */ false, kArenaAllocGraphBuilder);
+  BitVectorView visiting =
+      ArenaBitVector::CreateFixedSize(&allocator, blocks_.size(), kArenaAllocGraphBuilder);
   // Number of successors visited from a given node, indexed by block id.
   ScopedArenaVector<size_t> successors_visited(blocks_.size(),
                                                0u,

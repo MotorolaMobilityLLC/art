@@ -1118,6 +1118,8 @@ class Runtime {
   // See Flags::ReloadAllFlags as well.
   static void ReloadAllFlags(const std::string& caller);
 
+  inline void CreatePreAllocatedExceptions(Thread* self) REQUIRES_SHARED(Locks::mutator_lock_);
+
   // Parses /apex/apex-info-list.xml to build a string containing apex versions of boot classpath
   // jars, which is encoded into .oat files.
   static std::string GetApexVersions(ArrayRef<const std::string> boot_class_path_locations);

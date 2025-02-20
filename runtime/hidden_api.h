@@ -266,7 +266,7 @@ inline ArtMethod* GetInterfaceMemberIfProxy(ArtMethod* method)
 ALWAYS_INLINE inline uint32_t CreateRuntimeFlags_Impl(uint32_t dex_flags) {
   uint32_t runtime_flags = 0u;
 
-  ApiList api_list(dex_flags);
+  ApiList api_list = ApiList::FromDexFlags(dex_flags);
   DCHECK(api_list.IsValid());
 
   if (api_list.Contains(ApiList::Sdk())) {

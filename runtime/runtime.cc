@@ -1790,9 +1790,6 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
                         (gUseUserfaultfd ? BackgroundGcOption(gc::kCollectorTypeCMCBackground) :
                                            runtime_options.GetOrDefault(Opt::BackgroundGc));
 
-  bool verify_post_gc_heap = xgc_option.verify_post_gc_heap_ &&
-                             (android::base::GetProperty("ro.build.type", "") != "user");
-
   heap_ = new gc::Heap(runtime_options.GetOrDefault(Opt::MemoryInitialSize),
                        runtime_options.GetOrDefault(Opt::HeapGrowthLimit),
                        runtime_options.GetOrDefault(Opt::HeapMinFree),
@@ -1825,7 +1822,7 @@ bool Runtime::Init(RuntimeArgumentMap&& runtime_options_in) {
                        runtime_options.GetOrDefault(Opt::UseTLAB),
                        xgc_option.verify_pre_gc_heap_,
                        xgc_option.verify_pre_sweeping_heap_,
-                       verify_post_gc_heap,
+                       xgc_option.verify_post_gc_heap_,
                        xgc_option.verify_pre_gc_rosalloc_,
                        xgc_option.verify_pre_sweeping_rosalloc_,
                        xgc_option.verify_post_gc_rosalloc_,

@@ -179,6 +179,14 @@ if [[ $build_target == "yes" ]]; then
   # Build/install the required APEXes.
   make_command+=" ${apexes[*]}"
   make_command+=" ${specific_targets}"
+
+  # Although the simulator is run on the host, we reuse the target build to
+  # build the target run tests on the host.
+  if [[ -n "${ART_USE_SIMULATOR}" ]]; then
+    # Build any simulator specific components, such as a target boot image, on
+    # the host.
+    make_command+=" build-art-simulator"
+  fi
 fi
 
 if [[ $installclean == "yes" ]]; then
